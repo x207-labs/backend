@@ -14,6 +14,8 @@ export interface RouteContext {
   now: () => number;
   /** Terisi untuk route `circleScoped`. */
   circle: CircleRow;
+  /** Body JSON permintaan `POST`; `undefined` untuk `GET`. */
+  body: unknown;
 }
 
 export interface RouteResult {
@@ -23,7 +25,7 @@ export interface RouteResult {
 }
 
 export interface Route {
-  method: "GET";
+  method: "GET" | "POST";
   /** Segmen `{nama}` menjadi parameter, mis. `/x207/circles/{circle}/members/{account}`. */
   pattern: string;
   /** Route di bawah `/x207/circles/{circle}`: lingkaran dan kesiapan D9 diperiksa sebelum handler. */

@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type Database from "better-sqlite3";
-import { ApiError } from "./errors.js";
+import { ApiError, invalidRequest } from "./errors.js";
 import { row } from "./format.js";
 import { matchRoute, type CircleRow, type Route, type RouteResult } from "./router.js";
 import { epochRoutes } from "./routes/epochs.js";
@@ -20,6 +20,24 @@ export interface ApiServerOptions {
   now?: () => number;
   /** Route tambahan dari modul lain (laporan 207, settlement, dll.). */
   extraRoutes?: readonly Route[];
+}
+
+const MAX_BODY_BYTES = 64 * 1024;
+
+/** Body JSON sebuah `POST`: objek apa pun yang muat di 64 KiB; selain itu 400 `invalid_request`. */
+async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > MAX_BODY_BYTES) throw invalidRequest("body terlalu besar", { maxBytes: MAX_BODY_BYTES });
+    chunks.push(chunk as Buffer);
+  }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    throw invalidRequest("body bukan JSON yang sah");
+  }
 }
 
 const REQUIRED_TABLES = ["circles", "indexer_cursor", "members", "epochs"];
@@ -98,7 +116,8 @@ export function createApiServer(options: ApiServerOptions): Server {
       indexedBlock = cursor.last_block_height.toString();
     }
     try {
-      const result = await match.route.handler({ db, params: match.params, query: url.searchParams, now, circle });
+      const body = match.route.method === "POST" ? await readJsonBody(req) : undefined;
+      const result = await match.route.handler({ db, params: match.params, query: url.searchParams, now, circle, body });
       return indexedBlock === undefined ? { result } : { result, indexedBlock };
     } catch (err) {
       if (err instanceof ApiError && indexedBlock !== undefined) err.headers["X-X207-Indexed-Block"] = indexedBlock;
@@ -110,7 +129,8 @@ export function createApiServer(options: ApiServerOptions): Server {
     if (req.method === "OPTIONS") {
       res.writeHead(204, {
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, OPTIONS",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "content-type",
       });
       res.end();
       return;
