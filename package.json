@@ -16,6 +16,7 @@
   "dependencies": {
     "@defuse-protocol/intents-sdk": "0.93.0",
     "@defuse-protocol/one-click-sdk-typescript": "0.1.26",
+    "@x207/core": "0.0.1",
     "better-sqlite3": "13.0.3",
     "near-api-js": "7.4.0"
   },

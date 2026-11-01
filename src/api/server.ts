@@ -4,6 +4,7 @@ import { ApiError } from "./errors.js";
 import { row } from "./format.js";
 import { matchRoute, type CircleRow, type Route, type RouteResult } from "./router.js";
 import { epochRoutes } from "./routes/epochs.js";
+import { healthRoutes } from "./routes/health.js";
 import { memberRoutes } from "./routes/members.js";
 
 export interface ApiServerOptions {
@@ -49,7 +50,7 @@ export function createApiServer(options: ApiServerOptions): Server {
   const { db } = options;
   const now = options.now ?? Date.now;
   const limit = options.rateLimitPerMinute ?? 0;
-  const routes: Route[] = [...memberRoutes, ...epochRoutes, ...(options.extraRoutes ?? [])];
+  const routes: Route[] = [...healthRoutes, ...memberRoutes, ...epochRoutes, ...(options.extraRoutes ?? [])];
   const hits = new Map<string, { windowStart: number; count: number }>();
 
   function checkRate(ip: string): void {
