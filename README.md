@@ -1,6 +1,6 @@
 # x207 backend
 
-Modul M5 (Settlement Worker) dan M6 (Indexer) x207, fitur F1–F7, proses P8, basis data baca D9. Bagian dari repo payung `x207-protocol/x207`.
+Modul M5 (Settlement Worker) dan M6 (Indexer) x207, fitur F1–F7, proses P8, basis data baca D9. Bagian dari repo payung `x207-labs/x207`.
 
 | Folder | Isi |
 | --- | --- |
