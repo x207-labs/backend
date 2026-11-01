@@ -1,0 +1,25 @@
+{
+  "$id": "health.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GET /x207/health",
+  "type": "object",
+  "required": ["status", "cursors"],
+  "properties": {
+    "status": { "enum": ["ok", "degraded"] },
+    "cursors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "lastBlockHeight", "headBlockHeight", "lagBlocks", "rpcEndpoint", "updatedAt"],
+        "properties": {
+          "name": { "type": "string" },
+          "lastBlockHeight": { "type": "integer" },
+          "headBlockHeight": { "type": "integer" },
+          "lagBlocks": { "type": "integer" },
+          "rpcEndpoint": { "type": "string" },
+          "updatedAt": { "$ref": "common.json#/definitions/isoTime" }
+        }
+      }
+    }
+  }
+}

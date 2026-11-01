@@ -1,0 +1,19 @@
+{
+  "$id": "deposit-quote-request.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "POST /x207/settlement/deposit/quote (request)",
+  "description": "purpose=stake butuh amount; purpose=settle butuh epoch dan mengabaikan amount (jumlah dari D9).",
+  "type": "object",
+  "required": ["purpose", "circle", "account", "originAsset", "refundTo"],
+  "properties": {
+    "purpose": { "enum": ["stake", "settle"] },
+    "circle": { "type": "string" },
+    "account": { "$ref": "common.json#/definitions/account" },
+    "epoch": { "type": "integer", "minimum": 0 },
+    "amount": { "$ref": "common.json#/definitions/amount" },
+    "originAsset": { "type": "string" },
+    "refundType": { "enum": ["INTENTS", "ORIGIN_CHAIN"] },
+    "refundTo": { "type": "string" },
+    "dry": { "type": "boolean" }
+  }
+}

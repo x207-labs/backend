@@ -1,0 +1,28 @@
+{
+  "$id": "withdraw-quote-response.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "POST /x207/settlement/withdraw/quote (respons 201)",
+  "type": "object",
+  "required": ["jobId", "status", "dry", "originAsset", "destinationAsset", "depositType", "recipientType", "amountIn", "amountOut", "withdrawFee", "variableFeeBpsEstimate", "totalFeePct", "threshold", "timeEstimateSeconds", "warnings"],
+  "properties": {
+    "jobId": { "type": "string" },
+    "status": { "type": "string" },
+    "dry": { "type": "boolean" },
+    "originAsset": { "type": "string" },
+    "destinationAsset": { "type": "string" },
+    "depositType": { "const": "INTENTS" },
+    "recipientType": { "const": "DESTINATION_CHAIN" },
+    "amountIn": { "$ref": "common.json#/definitions/amount" },
+    "amountOut": { "$ref": "common.json#/definitions/amount" },
+    "withdrawFee": { "$ref": "common.json#/definitions/amount" },
+    "variableFeeBpsEstimate": { "type": "number" },
+    "totalFeePct": { "type": "number" },
+    "threshold": {
+      "type": "object",
+      "required": ["chain", "minAmount", "ok"],
+      "properties": { "chain": { "type": "string" }, "minAmount": { "$ref": "common.json#/definitions/amount" }, "ok": { "type": "boolean" } }
+    },
+    "timeEstimateSeconds": { "type": "number" },
+    "warnings": { "type": "array", "items": { "type": "string" } }
+  }
+}

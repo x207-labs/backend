@@ -1,0 +1,25 @@
+{
+  "jobId": "5d0f8a52-7c1e-4a8e-9a77-1f3c2b8d9e10",
+  "status": "waiting_deposit",
+  "dry": false,
+  "purpose": "settle",
+  "unit": "credit",
+  "decimals": 6,
+  "originAsset": "nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near",
+  "destinationAsset": "nep141:usdt.tether-token.near",
+  "amountIn": "35050000",
+  "amountOut": "35000000",
+  "recipient": "scraper.x207-circle.near",
+  "recipientType": "INTENTS",
+  "depositAddress": "0x7a1c…e93f",
+  "quoteDeadline": "2026-11-09T11:45:00Z",
+  "timeEstimateSeconds": 35,
+  "paymentDeadline": "2026-11-09T12:00:00Z",
+  "warnings": [],
+  "nextSteps": [
+    "kirim amountIn ke depositAddress",
+    "tunggu job berstatus ready_withdraw",
+    "ft_withdraw dari intents.near ke akun NEAR tanpa msg",
+    "ft_transfer_call ke x207-circle dengan msg settle epoch 42"
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "circle": "agents-main",
+  "epoch": 42,
+  "phase": "payment_window",
+  "unit": "credit",
+  "decimals": 6,
+  "totalVoucherValue": "2563380000",
+  "cleared": "1820000000",
+  "clearedRatio": 0.71,
+  "voucherCount": 512,
+  "residualTransfers": 3,
+  "transferSavings": 170.6667,
+  "debtBefore": "2563380000",
+  "debtAfter": "743380000",
+  "debtReduction": 0.71,
+  "netDebt": "45000000",
+  "defaultRate": null,
+  "clearingTimeSeconds": 604,
+  "graph": { "participants": 6, "edges": 14, "density": 0.4667 }
+}

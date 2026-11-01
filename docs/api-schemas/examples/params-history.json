@@ -1,0 +1,8 @@
+{
+  "circle": "agents-main",
+  "items": [
+    { "id": 2, "field": "payment_window", "oldValue": 1800, "newValue": 2700, "effectiveEpoch": 43, "blockHeight": 171234100 },
+    { "id": 1, "field": "payment_window", "oldValue": null, "newValue": 1800, "effectiveEpoch": 0, "blockHeight": 171000000 }
+  ],
+  "nextCursor": null
+}

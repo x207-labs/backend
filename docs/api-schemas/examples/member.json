@@ -1,0 +1,16 @@
+{
+  "circle": "agents-main",
+  "unit": "credit",
+  "decimals": 6,
+  "account": "scraper.x207-circle.near",
+  "status": "active",
+  "stake": "50000000",
+  "limit": "50000000",
+  "outstandingDebt": "12500000",
+  "headroom": "37500000",
+  "termsHash": "4f2c…9a1e",
+  "pubkeyVoucher": "ed25519:8hYk…",
+  "settledHistory": "35000000",
+  "joinedAt": "2026-11-03T08:12:44Z",
+  "exitRequestedEpoch": null
+}

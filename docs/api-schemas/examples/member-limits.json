@@ -1,0 +1,10 @@
+{
+  "circle": "agents-main",
+  "unit": "credit",
+  "decimals": 6,
+  "items": [
+    { "epoch": 42, "oldLimit": "80000000", "newLimit": "81000000", "status": "active", "reason": "finalize", "blockHeight": 171234600 },
+    { "epoch": null, "oldLimit": "0", "newLimit": "80000000", "status": "active", "reason": "stake", "blockHeight": 171230000 }
+  ],
+  "nextCursor": null
+}

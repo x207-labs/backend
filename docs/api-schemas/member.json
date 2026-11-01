@@ -1,0 +1,36 @@
+{
+  "$id": "member.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GET /x207/circles/{circle}/members/{account}",
+  "definitions": {
+    "item": {
+      "type": "object",
+      "required": ["account", "status", "stake", "limit", "outstandingDebt", "headroom", "termsHash", "pubkeyVoucher", "settledHistory", "joinedAt", "exitRequestedEpoch"],
+      "properties": {
+        "account": { "$ref": "common.json#/definitions/account" },
+        "status": { "$ref": "common.json#/definitions/memberStatus" },
+        "stake": { "$ref": "common.json#/definitions/amount" },
+        "limit": { "$ref": "common.json#/definitions/amount" },
+        "outstandingDebt": { "$ref": "common.json#/definitions/amount" },
+        "headroom": { "$ref": "common.json#/definitions/amount" },
+        "termsHash": { "type": "string" },
+        "pubkeyVoucher": { "type": "string" },
+        "settledHistory": { "$ref": "common.json#/definitions/amount" },
+        "joinedAt": { "$ref": "common.json#/definitions/isoTime" },
+        "exitRequestedEpoch": { "type": ["integer", "null"], "description": "ADR-29; null bila tidak sedang keluar" }
+      }
+    }
+  },
+  "allOf": [
+    { "$ref": "#/definitions/item" },
+    {
+      "type": "object",
+      "required": ["circle", "unit", "decimals"],
+      "properties": {
+        "circle": { "type": "string" },
+        "unit": { "$ref": "common.json#/definitions/unit" },
+        "decimals": { "$ref": "common.json#/definitions/decimals" }
+      }
+    }
+  ]
+}

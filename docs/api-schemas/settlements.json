@@ -1,0 +1,36 @@
+{
+  "$id": "settlements.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GET …/members/{account}/settlements dan …/epochs/{n}/settlements",
+  "description": "Endpoint per epoch menambah field account di tiap item. due/paidAmount/stakeSlashed/haircut muncul untuk debtor.",
+  "type": "object",
+  "required": ["unit", "decimals", "items", "nextCursor"],
+  "properties": {
+    "unit": { "$ref": "common.json#/definitions/unit" },
+    "decimals": { "$ref": "common.json#/definitions/decimals" },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["epoch", "phase", "role", "net", "amount", "status", "claimableNow", "destination", "txHash"],
+        "properties": {
+          "account": { "$ref": "common.json#/definitions/account" },
+          "epoch": { "type": "integer", "minimum": 0 },
+          "phase": { "$ref": "common.json#/definitions/epochPhase" },
+          "role": { "enum": ["debtor", "creditor", "none"] },
+          "net": { "$ref": "common.json#/definitions/signedAmount" },
+          "amount": { "$ref": "common.json#/definitions/amount" },
+          "status": { "oneOf": [{ "$ref": "common.json#/definitions/settlementStatus" }, { "type": "null" }] },
+          "claimableNow": { "type": "boolean" },
+          "destination": { "enum": ["near", "intents", null] },
+          "txHash": { "type": ["string", "null"] },
+          "due": { "$ref": "common.json#/definitions/isoTime" },
+          "paidAmount": { "$ref": "common.json#/definitions/amount" },
+          "stakeSlashed": { "$ref": "common.json#/definitions/amount" },
+          "haircut": { "$ref": "common.json#/definitions/amount" }
+        }
+      }
+    },
+    "nextCursor": { "$ref": "common.json#/definitions/nextCursor" }
+  }
+}

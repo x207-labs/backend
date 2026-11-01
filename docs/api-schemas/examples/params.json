@@ -1,0 +1,11 @@
+{
+  "circle": "agents-main",
+  "currentEpoch": 42,
+  "active": {
+    "epoch_length": 3600, "payment_window": 1800, "proposal_window": 600,
+    "base_limit_ratio": 8000, "limit_growth": 1000, "limit_cap": "1000000000",
+    "limit_decay": 0, "fees": { "clearing_fee_bps": 0, "solver_fee_bps": 0 }, "admission": "open"
+  },
+  "nextEpoch": { "payment_window": 2700 },
+  "nextEpochEffective": 43
+}

@@ -1,0 +1,33 @@
+{
+  "$id": "params.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GET /x207/circles/{circle}/params",
+  "description": "Nama field D7 snake_case, sama dengan get_params. nextEpoch/nextEpochEffective null tanpa perubahan tertunda (K-37).",
+  "type": "object",
+  "required": ["circle", "currentEpoch", "active", "nextEpoch", "nextEpochEffective"],
+  "properties": {
+    "circle": { "type": "string" },
+    "currentEpoch": { "type": "integer", "minimum": 0 },
+    "active": {
+      "type": "object",
+      "required": ["epoch_length", "payment_window", "proposal_window", "base_limit_ratio", "limit_growth", "limit_cap", "limit_decay", "fees", "admission"],
+      "properties": {
+        "epoch_length": { "type": "integer" },
+        "payment_window": { "type": "integer" },
+        "proposal_window": { "type": "integer" },
+        "base_limit_ratio": { "type": "integer" },
+        "limit_growth": { "type": "integer" },
+        "limit_cap": { "$ref": "common.json#/definitions/amount" },
+        "limit_decay": { "type": "integer" },
+        "fees": {
+          "type": "object",
+          "required": ["clearing_fee_bps", "solver_fee_bps"],
+          "properties": { "clearing_fee_bps": { "type": "integer" }, "solver_fee_bps": { "type": "integer" } }
+        },
+        "admission": { "type": "string" }
+      }
+    },
+    "nextEpoch": { "type": ["object", "null"] },
+    "nextEpochEffective": { "type": ["integer", "null"] }
+  }
+}

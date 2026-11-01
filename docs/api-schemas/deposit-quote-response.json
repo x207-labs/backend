@@ -1,0 +1,27 @@
+{
+  "$id": "deposit-quote-response.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "POST /x207/settlement/deposit/quote (respons 201)",
+  "type": "object",
+  "required": ["jobId", "status", "dry", "purpose", "unit", "decimals", "originAsset", "destinationAsset", "amountIn", "amountOut", "recipient", "recipientType", "depositAddress", "quoteDeadline", "timeEstimateSeconds", "warnings", "nextSteps"],
+  "properties": {
+    "jobId": { "type": "string" },
+    "status": { "type": "string" },
+    "dry": { "type": "boolean" },
+    "purpose": { "enum": ["stake", "settle"] },
+    "unit": { "$ref": "common.json#/definitions/unit" },
+    "decimals": { "$ref": "common.json#/definitions/decimals" },
+    "originAsset": { "type": "string" },
+    "destinationAsset": { "type": "string" },
+    "amountIn": { "$ref": "common.json#/definitions/amount" },
+    "amountOut": { "$ref": "common.json#/definitions/amount" },
+    "recipient": { "type": "string" },
+    "recipientType": { "const": "INTENTS" },
+    "depositAddress": { "type": "string" },
+    "quoteDeadline": { "$ref": "common.json#/definitions/isoTime" },
+    "timeEstimateSeconds": { "type": "number" },
+    "paymentDeadline": { "$ref": "common.json#/definitions/isoTime" },
+    "warnings": { "type": "array", "items": { "type": "string" } },
+    "nextSteps": { "type": "array", "items": { "type": "string" } }
+  }
+}

@@ -1,0 +1,74 @@
+import Database from "better-sqlite3";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { listen, seedCircle, seedEpoch, ISO_NS, type TestServer } from "../helpers/d9-fixtures.js";
+
+const BASE = "/x207/circles/agents-main";
+const NOW = Date.parse("2026-11-09T11:25:00Z");
+
+describe("BE-014 read API daftar epoch", () => {
+  let db: Database.Database;
+  let srv: TestServer;
+
+  beforeEach(async () => {
+    db = new Database(":memory:");
+    seedCircle(db);
+    seedEpoch(db, { epoch: 40, phase: "finalized", closedAt: "2026-11-09T08:19:56Z", proposalDeadline: "2026-11-09T08:29:56Z",
+      committedAt: "2026-11-09T08:30:00Z", paymentDeadline: "2026-11-09T09:00:00Z", finalizedAt: "2026-11-09T09:00:30Z",
+      edgeCount: 5, totalObligation: 100_000_000, cleared: 80_000_000 });
+    seedEpoch(db, { epoch: 41, phase: "finalized", closedAt: "2026-11-09T09:19:56Z", proposalDeadline: "2026-11-09T09:29:56Z",
+      committedAt: "2026-11-09T09:30:00Z", paymentDeadline: "2026-11-09T10:00:00Z", finalizedAt: "2026-11-09T10:00:30Z",
+      edgeCount: 6, totalObligation: 150_000_000, cleared: 100_000_000 });
+    seedEpoch(db, { epoch: 42, phase: "clearing", cutoffAt: "2026-11-09T11:19:56Z", closedAt: "2026-11-09T11:19:56Z",
+      proposalDeadline: "2026-11-09T11:29:56Z", edgeCount: 7, totalObligation: 190_000_000 });
+    seedEpoch(db, { epoch: 43, phase: "open", cutoffAt: "2026-11-09T12:19:56Z" });
+    srv = await listen({ db, now: () => NOW });
+  });
+
+  afterEach(async () => {
+    await srv.close();
+    db.close();
+  });
+
+  it("TC-BE-014-12 daftar epoch urut turun dengan phase dan proposalDeadline", async () => {
+    const res = await fetch(srv.url + `${BASE}/epochs`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.unit).toBe("credit");
+    expect(body.decimals).toBe(6);
+    expect(body.items.map((e: { epoch: number }) => e.epoch)).toEqual([43, 42, 41, 40]);
+    expect(body.items.map((e: { phase: string }) => e.phase)).toEqual(["open", "clearing", "finalized", "finalized"]);
+    expect(body.items[1].proposalDeadline).toBe("2026-11-09T11:29:56Z");
+    expect(body.items[3].paymentDeadline).toBe("2026-11-09T09:00:00Z");
+    expect(body.items[1].totalObligation).toBe("190000000");
+    expect(body.items[2].cleared).toBe("100000000");
+    expect(body.nextCursor).toBeNull();
+  });
+
+  it("TC-BE-014-12b fase turunan cutoff dan commit dihitung dari waktu (K-41)", async () => {
+    const at = async (iso: string) => {
+      const s = await listen({ db, now: () => Date.parse(iso) });
+      const body = await (await fetch(s.url + `${BASE}/epochs`)).json();
+      await s.close();
+      return Object.fromEntries(body.items.map((e: { epoch: number; phase: string }) => [e.epoch, e.phase]));
+    };
+    expect(await at("2026-11-09T11:25:00Z")).toMatchObject({ 42: "clearing", 43: "open" });
+    expect(await at("2026-11-09T11:30:00Z")).toMatchObject({ 42: "commit", 43: "open" });
+    expect(await at("2026-11-09T12:30:00Z")).toMatchObject({ 43: "cutoff" });
+    expect(ISO_NS("2026-11-09T12:30:00Z")).toBeGreaterThan(0n);
+  });
+
+  it("TC-BE-014-13 paginasi epoch 2/2", async () => {
+    const first = await (await fetch(srv.url + `${BASE}/epochs?limit=2`)).json();
+    expect(first.items.map((e: { epoch: number }) => e.epoch)).toEqual([43, 42]);
+    expect(first.nextCursor).not.toBeNull();
+    const second = await (await fetch(srv.url + `${BASE}/epochs?limit=2&cursor=${first.nextCursor}`)).json();
+    expect(second.items.map((e: { epoch: number }) => e.epoch)).toEqual([41, 40]);
+    expect(second.nextCursor).toBeNull();
+  });
+
+  it("TC-BE-014-14 lingkaran tidak ada", async () => {
+    const res = await fetch(srv.url + "/x207/circles/nope/epochs");
+    expect(res.status).toBe(404);
+    expect((await res.json()).error.code).toBe("circle_not_found");
+  });
+});

@@ -1,0 +1,27 @@
+{
+  "$id": "params-history.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GET /x207/circles/{circle}/params/history",
+  "description": "Spec API Backend tidak memberi contoh; item = kolom query Spec Skema D9 6.7 dalam camelCase. oldValue/newValue = JSON nilai field.",
+  "type": "object",
+  "required": ["circle", "items", "nextCursor"],
+  "properties": {
+    "circle": { "type": "string" },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "field", "oldValue", "newValue", "effectiveEpoch", "blockHeight"],
+        "properties": {
+          "id": { "type": "integer" },
+          "field": { "enum": ["epoch_length", "payment_window", "proposal_window", "base_limit_ratio", "limit_growth", "limit_cap", "limit_decay", "fees", "admission"] },
+          "oldValue": {},
+          "newValue": {},
+          "effectiveEpoch": { "type": "integer" },
+          "blockHeight": { "type": "integer" }
+        }
+      }
+    },
+    "nextCursor": { "$ref": "common.json#/definitions/nextCursor" }
+  }
+}

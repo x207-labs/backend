@@ -1,0 +1,36 @@
+{
+  "$id": "metrics.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GET /x207/circles/{circle}/epochs/{n}/metrics",
+  "description": "Nilai kosong mengikuti K-38: rasio dengan pembagi nol dan metrik pasca-commit pada epoch belum commit bernilai null.",
+  "type": "object",
+  "required": ["circle", "epoch", "phase", "unit", "decimals", "totalVoucherValue", "cleared", "clearedRatio", "voucherCount", "residualTransfers", "transferSavings", "debtBefore", "debtAfter", "debtReduction", "netDebt", "defaultRate", "clearingTimeSeconds", "graph"],
+  "properties": {
+    "circle": { "type": "string" },
+    "epoch": { "type": "integer", "minimum": 0 },
+    "phase": { "$ref": "common.json#/definitions/epochPhase" },
+    "unit": { "$ref": "common.json#/definitions/unit" },
+    "decimals": { "$ref": "common.json#/definitions/decimals" },
+    "totalVoucherValue": { "$ref": "common.json#/definitions/amount" },
+    "cleared": { "oneOf": [{ "$ref": "common.json#/definitions/amount" }, { "type": "null" }] },
+    "clearedRatio": { "$ref": "common.json#/definitions/ratio" },
+    "voucherCount": { "type": "integer", "minimum": 0 },
+    "residualTransfers": { "type": ["integer", "null"] },
+    "transferSavings": { "type": ["number", "null"] },
+    "debtBefore": { "$ref": "common.json#/definitions/amount" },
+    "debtAfter": { "oneOf": [{ "$ref": "common.json#/definitions/amount" }, { "type": "null" }] },
+    "debtReduction": { "$ref": "common.json#/definitions/ratio" },
+    "netDebt": { "oneOf": [{ "$ref": "common.json#/definitions/amount" }, { "type": "null" }] },
+    "defaultRate": { "type": ["number", "null"] },
+    "clearingTimeSeconds": { "type": ["number", "null"] },
+    "graph": {
+      "type": "object",
+      "required": ["participants", "edges", "density"],
+      "properties": {
+        "participants": { "type": "integer", "minimum": 0 },
+        "edges": { "type": "integer", "minimum": 0 },
+        "density": { "$ref": "common.json#/definitions/ratio" }
+      }
+    }
+  }
+}

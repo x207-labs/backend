@@ -1,0 +1,20 @@
+{
+  "circle": "agents-main",
+  "unit": "credit",
+  "decimals": 6,
+  "items": [
+    {
+      "epoch": 42, "phase": "payment_window",
+      "cutoffAt": "2026-11-09T11:19:56Z", "closedAt": "2026-11-09T11:19:56Z", "proposalDeadline": "2026-11-09T11:29:56Z",
+      "committedAt": "2026-11-09T11:30:00Z", "paymentDeadline": "2026-11-09T12:00:00Z", "finalizedAt": null,
+      "edgeCount": 14, "totalObligation": "2563380000", "cleared": "1820000000"
+    },
+    {
+      "epoch": 43, "phase": "open",
+      "cutoffAt": "2026-11-09T12:19:56Z", "closedAt": null, "proposalDeadline": null,
+      "committedAt": null, "paymentDeadline": null, "finalizedAt": null,
+      "edgeCount": null, "totalObligation": null, "cleared": "0"
+    }
+  ],
+  "nextCursor": null
+}

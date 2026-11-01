@@ -1,0 +1,32 @@
+{
+  "$id": "obligations.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GET /x207/circles/{circle}/epochs/{n}/obligations",
+  "type": "object",
+  "required": ["circle", "epoch", "phase", "stage", "unit", "decimals", "edgeCount", "totalObligation", "edges"],
+  "properties": {
+    "circle": { "type": "string" },
+    "epoch": { "type": "integer", "minimum": 0 },
+    "phase": { "$ref": "common.json#/definitions/epochPhase" },
+    "stage": { "enum": ["cutoff", "live", "cleared"] },
+    "unit": { "$ref": "common.json#/definitions/unit" },
+    "decimals": { "$ref": "common.json#/definitions/decimals" },
+    "edgeCount": { "type": "integer", "minimum": 0 },
+    "totalObligation": { "$ref": "common.json#/definitions/amount" },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["debtor", "creditor", "amount", "seq", "cleared", "remaining"],
+        "properties": {
+          "debtor": { "$ref": "common.json#/definitions/account" },
+          "creditor": { "$ref": "common.json#/definitions/account" },
+          "amount": { "$ref": "common.json#/definitions/amount" },
+          "seq": { "type": "integer", "minimum": 0 },
+          "cleared": { "oneOf": [{ "$ref": "common.json#/definitions/amount" }, { "type": "null" }], "description": "null sampai commit_epoch" },
+          "remaining": { "oneOf": [{ "$ref": "common.json#/definitions/amount" }, { "type": "null" }] }
+        }
+      }
+    }
+  }
+}

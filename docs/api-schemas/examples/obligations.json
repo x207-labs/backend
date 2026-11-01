@@ -1,0 +1,16 @@
+{
+  "circle": "agents-main",
+  "epoch": 42,
+  "phase": "payment_window",
+  "stage": "cutoff",
+  "unit": "credit",
+  "decimals": 6,
+  "edgeCount": 14,
+  "totalObligation": "2563380000",
+  "edges": [
+    { "debtor": "translator.x207-circle.near", "creditor": "summarizer.x207-circle.near",
+      "amount": "2740000", "seq": 137, "cleared": "2740000", "remaining": "0" },
+    { "debtor": "scraper.x207-circle.near", "creditor": "gpu.x207-circle.near",
+      "amount": "410000000", "seq": 96, "cleared": "375000000", "remaining": "35000000" }
+  ]
+}

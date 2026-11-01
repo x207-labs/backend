@@ -1,0 +1,19 @@
+{
+  "$id": "job.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GET /x207/settlement/jobs/{jobId}",
+  "type": "object",
+  "required": ["jobId", "kind", "status", "oneClickStatus", "account", "epoch", "depositAddress", "amountOut", "intentHash", "updatedAt"],
+  "properties": {
+    "jobId": { "type": "string" },
+    "kind": { "enum": ["deposit_stake", "deposit_settle", "withdraw"] },
+    "status": { "enum": ["quoted", "awaiting_signature", "waiting_deposit", "processing", "ready_withdraw", "completed", "failed", "expired", "refunded"] },
+    "oneClickStatus": { "type": ["string", "null"] },
+    "account": { "$ref": "common.json#/definitions/account" },
+    "epoch": { "type": ["integer", "null"] },
+    "depositAddress": { "type": ["string", "null"] },
+    "amountOut": { "oneOf": [{ "$ref": "common.json#/definitions/amount" }, { "type": "null" }] },
+    "intentHash": { "type": ["string", "null"] },
+    "updatedAt": { "$ref": "common.json#/definitions/isoTime" }
+  }
+}

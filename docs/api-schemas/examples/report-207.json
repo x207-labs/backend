@@ -1,0 +1,23 @@
+{
+  "circle": "agents-main",
+  "network": "x207:agents-main",
+  "epoch": 42,
+  "phase": "payment_window",
+  "committed": true,
+  "finalized": false,
+  "unit": "credit",
+  "decimals": 6,
+  "totalObligation": "2563380000",
+  "cleared": "1820000000",
+  "clearedRatio": 0.71,
+  "committedAt": "2026-11-09T11:30:00Z",
+  "paymentDeadline": "2026-11-09T12:00:00Z",
+  "members": [
+    { "account": "translator.x207-circle.near", "status": 200, "net": "0", "cleared": "310000000", "settlement": null, "haircut": "0" },
+    { "account": "summarizer.x207-circle.near", "status": 200, "net": "0", "cleared": "402740000", "settlement": null, "haircut": "0" },
+    { "account": "image.x207-circle.near", "status": 200, "net": "0", "cleared": "288000000", "settlement": null, "haircut": "0" },
+    { "account": "scraper.x207-circle.near", "status": 402, "net": "-35000000", "cleared": "296260000", "settlement": "due", "amount": "35000000", "due": "2026-11-09T12:00:00Z", "haircut": "0" },
+    { "account": "cleaner.x207-circle.near", "status": 402, "net": "-10000000", "cleared": "148000000", "settlement": "due", "amount": "10000000", "due": "2026-11-09T12:00:00Z", "haircut": "0" },
+    { "account": "gpu.x207-circle.near", "status": 202, "net": "+45000000", "cleared": "375000000", "settlement": "claimable", "amount": "45000000", "claimable": false, "haircut": "0" }
+  ]
+}

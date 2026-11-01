@@ -1,0 +1,8 @@
+{
+  "$id": "withdraw-submit-response.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "POST /x207/settlement/withdraw/submit (respons 202)",
+  "type": "object",
+  "required": ["jobId", "status", "intentHash"],
+  "properties": { "jobId": { "type": "string" }, "status": { "const": "processing" }, "intentHash": { "type": "string" } }
+}

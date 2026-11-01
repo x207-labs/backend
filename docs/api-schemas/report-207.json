@@ -1,0 +1,42 @@
+{
+  "$id": "report-207.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GET /x207/circles/{circle}/epochs/{n} (laporan 207 Multi-Status)",
+  "description": "HTTP 207 bila epoch sudah commit_epoch; 200 dengan committed=false dan members=[] bila belum.",
+  "type": "object",
+  "required": ["circle", "network", "epoch", "phase", "committed", "finalized", "unit", "decimals", "totalObligation", "cleared", "clearedRatio", "members"],
+  "properties": {
+    "circle": { "type": "string" },
+    "network": { "type": "string", "pattern": "^x207:" },
+    "epoch": { "type": "integer", "minimum": 0 },
+    "phase": { "$ref": "common.json#/definitions/epochPhase" },
+    "committed": { "type": "boolean" },
+    "finalized": { "type": "boolean" },
+    "unit": { "$ref": "common.json#/definitions/unit" },
+    "decimals": { "$ref": "common.json#/definitions/decimals" },
+    "totalObligation": { "$ref": "common.json#/definitions/amount" },
+    "cleared": { "$ref": "common.json#/definitions/amount" },
+    "clearedRatio": { "$ref": "common.json#/definitions/ratio" },
+    "committedAt": { "oneOf": [{ "$ref": "common.json#/definitions/isoTime" }, { "type": "null" }] },
+    "paymentDeadline": { "oneOf": [{ "$ref": "common.json#/definitions/isoTime" }, { "type": "null" }] },
+    "members": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["account", "status", "net", "settlement", "haircut"],
+        "properties": {
+          "account": { "$ref": "common.json#/definitions/account" },
+          "status": { "enum": [200, 402, 202, 409] },
+          "net": { "$ref": "common.json#/definitions/signedAmount" },
+          "cleared": { "$ref": "common.json#/definitions/amount" },
+          "settlement": { "enum": [null, "due", "paid", "claimable", "claimed", "defaulted"] },
+          "amount": { "$ref": "common.json#/definitions/amount" },
+          "due": { "$ref": "common.json#/definitions/isoTime" },
+          "claimable": { "type": "boolean" },
+          "stakeSlashed": { "$ref": "common.json#/definitions/amount" },
+          "haircut": { "$ref": "common.json#/definitions/amount" }
+        }
+      }
+    }
+  }
+}

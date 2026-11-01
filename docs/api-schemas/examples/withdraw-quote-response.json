@@ -1,0 +1,17 @@
+{
+  "jobId": "a83e2c41-0b5d-4f0e-8c21-6d9f7e5a1b22",
+  "status": "quoted",
+  "dry": true,
+  "originAsset": "nep141:usdt.tether-token.near",
+  "destinationAsset": "nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near",
+  "depositType": "INTENTS",
+  "recipientType": "DESTINATION_CHAIN",
+  "amountIn": "45000000",
+  "amountOut": "44934600",
+  "withdrawFee": "2400",
+  "variableFeeBpsEstimate": 14,
+  "totalFeePct": 0.1453,
+  "threshold": { "chain": "base", "minAmount": "250000", "ok": true },
+  "timeEstimateSeconds": 12,
+  "warnings": []
+}

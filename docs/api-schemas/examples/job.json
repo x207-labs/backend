@@ -1,0 +1,12 @@
+{
+  "jobId": "5d0f8a52-7c1e-4a8e-9a77-1f3c2b8d9e10",
+  "kind": "deposit_settle",
+  "status": "ready_withdraw",
+  "oneClickStatus": "SUCCESS",
+  "account": "scraper.x207-circle.near",
+  "epoch": 42,
+  "depositAddress": "0x7a1c…e93f",
+  "amountOut": "35000000",
+  "intentHash": null,
+  "updatedAt": "2026-11-09T11:41:20Z"
+}

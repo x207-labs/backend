@@ -1,0 +1,29 @@
+{
+  "$id": "member-limits.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GET /x207/circles/{circle}/members/{account}/limits",
+  "description": "Spec API Backend tidak memberi contoh; item = kolom query Spec Skema D9 6.1 dalam camelCase.",
+  "type": "object",
+  "required": ["circle", "unit", "decimals", "items", "nextCursor"],
+  "properties": {
+    "circle": { "type": "string" },
+    "unit": { "$ref": "common.json#/definitions/unit" },
+    "decimals": { "$ref": "common.json#/definitions/decimals" },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["epoch", "oldLimit", "newLimit", "status", "reason", "blockHeight"],
+        "properties": {
+          "epoch": { "type": ["integer", "null"] },
+          "oldLimit": { "$ref": "common.json#/definitions/amount" },
+          "newLimit": { "$ref": "common.json#/definitions/amount" },
+          "status": { "type": "string" },
+          "reason": { "enum": ["stake", "finalize", "default"] },
+          "blockHeight": { "type": "integer" }
+        }
+      }
+    },
+    "nextCursor": { "$ref": "common.json#/definitions/nextCursor" }
+  }
+}

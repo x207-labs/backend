@@ -1,0 +1,36 @@
+{
+  "$id": "epochs-list.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "GET /x207/circles/{circle}/epochs",
+  "description": "Spec API Backend hanya mewajibkan epoch, phase, proposalDeadline (K-41); field lain = kolom tabel epochs D9 dalam camelCase.",
+  "type": "object",
+  "required": ["circle", "unit", "decimals", "items", "nextCursor"],
+  "additionalProperties": false,
+  "properties": {
+    "circle": { "type": "string" },
+    "unit": { "$ref": "common.json#/definitions/unit" },
+    "decimals": { "$ref": "common.json#/definitions/decimals" },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["epoch", "phase", "cutoffAt", "closedAt", "proposalDeadline", "committedAt", "paymentDeadline", "finalizedAt", "edgeCount", "totalObligation", "cleared"],
+        "additionalProperties": false,
+        "properties": {
+          "epoch": { "type": "integer", "minimum": 0 },
+          "phase": { "$ref": "common.json#/definitions/epochPhase" },
+          "cutoffAt": { "oneOf": [{ "$ref": "common.json#/definitions/isoTime" }, { "type": "null" }] },
+          "closedAt": { "oneOf": [{ "$ref": "common.json#/definitions/isoTime" }, { "type": "null" }] },
+          "proposalDeadline": { "oneOf": [{ "$ref": "common.json#/definitions/isoTime" }, { "type": "null" }] },
+          "committedAt": { "oneOf": [{ "$ref": "common.json#/definitions/isoTime" }, { "type": "null" }] },
+          "paymentDeadline": { "oneOf": [{ "$ref": "common.json#/definitions/isoTime" }, { "type": "null" }] },
+          "finalizedAt": { "oneOf": [{ "$ref": "common.json#/definitions/isoTime" }, { "type": "null" }] },
+          "edgeCount": { "type": ["integer", "null"] },
+          "totalObligation": { "oneOf": [{ "$ref": "common.json#/definitions/amount" }, { "type": "null" }] },
+          "cleared": { "$ref": "common.json#/definitions/amount" }
+        }
+      }
+    },
+    "nextCursor": { "$ref": "common.json#/definitions/nextCursor" }
+  }
+}

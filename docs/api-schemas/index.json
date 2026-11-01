@@ -1,0 +1,27 @@
+{
+  "description": "Peta endpoint Spec API Backend 2.1 dan 2.2 ke skema JSON dan contoh. Skema draft-07; $ref relatif ke common.json. Item dengan schema null menunggu format dari item backlog yang tertera.",
+  "endpoints": [
+    { "method": "GET", "path": "/x207/health", "response": "health.json", "item": "BE-006" },
+    { "method": "GET", "path": "/x207/circles/{circle}/members", "response": "members-list.json", "item": "BE-014" },
+    { "method": "GET", "path": "/x207/circles/{circle}/members/{account}", "response": "member.json", "item": "BE-014" },
+    { "method": "GET", "path": "/x207/circles/{circle}/members/{account}/limits", "response": "member-limits.json", "item": "BE-011" },
+    { "method": "GET", "path": "/x207/circles/{circle}/members/{account}/settlements", "response": "settlements.json", "item": "BE-016" },
+    { "method": "GET", "path": "/x207/circles/{circle}/epochs", "response": "epochs-list.json", "item": "BE-014" },
+    { "method": "GET", "path": "/x207/circles/{circle}/epochs/{n}", "response": "report-207.json", "item": "BE-020" },
+    { "method": "GET", "path": "/x207/circles/{circle}/epochs/{n}/obligations", "response": "obligations.json", "item": "BE-015" },
+    { "method": "GET", "path": "/x207/circles/{circle}/epochs/{n}/settlements", "response": "settlements.json", "item": "BE-016" },
+    { "method": "GET", "path": "/x207/circles/{circle}/epochs/{n}/metrics", "response": "metrics.json", "item": "BE-018" },
+    { "method": "GET", "path": "/x207/circles/{circle}/params", "response": "params.json", "item": "BE-017" },
+    { "method": "GET", "path": "/x207/circles/{circle}/params/history", "response": "params-history.json", "item": "BE-017" },
+    { "method": "GET", "path": "/x207/circles/{circle}/proposals", "response": null, "item": "BE-023", "pending": "format args set_params terbuka (Spec API 9)" },
+    { "method": "POST", "path": "/x207/circles/{circle}/intents", "response": null, "item": "BE-035", "pending": "menunggu SD-047" },
+    { "method": "GET", "path": "/x207/circles/{circle}/intents", "response": null, "item": "BE-035", "pending": "menunggu SD-047" },
+    { "method": "GET", "path": "/x207/circles/{circle}/bundles", "response": null, "item": "BE-036", "pending": "menunggu SD-047" },
+    { "method": "POST", "path": "/x207/settlement/deposit/quote", "request": "deposit-quote-request.json", "response": "deposit-quote-response.json", "item": "BE-027" },
+    { "method": "GET", "path": "/x207/settlement/jobs/{jobId}", "response": "job.json", "item": "BE-028" },
+    { "method": "POST", "path": "/x207/settlement/withdraw/quote", "request": "withdraw-quote-request.json", "response": "withdraw-quote-response.json", "item": "BE-030" },
+    { "method": "POST", "path": "/x207/settlement/withdraw/intent", "request": "withdraw-intent-request.json", "response": "withdraw-intent-response.json", "item": "BE-030" },
+    { "method": "POST", "path": "/x207/settlement/withdraw/submit", "request": "withdraw-submit-request.json", "response": "withdraw-submit-response.json", "item": "BE-030" }
+  ],
+  "error": "error.json"
+}

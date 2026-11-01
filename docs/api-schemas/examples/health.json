@@ -1,0 +1,7 @@
+{
+  "status": "ok",
+  "cursors": [
+    { "name": "x207-circle.near", "lastBlockHeight": 171234567, "headBlockHeight": 171234570,
+      "lagBlocks": 3, "rpcEndpoint": "https://rpc.mainnet.fastnear.com", "updatedAt": "2026-11-09T11:30:02Z" }
+  ]
+}

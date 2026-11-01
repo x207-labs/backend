@@ -1,0 +1,11 @@
+{
+  "unit": "credit",
+  "decimals": 6,
+  "items": [
+    { "epoch": 42, "phase": "payment_window", "role": "creditor", "net": "+45000000", "amount": "45000000",
+      "status": "claimable", "claimableNow": false, "destination": null, "txHash": null },
+    { "epoch": 41, "phase": "finalized", "role": "creditor", "net": "+12000000", "amount": "12000000",
+      "status": "claimed", "claimableNow": false, "destination": "intents", "txHash": "9xQe…" }
+  ],
+  "nextCursor": null
+}
