@@ -28,3 +28,9 @@ Two things the run showed about `RpcBlockSource`:
   receipt runs in the block that includes the transaction, and `getBlock(H)` scans transactions only up to block
   `H - 1`. The test sends permissionless calls from a separate keeper account for that reason. Real traffic never
   has the contract sign, so this is a limit and not a fix to make now.
+
+## 207 report (BE-020, TC-BE-020-15)
+After the flow, `GET /x207/circles/agents-main/epochs/1` answers `207` with `phase` `finalized`. For each member
+`net` and `status` equal the contract's `net_position(1, account)`: a `null` position gives `200` and `"0"`, a
+defaulted debtor `409` with `stakeSlashed`, a creditor that claimed `200` with `settlement` `claimed`.
+`totalObligation` and `cleared` equal the sums of the contract's pair entries.
