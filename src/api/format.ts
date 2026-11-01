@@ -21,3 +21,8 @@ export function isoFromNs(ns: bigint | null | undefined): string | null {
   const iso = new Date(Number(ns / 1_000_000n)).toISOString();
   return iso.replace(/\.\d{3}Z$/, "Z");
 }
+
+/** Waktu job (unix ms) ke ISO 8601 UTC tanpa pecahan detik. */
+export function isoFromMs(ms: number): string {
+  return new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
+}

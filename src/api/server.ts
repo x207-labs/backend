@@ -69,7 +69,7 @@ export function createApiServer(options: ApiServerOptions): Server {
     }
   }
 
-  function handle(req: IncomingMessage): { result: RouteResult; indexedBlock?: string } {
+  async function handle(req: IncomingMessage): Promise<{ result: RouteResult; indexedBlock?: string }> {
     checkRate(req.socket.remoteAddress ?? "unknown");
     const url = new URL(req.url ?? "/", "http://localhost");
     const match = matchRoute(routes, req.method ?? "GET", url.pathname);
@@ -91,7 +91,7 @@ export function createApiServer(options: ApiServerOptions): Server {
       indexedBlock = cursor.last_block_height.toString();
     }
     try {
-      const result = match.route.handler({ db, params: match.params, query: url.searchParams, now, circle });
+      const result = await match.route.handler({ db, params: match.params, query: url.searchParams, now, circle });
       return indexedBlock === undefined ? { result } : { result, indexedBlock };
     } catch (err) {
       if (err instanceof ApiError && indexedBlock !== undefined) err.headers["X-X207-Indexed-Block"] = indexedBlock;
@@ -99,7 +99,7 @@ export function createApiServer(options: ApiServerOptions): Server {
     }
   }
 
-  return createServer((req, res) => {
+  return createServer(async (req, res) => {
     if (req.method === "OPTIONS") {
       res.writeHead(204, {
         "Access-Control-Allow-Origin": "*",
@@ -109,7 +109,7 @@ export function createApiServer(options: ApiServerOptions): Server {
       return;
     }
     try {
-      const { result, indexedBlock } = handle(req);
+      const { result, indexedBlock } = await handle(req);
       send(res, result, indexedBlock === undefined ? {} : { "X-X207-Indexed-Block": indexedBlock });
     } catch (err) {
       if (err instanceof ApiError) {

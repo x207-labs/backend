@@ -28,7 +28,7 @@ export interface Route {
   pattern: string;
   /** Route di bawah `/x207/circles/{circle}`: lingkaran dan kesiapan D9 diperiksa sebelum handler. */
   circleScoped: boolean;
-  handler: (ctx: RouteContext) => RouteResult;
+  handler: (ctx: RouteContext) => RouteResult | Promise<RouteResult>;
 }
 
 export interface Match {

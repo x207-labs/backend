@@ -4,6 +4,8 @@ export type ApiErrorCode =
   | "circle_not_found"
   | "member_not_found"
   | "epoch_not_found"
+  | "job_not_found"
+  | "one_click_error"
   | "not_found"
   | "rate_limited"
   | "indexer_unavailable";
