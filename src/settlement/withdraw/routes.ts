@@ -7,6 +7,7 @@ import { SettlementError } from "../errors.js";
 import { getJob, insertJob, setJobState } from "../jobs.js";
 import { USDT_NEAR } from "../mock-transport.js";
 import type { OneClickClient } from "../one-click.js";
+import type { AccountExists } from "../deposit/quote.js";
 import { evaluateWithdrawThreshold } from "./threshold.js";
 
 const U128_MAX = (1n << 128n) - 1n;
@@ -14,6 +15,8 @@ const VARIABLE_FEE_BPS_ESTIMATE = 14;
 
 export interface WithdrawOptions {
   client: OneClickClient;
+  /** Cek `refundTo` sebelum quote: 1Click menjawab error internal untuk akun NEAR yang tidak ada (Spec API Backend 6.1). */
+  accountExists: AccountExists;
   /** Dipakai untuk ID job; default `randomUUID`. */
   newJobId?: () => string;
 }
@@ -48,7 +51,7 @@ function conflict(jobId: string, status: string, expected: string): ApiError {
  * Worker tidak menandatangani: intent ditandatangani wallet kreditor (spec 2.2).
  */
 export function withdrawRoutes(options: WithdrawOptions): Route[] {
-  const { client } = options;
+  const { client, accountExists } = options;
   const newJobId = options.newJobId ?? randomUUID;
 
   /** Mode `dry` bicara ke 1Click sungguhan: boleh quote, tetapi tidak boleh mengirim intent bertanda tangan. */
@@ -82,6 +85,10 @@ export function withdrawRoutes(options: WithdrawOptions): Route[] {
         }
         if (!row(db, "SELECT 1 AS ok FROM members WHERE circle_id = ? AND account_id = ?", circle, account)) {
           throw new ApiError(404, "member_not_found", `Anggota ${account} tidak ada`, { circle, account });
+        }
+
+        if (!(await accountExists(refundTo))) {
+          throw new ApiError(422, "refund_account_not_found", `Akun refundTo ${refundTo} tidak ada`, { refundTo });
         }
 
         const quote = await oneClick(() =>

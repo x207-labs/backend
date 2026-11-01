@@ -138,4 +138,13 @@ describe("BE-030 / BE-031 POST /x207/settlement/withdraw/*", () => {
     expect((await post("quote", quoteBody({ amount: "0" }))).res.status).toBe(400);
   });
 });
+
+  it("TC-BE-030-12 refundTo tidak ada", async () => {
+    const t = new Recording();
+    const { post, db } = await server({ transport: t, accountExists: async () => false });
+    const { res, json } = await post("quote", quoteBody({ refundTo: "ghost.near" }));
+    expect([res.status, json.error.code]).toEqual([422, "refund_account_not_found"]);
+    expect(t.requests).not.toContain("quote");
+    expect(db.prepare("SELECT COUNT(*) AS n FROM settlement_jobs").get()).toEqual({ n: 0 });
+  });
 });

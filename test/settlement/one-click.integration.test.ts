@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { settlementConfigFromEnv } from "../../src/settlement/config.js";
 import { USDC_BASE, USDT_NEAR } from "../../src/settlement/mock-transport.js";
 import { OneClickClient } from "../../src/settlement/one-click.js";
+import { withdrawRoutes } from "../../src/settlement/withdraw/routes.js";
 import { depositQuoteRoutes } from "../../src/settlement/deposit/quote.js";
 import { fxServer } from "../helpers/fx-api.js";
 import { acct } from "../helpers/fx-log42.js";
@@ -53,6 +54,22 @@ describe.skipIf(!run)("BE-025 smoke 1Click dry (integration)", () => {
       expect(json).toMatchObject({ status: "waiting_deposit", dry: true, amountOut: "50000000", recipientType: "INTENTS" });
       // quote dry tidak membawa depositAddress (lihat TC-BE-025-11); alamat hanya ada di mode live
       expect(json.depositAddress).toBeNull();
+    } finally {
+      await s.close();
+    }
+  });
+
+  it("TC-BE-030-13 quote withdraw dry nyata, 1 USDT ke USDC Base", async () => {
+    const s = await fxServer(8, [], undefined, withdrawRoutes({ client: client(), accountExists: async () => true }));
+    try {
+      const res = await fetch(`${s.srv.url}/x207/settlement/withdraw/quote`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ circle: "agents-main", account: acct("gpu"), destinationAsset: USDC_BASE, amount: "1000000", recipient: EVM_REFUND, refundTo: acct("gpu"), dry: true }),
+      });
+      const json = (await res.json()) as Record<string, unknown>;
+      expect(res.status, JSON.stringify(json)).toBe(201);
+      expect(json).toMatchObject({ status: "quoted", dry: true, withdrawFee: "2400", recipientType: "DESTINATION_CHAIN" });
     } finally {
       await s.close();
     }

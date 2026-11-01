@@ -25,7 +25,7 @@ export class Recording extends MockOneClickTransport {
 }
 
 
-export async function withdrawServer(options: { transport?: Recording; mode?: "mock" | "dry" | "live" } = {}): Promise<{
+export async function withdrawServer(options: { transport?: Recording; mode?: "mock" | "dry" | "live"; accountExists?: (a: string) => Promise<boolean> } = {}): Promise<{
   post: (path: string, body: unknown) => Promise<{ res: Response; json: Record<string, any> }>;
   db: Database.Database;
   transport: Recording;
@@ -38,7 +38,7 @@ export async function withdrawServer(options: { transport?: Recording; mode?: "m
     now: () => NOW,
   });
   let n = 0;
-  const s = await fxServer(8, [], () => NOW, withdrawRoutes({ client, newJobId: () => (n++ === 0 ? JOB : `job-${n}`) }));
+  const s = await fxServer(8, [], () => NOW, withdrawRoutes({ client, accountExists: options.accountExists ?? (async () => true), newJobId: () => (n++ === 0 ? JOB : `job-${n}`) }));
   const post = async (path: string, body: unknown) => {
     const res = await fetch(`${s.srv.url}/x207/settlement/withdraw/${path}`, {
       method: "POST",
