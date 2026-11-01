@@ -99,4 +99,19 @@ describe("BE-018 metrik epoch", () => {
     expect(ratio4(1n, 3n)).toBe(0.3333);
     expect(ratio4(1n, 0n)).toBeNull();
   });
+
+  it("BE-019 defaultRate: null sebelum finalized, nilai default ÷ total residual sesudahnya", async () => {
+    const before = await get("/epochs/42/metrics", 9);
+    expect(before.body.defaultRate).toBeNull();
+    const after = await get("/epochs/42/metrics", 10);
+    expect(after.body.defaultRate).toBe(0.7778);
+  });
+
+  it("BE-019 defaultRate 0 untuk epoch tanpa default", async () => {
+    const s = await fx(8);
+    s.db.prepare("UPDATE epochs SET phase = 'finalized' WHERE epoch = 42").run();
+    s.db.prepare("UPDATE settlements SET status = 'paid' WHERE status = 'due'").run();
+    const body = await (await fetch(`${s.srv.url}${BASE}/epochs/42/metrics`)).json();
+    expect(body.defaultRate).toBe(0);
+  });
 });

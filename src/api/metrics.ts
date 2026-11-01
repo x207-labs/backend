@@ -59,13 +59,14 @@ export function computeEpochMetrics(db: Database.Database, circleId: string, epo
     };
   }
 
-  const s = row<{ transfers: bigint; residual: bigint }>(
+  const s = row<{ transfers: bigint; residual: bigint; defaulted: bigint }>(
     db,
     `SELECT COALESCE(SUM(CASE WHEN net <> 0 THEN 1 ELSE 0 END), 0) AS transfers,
-            COALESCE(SUM(CASE WHEN role = 'debtor' THEN amount ELSE 0 END), 0) AS residual
+            COALESCE(SUM(CASE WHEN role = 'debtor' THEN amount ELSE 0 END), 0) AS residual,
+            COALESCE(SUM(CASE WHEN status = 'defaulted' THEN amount ELSE 0 END), 0) AS defaulted
      FROM settlements WHERE circle_id = ? AND epoch = ?`,
     circleId, epoch.epoch,
-  ) ?? { transfers: 0n, residual: 0n };
+  ) ?? { transfers: 0n, residual: 0n, defaulted: 0n };
   const reduction = ratio4(o.after, o.total);
   const savings = s.transfers === 0n ? null : round4(Number(o.vouchers) / Number(s.transfers));
   const seconds =
@@ -81,7 +82,8 @@ export function computeEpochMetrics(db: Database.Database, circleId: string, epo
     debtAfter: amount(o.after),
     debtReduction: reduction === null ? null : round4(1 - reduction),
     netDebt: amount(s.residual),
-    defaultRate: null,
+    // Nilai default ÷ total residual; baru bermakna setelah `finalize_epoch` (BE-019).
+    defaultRate: epoch.phase === "finalized" ? ratio4(s.defaulted, s.residual) : null,
     clearingTimeSeconds: seconds,
   };
 }
