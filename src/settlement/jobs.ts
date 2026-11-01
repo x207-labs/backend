@@ -83,3 +83,14 @@ export function updateJobStatus(
     "UPDATE settlement_jobs SET status = @status, one_click_status = @one_click_status, updated_at = @updated_at WHERE job_id = @job_id",
   ).run({ ...patch, job_id: jobId });
 }
+
+/** Pindahkan job ke status baru; `intentHash` hanya diisi bila diberikan. */
+export function setJobState(
+  db: Database.Database,
+  jobId: string,
+  patch: { status: JobStatus; intent_hash?: string; updated_at: number },
+): void {
+  db.prepare(
+    "UPDATE settlement_jobs SET status = @status, intent_hash = COALESCE(@intent_hash, intent_hash), updated_at = @updated_at WHERE job_id = @job_id",
+  ).run({ intent_hash: null, ...patch, job_id: jobId });
+}

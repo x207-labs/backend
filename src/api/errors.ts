@@ -11,6 +11,9 @@ export type ApiErrorCode =
   | "asset_not_supported"
   | "live_mode_disabled"
   | "one_click_error"
+  | "job_state_conflict"
+  | "below_withdraw_threshold"
+  | "high_fee_requires_ack"
   | "not_found"
   | "rate_limited"
   | "indexer_unavailable";
