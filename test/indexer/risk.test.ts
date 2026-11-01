@@ -41,6 +41,11 @@ describe("BE-011 member_defaulted, limits_updated, epoch_finalized", () => {
       });
     });
 
+    it("TC-BE-010-02 bayar dari status bukan due", async () => {
+      await ingest([...upTo(8), block(1008, { logs: [defaultedLog()] }), block(1009, { logs: [paidLog().replaceAll(acct("cleaner"), acct("scraper"))] })]);
+      expect(one("SELECT status FROM settlements WHERE account_id = ?", acct("scraper"))).toEqual({ status: "defaulted" });
+    });
+
     it("TC-BE-011-02 default dari status bukan due", async () => {
       await ingest([...upTo(9), block(1009, { logs: [defaultedLog("cleaner")] })]);
       expect(one("SELECT status FROM settlements WHERE account_id = ?", acct("cleaner"))).toEqual({ status: "paid" });

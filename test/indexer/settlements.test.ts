@@ -35,11 +35,6 @@ describe("BE-010 residual_paid, residual_claimed, residual_claim_failed", () => 
       expect(one("SELECT outstanding_debt, settled_history FROM members WHERE account_id = ?", acct("cleaner"))).toEqual({ outstanding_debt: 0n, settled_history: 10_000_000n });
     });
 
-    it("TC-BE-010-02 bayar dari status bukan due", async () => {
-      await ingest([...upTo(8), block(1008, { logs: [defaultedLog()] }), block(1009, { logs: [paidLog().replaceAll(acct("cleaner"), acct("scraper"))] })]);
-      expect(one("SELECT status FROM settlements WHERE account_id = ?", acct("scraper"))).toEqual({ status: "defaulted" });
-    });
-
     it("TC-BE-010-03 klaim sukses", async () => {
       await ingest(fxLog42());
       expect(one("SELECT status, destination FROM settlements WHERE account_id = ?", acct("gpu"))).toEqual({ status: "claimed", destination: "intents" });
