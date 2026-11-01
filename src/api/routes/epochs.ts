@@ -3,7 +3,7 @@ import { invalidRequest } from "../errors.js";
 import { amount, DECIMALS, isoFromNs, rows, UNIT } from "../format.js";
 import type { Route } from "../router.js";
 
-interface EpochRow {
+export interface EpochRow {
   epoch: bigint;
   phase: "open" | "clearing" | "payment_window" | "finalized";
   cutoff_at_ns: bigint | null;
@@ -21,7 +21,7 @@ interface EpochRow {
  * D9 menyimpan empat fase. `cutoff` (open lewat `cutoff_at`) dan `commit` (clearing lewat
  * `proposal_deadline`) diturunkan dari waktu saat dibaca (Spec Skema D9 3.4, K-41).
  */
-function derivedPhase(e: EpochRow, nowNs: bigint): string {
+export function derivedPhase(e: EpochRow, nowNs: bigint): string {
   if (e.phase === "open" && e.cutoff_at_ns !== null && nowNs >= e.cutoff_at_ns) return "cutoff";
   if (e.phase === "clearing" && e.proposal_deadline_ns !== null && nowNs >= e.proposal_deadline_ns) return "commit";
   return e.phase;
