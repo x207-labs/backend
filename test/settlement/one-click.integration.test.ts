@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { settlementConfigFromEnv } from "../../src/settlement/config.js";
 import { USDC_BASE, USDT_NEAR } from "../../src/settlement/mock-transport.js";
 import { OneClickClient } from "../../src/settlement/one-click.js";
+import { depositQuoteRoutes } from "../../src/settlement/deposit/quote.js";
+import { fxServer } from "../helpers/fx-api.js";
+import { acct } from "../helpers/fx-log42.js";
 
 // Opt-in: jaringan nyata, selalu dry:true, tanpa dana. Jalankan: X207_INTEGRATION=1 npx vitest run test/settlement/one-click.integration.test.ts
 const run = process.env.X207_INTEGRATION === "1";
@@ -35,5 +38,23 @@ describe.skipIf(!run)("BE-025 smoke 1Click dry (integration)", () => {
     expect(q.quote.amountOut).toBe("1000000");
     expect(q.quote.depositAddress).toBeUndefined();
     expect(BigInt(q.quote.amountIn)).toBeGreaterThan(0n);
+  });
+
+  it("TC-BE-027-12 stake 50 USD dari USDC Base lewat endpoint, dry nyata", async () => {
+    const s = await fxServer(8, [], undefined, depositQuoteRoutes({ client: client(), accountExists: async () => true }));
+    try {
+      const res = await fetch(`${s.srv.url}/x207/settlement/deposit/quote`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ purpose: "stake", circle: "agents-main", account: acct("scraper"), amount: "50000000", originAsset: USDC_BASE, refundType: "ORIGIN_CHAIN", refundTo: EVM_REFUND, dry: true }),
+      });
+      const json = (await res.json()) as Record<string, unknown>;
+      expect(res.status).toBe(201);
+      expect(json).toMatchObject({ status: "waiting_deposit", dry: true, amountOut: "50000000", recipientType: "INTENTS" });
+      // quote dry tidak membawa depositAddress (lihat TC-BE-025-11); alamat hanya ada di mode live
+      expect(json.depositAddress).toBeNull();
+    } finally {
+      await s.close();
+    }
   });
 });
