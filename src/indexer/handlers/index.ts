@@ -1,5 +1,6 @@
 import type { HandlerMap } from "./context.js";
 import { memberHandlers } from "./members.js";
+import { voucherHandlers } from "./vouchers.js";
 
 export type { Handler, HandlerContext, HandlerMap } from "./context.js";
 
@@ -9,4 +10,5 @@ export type { Handler, HandlerContext, HandlerMap } from "./context.js";
  */
 export const defaultHandlers: HandlerMap = {
   ...memberHandlers,
+  ...voucherHandlers,
 };
