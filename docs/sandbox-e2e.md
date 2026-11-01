@@ -34,3 +34,8 @@ After the flow, `GET /x207/circles/agents-main/epochs/1` answers `207` with `pha
 `net` and `status` equal the contract's `net_position(1, account)`: a `null` position gives `200` and `"0"`, a
 defaulted debtor `409` with `stakeSlashed`, a creditor that claimed `200` with `settlement` `claimed`.
 `totalObligation` and `cleared` equal the sums of the contract's pair entries.
+
+## Exit status (BE-039, TC-BE-039-12)
+The member that requested exit in epoch 1 and withdrew after `finalize_epoch` reads `status` `exited`,
+`exitRequestedEpoch` 1 and `stake` `"0"` from `GET …/members/{account}`, equal to the contract's `member` view.
+`stake`, `limit` and `status` of the other members equal the view as well.
