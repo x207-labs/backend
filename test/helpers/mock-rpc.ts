@@ -76,6 +76,6 @@ export class MockRpc {
         },
       };
     }
-    return { result: { author: "mock", chunks: [], header: { height, hash: `hash-${height}` } } };
+    return { result: { author: "mock", chunks: [], header: { height, hash: `hash-${height}`, timestamp_nanosec: String(height * 1_000_000_000) } } };
   }
 }

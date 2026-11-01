@@ -45,6 +45,8 @@ export class RpcBlockSource implements BlockSource {
   /** Tinggi blok eksekusi → log kontrak yang sudah ditemukan tetapi belum diambil. */
   readonly #found = new Map<number, BlockLog[]>();
   #scanned: number;
+  /** Header blok yang baru dibaca; `getBlock(H)` dan pemindaian blok H pada panggilan berikutnya memakainya bersama. */
+  readonly #headers = new Map<number, ChainBlock | null>();
 
   constructor(chain: ChainReader, contractId: string, startBlock: number) {
     this.#chain = chain;
@@ -62,7 +64,7 @@ export class RpcBlockSource implements BlockSource {
   }
 
   async getBlock(height: number): Promise<SourceBlock | null> {
-    const header = await this.#chain.block(height);
+    const header = await this.#header(height);
     // Pindai transaksi blok yang dilewati/ada sampai height − 1 agar outcome blok `height` sudah dikenal.
     for (let h = this.#scanned + 1; h < height; h++) await this.#scan(h);
     if (header === null) return null;
@@ -71,8 +73,16 @@ export class RpcBlockSource implements BlockSource {
     return { height: header.height, hash: header.hash, timestampNs: header.timestampNs, logs };
   }
 
-  async #scan(height: number): Promise<void> {
+  async #header(height: number): Promise<ChainBlock | null> {
+    if (this.#headers.has(height)) return this.#headers.get(height) ?? null;
     const block = await this.#chain.block(height);
+    this.#headers.set(height, block);
+    for (const key of this.#headers.keys()) if (key < height - 2) this.#headers.delete(key);
+    return block;
+  }
+
+  async #scan(height: number): Promise<void> {
+    const block = await this.#header(height);
     if (block) {
       for (const chunkHash of block.newChunkHashes) {
         for (const tx of await this.#chain.chunkTransactions(chunkHash)) await this.#collect(tx);
