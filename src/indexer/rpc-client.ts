@@ -107,6 +107,11 @@ export class FailoverRpcClient {
     });
   }
 
+  /** Operasi provider sembarang (mis. `chunk`, `tx`) dengan timeout dan failover yang sama. */
+  async use<T>(operation: (provider: JsonRpcProvider) => Promise<T>): Promise<T> {
+    return this.#withFailover((endpoint) => operation(endpoint.provider));
+  }
+
   async #readFinalBlock(endpoint: Endpoint): Promise<RpcBlock> {
     const block = await endpoint.provider.viewBlock({ finality: "final" });
     endpoint.finalHead = block.header.height;
