@@ -75,4 +75,21 @@ describe("BE-039 handler jalan keluar dan reaktivasi (ADR-29, ADR-30)", () => {
     expect(body.items.map((m: { account: string }) => m.account)).toEqual([acct("translator")]);
     expect(body.items[0]).toMatchObject({ status: "exited", stake: "0" });
   });
+
+  it("TC-BE-039-10 laporan 207 tetap memuat anggota yang meminta keluar bila punya posisi di epoch itu", async () => {
+    const { get } = await setup([exitRequested()]);
+    const { res, body } = await get("/epochs/42");
+    expect(res.status).toBe(207);
+    const translator = body.members.find((m: { account: string }) => m.account === acct("translator"));
+    expect(translator).toMatchObject({ status: 200, net: "0", settlement: null });
+  });
+
+  it("TC-BE-039-11 anggota exited tanpa posisi di epoch itu tidak muncul di laporan", async () => {
+    const { s, get } = await setup([exitRequested(), withdrawn()]);
+    // epoch 44: committed, hanya gpu yang punya posisi (translator tidak punya edge)
+    s.db.prepare("INSERT INTO epochs (circle_id, epoch, phase, committed_at_ns, payment_deadline_ns, total_obligation, cleared_total) VALUES ('agents-main', 44, 'payment_window', 1, 2, 0, 0)").run();
+    s.db.prepare("INSERT INTO settlements (circle_id, epoch, account_id, role, net, amount, status, updated_block) VALUES ('agents-main', 44, ?, 'creditor', 5, 5, 'claimable', 1)").run(acct("gpu"));
+    const { body } = await get("/epochs/44");
+    expect(body.members.map((m: { account: string }) => m.account)).toEqual([acct("gpu")]);
+  });
 });
