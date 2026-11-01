@@ -21,7 +21,9 @@ export function nearAccountExists(rpcUrl: string, fetchFn: typeof fetch = fetch)
       body: JSON.stringify({ jsonrpc: "2.0", id: "x207", method: "query", params: { request_type: "view_account", finality: "final", account_id: accountId } }),
       signal: AbortSignal.timeout(10_000),
     });
-    const body = (await response.json()) as { result?: { error?: string }; error?: unknown };
+    const body = (await response.json()) as { result?: { error?: string }; error?: { cause?: { name?: string } } };
+    // RPC mainnet saat ini menjawab akun yang tidak ada dengan error tingkat atas UNKNOWN_ACCOUNT, bukan `result.error`
+    if (body.error?.cause?.name === "UNKNOWN_ACCOUNT") return false;
     if (body.error !== undefined) throw new Error(`RPC view_account gagal: ${JSON.stringify(body.error)}`);
     const error = body.result?.error;
     if (error === undefined) return true;
