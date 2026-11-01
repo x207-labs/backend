@@ -2,3 +2,4 @@
 export * from "./indexer/rpc-client.js";
 export * from "./db/index.js";
 export * from "./api/index.js";
+export * from "./settlement/index.js";
