@@ -1,6 +1,7 @@
 import type { HandlerMap } from "./context.js";
 import { epochHandlers } from "./epochs.js";
 import { memberHandlers } from "./members.js";
+import { settlementHandlers } from "./settlements.js";
 import { voucherHandlers } from "./vouchers.js";
 
 export type { Handler, HandlerContext, HandlerMap } from "./context.js";
@@ -13,4 +14,5 @@ export const defaultHandlers: HandlerMap = {
   ...memberHandlers,
   ...voucherHandlers,
   ...epochHandlers,
+  ...settlementHandlers,
 };
