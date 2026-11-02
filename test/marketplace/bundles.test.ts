@@ -173,3 +173,36 @@ describe("BE-041 pratinjau penerimaan", () => {
     expect(res.json.breakdown).toMatchObject({ mode: "pay", counterpartyPays: C(90), sellerReceives: C(90), searcher: "0", discount: C(10) });
   });
 });
+
+describe("BE-041 lawan menerima penawaran balik pemasang", () => {
+  let market: Market | undefined;
+  afterEach(async () => {
+    await market?.srv.close();
+    market?.db.close();
+  });
+
+  it("leg tetap antara pemasang dan lawan, sama dengan bila pemasang menerima penawaran lawan", async () => {
+    market = await startMarket(["andi", "budi"]);
+    const m = market;
+    openEpoch(m, 42);
+    const body = signedListing(m, "andi", { offer: { asset_type: "gpu-hours", asset_class: "A", quantity: 10, value: C(100) }, want: { asset_type: "translation", asset_class: "B", quantity: 5, value: C(100) } });
+    const hash = listingHash(body.listing);
+    await m.post("/listings", body);
+    const first = bid(m, "budi", body.listing, { value: C(85) });
+    const o1 = (await m.post(`/listings/${hash}/offers`, first)).json.offerHash;
+    const second = bid(m, "andi", body.listing, { value: C(95), previous: first.offer });
+    const o2 = (await m.post(`/listings/${hash}/offers`, { ...second, inReplyTo: o1 })).json.offerHash;
+
+    const preview = await m.post(`/listings/${hash}/offers/${o2}/preview`, { account: acct("budi") });
+    expect(preview.status).toBe(200);
+    const expected = acceptOffer({ listing: body.listing, offer: first.offer, epoch: 42, account: acct("andi") }, m.keys.andi!.secretKey);
+    if (expected.kind !== "bundle") throw new Error("harus bundle");
+    expect(preview.json.bundle.termsHash).toBe(expected.terms_hash);
+
+    const mine = signBundle(expected.terms, acct("budi"), m.keys.budi!.secretKey);
+    const res = await m.post(`/listings/${hash}/offers/${o2}/accept`, { account: acct("budi"), signature: mine.signature });
+    expect(res.status).toBe(201);
+    expect(res.json.result.proposal.missing).toEqual([acct("andi")]);
+    expect(res.json.match).toMatchObject({ seller: acct("andi"), counterparty: acct("budi") });
+  });
+});

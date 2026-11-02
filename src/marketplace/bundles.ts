@@ -150,7 +150,7 @@ function planAccept(db: Database.Database, circle: { circle_id: string; contract
   };
   let plan;
   try {
-    plan = planOffer({ listing, offer, epoch: open, ...(searcher === undefined ? {} : { searcher }), ...(input.searcherShareBps === undefined ? {} : { searcherShareBps: input.searcherShareBps as number }) });
+    plan = planOffer({ listing, offer, epoch: open, counterparty: offerRow.counterparty, ...(searcher === undefined ? {} : { searcher }), ...(input.searcherShareBps === undefined ? {} : { searcherShareBps: input.searcherShareBps as number }) });
   } catch (error) {
     if (error instanceof BarterFormatError) throw invalidRequest(error.message);
     throw error;
