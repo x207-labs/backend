@@ -39,3 +39,25 @@ export async function startMarket(names: string[] = ["andi", "budi", "citra"], i
 }
 
 export { acct, CIRCLE, CONTRACT };
+
+import { signListing, type Listing } from "@x207/core";
+
+export const listing = (name: string, over: Partial<Listing> = {}): Listing => ({
+  circle: CONTRACT,
+  account: acct(name),
+  offer: { asset_type: "gpu-hours", asset_class: "A", quantity: 10, value: "100000000" },
+  want: { asset_type: "translation", asset_class: "B", quantity: 5, value: "100000000" },
+  terms: "deliver within 24h",
+  detail: "A100 80GB, batch inference",
+  expires_at: NOW_S + 86_400,
+  discount_bps: 1000,
+  accept_payment: true,
+  discoverable: true,
+  nonce: `l-${name}`,
+  ...over,
+});
+
+export const signedListing = (m: Market, name: string, over: Partial<Listing> = {}) => {
+  const l = listing(name, over);
+  return { listing: l, signature: signListing(l, m.keys[name]!.secretKey) };
+};

@@ -8,6 +8,7 @@ import { row, rows } from "../api/format.js";
 import { decodeCursor, encodeCursor, parseLimit } from "../api/pagination.js";
 import type { Route } from "../api/router.js";
 import { activeMemberKey } from "./auth.js";
+import { isoSeconds } from "./common.js";
 
 const STATUSES = ["open", "matched", "expired", "all"] as const;
 
@@ -28,8 +29,6 @@ interface IntentRow {
   status: string;
   created_at_ms: bigint;
 }
-
-const isoSeconds = (seconds: number): string => new Date(seconds * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
 
 function onchain(db: Database.Database, contractId: string, hashB58: string) {
   const posted = row<{ block_height: bigint; account: string | null }>(

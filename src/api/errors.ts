@@ -20,7 +20,9 @@ export type ApiErrorCode =
   | "indexer_unavailable"
   | "invalid_signature"
   | "member_not_active"
-  | "already_exists";
+  | "already_exists"
+  | "listing_not_found"
+  | "listing_not_open";
 
 export class ApiError extends Error {
   constructor(
