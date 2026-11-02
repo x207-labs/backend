@@ -145,9 +145,37 @@ DROP TABLE bundle_proposals;
 ALTER TABLE bundle_proposals_new RENAME TO bundle_proposals;
 `;
 
+// Kotak masuk ajakan pencari (BE-044): pencari menandatangani ajakan, agent tujuan menawar sendiri dengan merujuk hash ajakan.
+const V1105_REFERRALS = `
+CREATE TABLE referrals (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  circle_id          TEXT    NOT NULL,
+  referral_hash      TEXT    NOT NULL,
+  seeker             TEXT    NOT NULL,
+  to_account         TEXT    NOT NULL,
+  listing_hash       TEXT    NOT NULL,
+  mode               TEXT    NOT NULL CHECK (mode IN ('pay','barter')),
+  value              TEXT    NOT NULL,
+  quantity           INTEGER NOT NULL,
+  deliver_by         INTEGER NOT NULL,
+  searcher_share_bps INTEGER NOT NULL,
+  expires_at         INTEGER NOT NULL,
+  nonce              TEXT    NOT NULL,
+  signature          TEXT    NOT NULL,
+  status             TEXT    NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','taken','refused')),
+  offer_hash         TEXT,
+  created_at_ms      INTEGER NOT NULL,
+  UNIQUE (circle_id, referral_hash)
+);
+CREATE INDEX idx_referrals_to ON referrals (circle_id, to_account, status);
+CREATE INDEX idx_referrals_pair ON referrals (circle_id, seeker, to_account, listing_hash);
+ALTER TABLE offers ADD COLUMN referral_hash TEXT;
+`;
+
 export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1101, name: "m11_intents", sql: V1101_INTENTS },
   { version: 1102, name: "m11_listings", sql: V1102_LISTINGS },
   { version: 1103, name: "m11_negotiation", sql: V1103_NEGOTIATION },
   { version: 1104, name: "m11_solver_proposals", sql: V1104_SOLVER_PROPOSALS },
+  { version: 1105, name: "m11_referrals", sql: V1105_REFERRALS },
 ];

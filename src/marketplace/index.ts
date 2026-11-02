@@ -9,10 +9,11 @@ import { intentRoutes } from "./intents.js";
 import { statsRoutes } from "./stats.js";
 import { listingRoutes } from "./listings.js";
 import { offerRoutes } from "./offers.js";
+import { referralRoutes } from "./referrals.js";
 import { MARKETPLACE_MIGRATIONS } from "./migrations.js";
 
 /** Terapkan tabel M11 lalu kembalikan route marketplace; dipasang lewat `extraRoutes` server. */
-export function marketplaceRoutes(db: Database.Database, options: { maxRounds?: number; chainView?: ViewFunction } = {}): Route[] {
+export function marketplaceRoutes(db: Database.Database, options: { maxRounds?: number; chainView?: ViewFunction; maxReferrals?: number } = {}): Route[] {
   migrate(db, MARKETPLACE_MIGRATIONS);
-  return [...intentRoutes, ...listingRoutes([assetClassCheck]), ...assetClassRoutes, ...offerRoutes(options), ...bundleRoutes(openEpochResolver(options.chainView)), ...statsRoutes];
+  return [...intentRoutes, ...listingRoutes([assetClassCheck]), ...assetClassRoutes, ...offerRoutes(options), ...bundleRoutes(openEpochResolver(options.chainView)), ...referralRoutes(options.maxReferrals === undefined ? {} : { maxPending: options.maxReferrals }), ...statsRoutes];
 }

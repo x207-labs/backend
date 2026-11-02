@@ -18,7 +18,7 @@ export interface Market {
 }
 
 /** D9 dengan anggota `names` (kunci voucher nyata) dan route marketplace terpasang. */
-export async function startMarket(names: string[] = ["andi", "budi", "citra"], inactive: string[] = [], chainView?: ViewFunction): Promise<Market> {
+export async function startMarket(names: string[] = ["andi", "budi", "citra"], inactive: string[] = [], chainView?: ViewFunction, routeOptions: { maxReferrals?: number } = {}): Promise<Market> {
   const db = new Database(":memory:");
   seedCircle(db);
   const keys: Market["keys"] = {};
@@ -28,7 +28,7 @@ export async function startMarket(names: string[] = ["andi", "budi", "citra"], i
     db.prepare("UPDATE members SET pubkey_voucher = ? WHERE circle_id = ? AND account_id = ?").run(keys[name]!.publicKey, CIRCLE, acct(name));
   }
   const clock = { now: NOW };
-  const srv = await listen({ db, now: () => clock.now, extraRoutes: marketplaceRoutes(db, chainView ? { chainView } : {}) });
+  const srv = await listen({ db, now: () => clock.now, extraRoutes: marketplaceRoutes(db, { ...(chainView ? { chainView } : {}), ...routeOptions }) });
   const call = async (method: "GET" | "POST", path: string, body?: unknown) => {
     const res = await fetch(`${srv.url}/x207/circles/${CIRCLE}${path}`, {
       method,
@@ -79,3 +79,16 @@ export function bid(m: Market, name: string, l: Listing, over: { mode?: "pay" | 
   };
   return { offer, signature: signOffer(offer, m.keys[name]!.secretKey) };
 }
+
+
+import { signReferral, type Referral } from "@x207/core";
+
+export const referral = (seeker: string, to: string, l: Listing, over: Partial<Referral> = {}): Referral => ({
+  circle: CONTRACT, seeker: acct(seeker), to: acct(to), listing_hash: listingHash(l), mode: "barter", value: "100000000", quantity: 5,
+  deliver_by: NOW_S + 3 * 86_400, searcher_share_bps: 300, expires_at: NOW_S + 3600, nonce: `r-${seeker}-${to}`, ...over,
+});
+
+export const signedReferral = (m: Market, seeker: string, to: string, l: Listing, over: Partial<Referral> = {}) => {
+  const r = referral(seeker, to, l, over);
+  return { referral: r, signature: signReferral(r, m.keys[seeker]!.secretKey) };
+};

@@ -10,6 +10,7 @@ import type { Route } from "../api/router.js";
 import { activeMemberKey } from "./auth.js";
 import { isoSeconds, nowSeconds } from "./common.js";
 import { effectiveStatus, findListing } from "./listings.js";
+import { findReferral } from "./referrals.js";
 
 export const DEFAULT_MAX_ROUNDS = 10;
 const OFFER_STATUSES = ["pending", "countered", "accepted", "closed", "all"] as const;
@@ -29,6 +30,7 @@ export interface OfferRow {
   deliver_by: bigint;
   signature: string;
   in_reply_to: string | null;
+  referral_hash?: string | null;
   status: string;
   created_at_ms: bigint;
 }
@@ -58,15 +60,18 @@ export function findOffer(db: Database.Database, circleId: string, listingHashHe
   return found;
 }
 
-function parseOfferBody(body: unknown): { offer: Offer; signature: string; inReplyTo: string | null } {
+function parseOfferBody(body: unknown): { offer: Offer; signature: string; inReplyTo: string | null; referralHash: string | null } {
   if (body === null || typeof body !== "object") throw invalidRequest("body harus objek");
-  const { offer, signature, inReplyTo } = body as { offer?: unknown; signature?: unknown; inReplyTo?: unknown };
+  const { offer, signature, inReplyTo, referralHash } = body as { offer?: unknown; signature?: unknown; inReplyTo?: unknown; referralHash?: unknown };
+  if (referralHash !== undefined && referralHash !== null && (typeof referralHash !== "string" || !HASH.test(referralHash))) {
+    throw invalidRequest("referralHash harus hash ajakan 64 karakter heksadesimal huruf kecil");
+  }
   if (typeof signature !== "string") throw invalidRequest("signature wajib string");
   if (offer === null || typeof offer !== "object") throw invalidRequest("offer wajib objek");
   if (inReplyTo !== undefined && inReplyTo !== null && (typeof inReplyTo !== "string" || !HASH.test(inReplyTo))) {
     throw invalidRequest("inReplyTo harus hash penawaran 64 karakter heksadesimal huruf kecil");
   }
-  return { offer: offer as Offer, signature, inReplyTo: (inReplyTo as string | null | undefined) ?? null };
+  return { offer: offer as Offer, signature, inReplyTo: (inReplyTo as string | null | undefined) ?? null, referralHash: (referralHash as string | null | undefined) ?? null };
 }
 
 export function offerRoutes(options: { maxRounds?: number } = {}): Route[] {
@@ -78,7 +83,7 @@ export function offerRoutes(options: { maxRounds?: number } = {}): Route[] {
       circleScoped: true,
       handler: ({ db, circle, params, body, now }) => {
         const listing = findListing(db, circle.circle_id, params.hash as string);
-        const { offer, signature, inReplyTo } = parseOfferBody(body);
+        const { offer, signature, inReplyTo, referralHash } = parseOfferBody(body);
         try {
           validateOffer(offer);
         } catch (error) {
@@ -116,15 +121,28 @@ export function offerRoutes(options: { maxRounds?: number } = {}): Route[] {
           counterparty = previous.counterparty;
           awaiting = previous.proposer;
         }
+        // Ajakan pencari (BE-044): penawaran ronde 1 yang merujuk ajakan harus sama dengan isi ajakan, dan ajakan harus masih pending
+        if (referralHash !== null) {
+          if (offer.round !== 1) throw invalidRequest("referralHash hanya untuk penawaran ronde 1");
+          const referral = findReferral(db, circle.circle_id, referralHash);
+          const state = referral.status === "pending" && Number(referral.expires_at) <= nowS ? "expired" : referral.status;
+          if (state !== "pending") throw new ApiError(409, "referral_not_open", `Ajakan berstatus ${state}`, { referralHash, status: state });
+          if (referral.to_account !== offer.proposer) throw invalidRequest("ajakan ini ditujukan ke agent lain", { to: referral.to_account });
+          if (referral.listing_hash !== listing.listing_hash) throw invalidRequest("ajakan ini untuk listing lain");
+          if (referral.mode !== offer.mode || referral.value !== offer.value || Number(referral.quantity) !== offer.quantity) {
+            throw invalidRequest("penawaran harus sama dengan ajakan (cara, nilai, jumlah)", { mode: referral.mode, value: referral.value, quantity: Number(referral.quantity) });
+          }
+        }
         const hash = offerHash(offer);
         const inserted = db
           .prepare(
             `INSERT OR IGNORE INTO offers (circle_id, offer_hash, listing_hash, proposer, counterparty, awaiting, round, mode, value, quantity,
-               deliver_by, signature, in_reply_to, created_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+               deliver_by, signature, in_reply_to, referral_hash, created_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(circle.circle_id, hash, listing.listing_hash, offer.proposer, counterparty, awaiting, offer.round, offer.mode, offer.value,
-            offer.quantity, offer.deliver_by, signature, inReplyTo, now());
+            offer.quantity, offer.deliver_by, signature, inReplyTo, referralHash, now());
         if (inserted.changes === 0) throw new ApiError(409, "already_exists", "Penawaran dengan hash ini sudah tercatat", { offerHash: hash });
+        if (referralHash !== null) db.prepare("UPDATE referrals SET status = 'taken', offer_hash = ? WHERE circle_id = ? AND referral_hash = ?").run(hash, circle.circle_id, referralHash);
         if (previous) db.prepare("UPDATE offers SET status = 'countered' WHERE id = ?").run(previous.id);
         return { status: 201, body: offerView(findOffer(db, circle.circle_id, listing.listing_hash, hash)) };
       },

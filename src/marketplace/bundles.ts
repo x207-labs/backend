@@ -13,6 +13,7 @@ import { isoSeconds, nowSeconds } from "./common.js";
 import { effectiveStatus, findListing, type ListingRow } from "./listings.js";
 import { openEpochResolver, type OpenEpochResolver } from "./epoch.js";
 import { findOffer, offerView, type OfferRow } from "./offers.js";
+import { threadReferral } from "./referrals.js";
 
 const HASH = /^[0-9a-f]{64}$/;
 const PROPOSAL_STATUSES = ["proposed", "ready", "all"] as const;
@@ -136,7 +137,10 @@ async function planAccept(
   if (input.epoch !== undefined && input.epoch !== open) throw new ApiError(409, "epoch_not_open", "Bundle harus untuk epoch open saat ini", { expected: open, got: input.epoch as number });
   if (input.searcher !== undefined && typeof input.searcher !== "string") throw invalidRequest("searcher harus string");
   if (input.searcherShareBps !== undefined && !Number.isSafeInteger(input.searcherShareBps)) throw invalidRequest("searcherShareBps harus integer");
-  const searcher = input.searcher as string | undefined;
+  // Tanpa pencari di body, ajakan yang melekat pada utas (BE-044) menentukan pencari dan jatahnya
+  const referral = input.searcher === undefined ? threadReferral(db, circle.circle_id, offerRow) : undefined;
+  const searcher = (input.searcher as string | undefined) ?? referral?.seeker;
+  const shareBps = referral ? (input.searcherShareBps as number | undefined) ?? Number(referral.searcher_share_bps) : (input.searcherShareBps as number | undefined);
   if (searcher !== undefined) {
     activeMemberKey(db, circle.circle_id, searcher);
     if (searcher === listingRow.account_id || searcher === offerRow.counterparty) throw invalidRequest("pencari harus akun di luar kedua pihak");
@@ -149,12 +153,12 @@ async function planAccept(
   };
   let plan;
   try {
-    plan = planOffer({ listing, offer, epoch: open, counterparty: offerRow.counterparty, ...(searcher === undefined ? {} : { searcher }), ...(input.searcherShareBps === undefined ? {} : { searcherShareBps: input.searcherShareBps as number }) });
+    plan = planOffer({ listing, offer, epoch: open, counterparty: offerRow.counterparty, ...(searcher === undefined ? {} : { searcher }), ...(shareBps === undefined ? {} : { searcherShareBps: shareBps }) });
   } catch (error) {
     if (error instanceof BarterFormatError) throw invalidRequest(error.message);
     throw error;
   }
-  return { open, searcher, plan };
+  return { open, searcher, shareBps, plan };
 }
 
 export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver()): Route[] {
@@ -237,8 +241,8 @@ export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver())
       const listingStatus = effectiveStatus(listingRow, nowSeconds(now()));
       if (listingStatus !== "open") throw new ApiError(409, "listing_not_open", `Listing berstatus ${listingStatus}`, { listingHash: listingRow.listing_hash, status: listingStatus });
       if (offerRow.status !== "pending") throw new ApiError(409, "offer_not_open", `Penawaran berstatus ${offerRow.status}`, { offerHash: offerRow.offer_hash, status: offerRow.status });
-      const { open, searcher, plan } = await planAccept(db, circle, listingRow, offerRow, input, openEpoch);
-      const shareBps = searcher === undefined ? 0 : ((input.searcherShareBps as number | undefined) ?? 0);
+      const { open, searcher, shareBps: effectiveShare, plan } = await planAccept(db, circle, listingRow, offerRow, input, openEpoch);
+      const shareBps = searcher === undefined ? 0 : (effectiveShare ?? 0);
       const quick = { value: offerRow.value, discountBps: Number(listingRow.discount_bps), searcherShareBps: shareBps };
       const breakdown = offerRow.mode === "pay" ? { mode: "pay", ...quickPay(quick) } : { mode: "barter", ...quickBarter(quick) };
       const bundle =

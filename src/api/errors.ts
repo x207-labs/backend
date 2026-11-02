@@ -28,7 +28,10 @@ export type ApiErrorCode =
   | "offer_not_open"
   | "negotiation_closed"
   | "epoch_not_open"
-  | "proposal_not_found";
+  | "proposal_not_found"
+  | "referral_not_found"
+  | "referral_refused"
+  | "referral_not_open";
 
 export class ApiError extends Error {
   constructor(
