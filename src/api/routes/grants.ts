@@ -22,8 +22,27 @@ interface GrantRow {
 
 const COLUMNS = "grant_id, asset_type, grantor, grantee, class, unit, unit_price, expires_at_ns, delivery_pubkey, status, revoke_reason, block_height";
 
-function view(g: GrantRow) {
+interface EscrowRow {
+  grant_id: bigint;
+  nft_contract: string;
+  token_id: string;
+  state: string;
+}
+
+/** Class A grants carry the escrow that holds the asset; other grants have `escrow: null`. */
+function escrowsOf(db: Parameters<typeof rows>[0], circleId: string, ids: readonly bigint[]): Map<bigint, EscrowRow> {
+  if (ids.length === 0) return new Map();
+  const found = rows<EscrowRow>(
+    db, `SELECT grant_id, nft_contract, token_id, state FROM escrows WHERE circle_id = ? AND grant_id IN (${ids.map(() => "?").join(",")})`, circleId, ...ids,
+  );
+  return new Map(found.map((e) => [e.grant_id, e]));
+}
+
+const escrowView = (e: EscrowRow | undefined) => (e === undefined ? null : { nftContract: e.nft_contract, tokenId: e.token_id, state: e.state });
+
+function view(g: GrantRow, escrow?: EscrowRow) {
   return {
+    escrow: escrowView(escrow),
     grantId: Number(g.grant_id),
     assetType: g.asset_type,
     grantor: g.grantor,
@@ -62,13 +81,14 @@ export const grantRoutes: Route[] = [
       );
       const more = page.length > limit;
       const shown = more ? page.slice(0, limit) : page;
+      const escrows = escrowsOf(db, circle.circle_id, shown.map((g) => g.grant_id));
       return {
         status: 200,
         body: {
           circle: circle.circle_id,
           unit: UNIT,
           decimals: DECIMALS,
-          items: shown.map(view),
+          items: shown.map((g) => view(g, escrows.get(g.grant_id))),
           nextCursor: more ? encodeCursor({ id: Number(shown[shown.length - 1]!.grant_id) }) : null,
         },
       };
@@ -83,7 +103,7 @@ export const grantRoutes: Route[] = [
       if (!Number.isSafeInteger(id) || id < 1) throw invalidRequest("grantId harus bilangan bulat positif", { grantId: params.grantId as string });
       const found = row<GrantRow>(db, `SELECT ${COLUMNS} FROM grants WHERE circle_id = ? AND grant_id = ?`, circle.circle_id, id);
       if (!found) throw new ApiError(404, "grant_not_found", `Grant ${id} tidak ada`, { grantId: id });
-      return { status: 200, body: { circle: circle.circle_id, decimals: DECIMALS, ...view(found) } };
+      return { status: 200, body: { circle: circle.circle_id, decimals: DECIMALS, ...view(found, escrowsOf(db, circle.circle_id, [found.grant_id]).get(found.grant_id)) } };
     },
   },
 ];

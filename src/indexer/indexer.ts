@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import { ContractAbi, EVENT_PREFIX, isKnownX207Event, parseEventLog } from "@x207/core";
 import type { BlockLog, BlockSource, SourceBlock } from "./block-source.js";
 import { IndexerHaltError } from "./errors.js";
+import { rawHandlers } from "./handlers/escrow.js";
 import { defaultHandlers, type HandlerContext, type HandlerMap } from "./handlers/index.js";
 import { assertAmountsInRange } from "./units.js";
 
@@ -276,6 +277,11 @@ function dispatch(db: Database.Database, circleId: string, handlers: HandlerMap,
     block: { height: row.block_height, hash: row.block_hash, timestampNs: row.block_timestamp_ns },
   };
   for (const item of parsed) {
+    const raw = rawHandlers[item.event];
+    if (raw !== undefined) {
+      raw(ctx, isKnownX207Event(item) ? (({ event: _event, ...rest }) => rest)(item) : item.data);
+      continue;
+    }
     if (!isKnownX207Event(item)) return NO_READ_MODEL.has(item.event) ? HANDLED.done : HANDLED.unknown;
     const { event: name, ...data } = item;
     (handlers[name] as ((c: HandlerContext, d: unknown) => void) | undefined)?.(ctx, data);

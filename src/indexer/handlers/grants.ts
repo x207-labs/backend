@@ -28,6 +28,8 @@ export const grantHandlers: HandlerMap = {
       .prepare("UPDATE grants SET status = 'active', grantee = ?, delivery_pubkey = ? WHERE circle_id = ? AND grant_id = ? AND status = 'offered'")
       .run(e.grantee, e.delivery_pubkey, ctx.circleId, Number(e.grant_id));
     if (changed.changes === 0 && !alreadyActive(ctx, Number(e.grant_id))) requireChange(0, `grant ${e.grant_id}`);
+    // class A: the escrow delivered the asset to the grantee
+    ctx.db.prepare("UPDATE escrows SET state = 'delivered' WHERE circle_id = ? AND grant_id = ? AND state = 'held'").run(ctx.circleId, Number(e.grant_id));
   },
 
   grant_revoked(ctx, e) {
@@ -36,6 +38,8 @@ export const grantHandlers: HandlerMap = {
       .prepare("UPDATE grants SET status = ?, revoke_reason = ? WHERE circle_id = ? AND grant_id = ? AND status IN ('offered','active')")
       .run(status, e.reason, ctx.circleId, Number(e.grant_id));
     if (changed.changes === 0 && !alreadyFinal(ctx, Number(e.grant_id))) requireChange(0, `grant ${e.grant_id}`);
+    // class A: the grantor took the asset back (the contract refuses any other revoke while the escrow holds it)
+    ctx.db.prepare("UPDATE escrows SET state = 'cancelled' WHERE circle_id = ? AND grant_id = ? AND state = 'held'").run(ctx.circleId, Number(e.grant_id));
   },
 };
 

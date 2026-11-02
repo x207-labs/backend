@@ -271,8 +271,24 @@ CREATE INDEX idx_grants_grantee ON grants (circle_id, grantee, status);
 CREATE INDEX idx_grants_grantor ON grants (circle_id, grantor, status);
 `;
 
+/** CT-075 (F8 class A): the NFT that an escrow holds for a grant. State follows the events: held, delivered, cancelled, stuck. */
+const V4_ESCROWS = `
+CREATE TABLE escrows (
+  circle_id    TEXT    NOT NULL REFERENCES circles (circle_id),
+  grant_id     INTEGER NOT NULL,
+  nft_contract TEXT    NOT NULL,
+  token_id     TEXT    NOT NULL,
+  state        TEXT    NOT NULL CHECK (state IN ('held','delivered','cancelled','stuck')),
+  block_height INTEGER NOT NULL,
+  receipt_id   TEXT    NOT NULL,
+  log_index    INTEGER NOT NULL,
+  PRIMARY KEY (circle_id, grant_id)
+);
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "d9_initial", sql: V1_D9_INITIAL },
   { version: 2, name: "d9_bundles", sql: V2_BUNDLES },
   { version: 3, name: "d9_grants", sql: V3_GRANTS },
+  { version: 4, name: "d9_escrows", sql: V4_ESCROWS },
 ];
