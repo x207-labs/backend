@@ -1,4 +1,5 @@
 import { createViewAccessKeyFn } from "@x207/core";
+import { X207ExtraSource } from "@x207/scheme";
 import type { Server } from "node:http";
 import { NearBrokerChain, type BrokerChain } from "./chain.js";
 import type { BrokerConfig } from "./config.js";
@@ -26,6 +27,8 @@ export interface StartOptions {
   now?: () => number;
   fetch?: typeof fetch;
   log?: (line: string) => void;
+  /** Cache of the `extra` (epoch) read from the facilitator, ms. The default is 60 s; an epoch that turns inside it gives `epoch_mismatch`. */
+  extraCacheMs?: number;
   /** Start the poll loop; tests call `tick()` themselves. */
   poll?: boolean;
 }
@@ -45,8 +48,11 @@ export async function startBroker(options: StartOptions): Promise<RunningBroker>
   const dispatcher = new Dispatcher({ chain, adapters: { B: classB } });
   const revoker = new Revoker({ chain, store, classB, now, ...(options.log ? { log: options.log } : {}) });
   const watcher = new GrantWatcher({ readApiUrl: config.readApiUrl, circle: config.circleId, store, ...(options.fetch ? { fetch: options.fetch } : {}) });
+  const extra = new X207ExtraSource({
+    facilitatorUrl: config.facilitatorUrl, ...(options.fetch ? { fetch: options.fetch } : {}), ...(options.extraCacheMs === undefined ? {} : { cacheMs: options.extraCacheMs }),
+  });
   const handler = createBrokerHandler({
-    dispatcher, classB, facilitatorUrl: config.facilitatorUrl, circleId: config.circleId, brokerAccount: config.brokerAccount,
+    dispatcher, classB, facilitatorUrl: config.facilitatorUrl, circleId: config.circleId, brokerAccount: config.brokerAccount, extra,
     ...(options.fetch ? { fetch: options.fetch } : {}),
   });
   const { server, url } = await serve(handler, config.port);
