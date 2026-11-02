@@ -11,6 +11,7 @@ export type ApiErrorCode =
   | "asset_not_supported"
   | "live_mode_disabled"
   | "one_click_error"
+  | "dao_unavailable"
   | "job_state_conflict"
   | "below_withdraw_threshold"
   | "high_fee_requires_ack"
