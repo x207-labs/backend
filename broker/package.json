@@ -1,0 +1,29 @@
+{
+  "name": "@x207/broker",
+  "version": "0.0.1",
+  "description": "x207 Access Broker M10 (F8): class B lease of NEAR function-call keys; class C proxy and attestation are roadmap",
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit",
+    "start": "node dist/main.js"
+  },
+  "license": "Apache-2.0",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.22.2"
+  },
+  "dependencies": {
+    "@x207/core": "0.0.1",
+    "@x207/scheme": "0.0.1",
+    "better-sqlite3": "13.0.3",
+    "near-api-js": "7.4.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "9.6.0",
+    "@types/node": "26.6.6",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  }
+}
