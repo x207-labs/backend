@@ -40,7 +40,7 @@ export async function startMarket(names: string[] = ["andi", "budi", "citra"], i
 
 export { acct, CIRCLE, CONTRACT };
 
-import { signListing, type Listing } from "@x207/core";
+import { listingHash, signListing, type Listing } from "@x207/core";
 
 export const listing = (name: string, over: Partial<Listing> = {}): Listing => ({
   circle: CONTRACT,
@@ -61,3 +61,20 @@ export const signedListing = (m: Market, name: string, over: Partial<Listing> = 
   const l = listing(name, over);
   return { listing: l, signature: signListing(l, m.keys[name]!.secretKey) };
 };
+
+import { signOffer, type Offer } from "@x207/core";
+import { seedEpoch } from "../helpers/d9-fixtures.js";
+
+export const openEpoch = (m: Market, epoch = 42): void => seedEpoch(m.db, { epoch, phase: "open", cutoffAt: "2026-11-05T00:00:00Z" });
+
+/**
+ * Penawaran bertanda tangan dari `name` atas `l`, ronde berikutnya setelah `previous` bila ada. Dibangun langsung (bukan lewat
+ * `counterOffer`) agar test bisa mengirim penawaran yang dilarang helper SDK.
+ */
+export function bid(m: Market, name: string, l: Listing, over: { mode?: "pay" | "barter"; value?: string; previous?: Offer; round?: number } = {}) {
+  const offer: Offer = {
+    circle: l.circle, listing_hash: listingHash(l), proposer: acct(name), round: over.round ?? (over.previous?.round ?? 0) + 1,
+    mode: over.mode ?? "barter", value: over.value ?? "100000000", quantity: 5, deliver_by: NOW_S + 3 * 86_400,
+  };
+  return { offer, signature: signOffer(offer, m.keys[name]!.secretKey) };
+}

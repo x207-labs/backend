@@ -23,7 +23,12 @@ export type ApiErrorCode =
   | "already_exists"
   | "listing_not_found"
   | "listing_not_open"
-  | "asset_class_rejected";
+  | "asset_class_rejected"
+  | "offer_not_found"
+  | "offer_not_open"
+  | "negotiation_closed"
+  | "epoch_not_open"
+  | "proposal_not_found";
 
 export class ApiError extends Error {
   constructor(
