@@ -125,8 +125,29 @@ CREATE TABLE bundle_signatures (
 );
 `;
 
+// Usulan bundle dari solver (SV-011) tidak punya kecocokan listing: match_id boleh NULL dan sumbernya dicatat.
+const V1104_SOLVER_PROPOSALS = `
+CREATE TABLE bundle_proposals_new (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  circle_id      TEXT    NOT NULL,
+  terms_hash     TEXT    NOT NULL,
+  match_id       INTEGER REFERENCES matches(id),
+  epoch          INTEGER NOT NULL,
+  terms_json     TEXT    NOT NULL,
+  status         TEXT    NOT NULL DEFAULT 'proposed' CHECK (status IN ('proposed','ready')),
+  source         TEXT    NOT NULL DEFAULT 'accept' CHECK (source IN ('accept','solver')),
+  created_at_ms  INTEGER NOT NULL,
+  UNIQUE (circle_id, terms_hash)
+);
+INSERT INTO bundle_proposals_new (id, circle_id, terms_hash, match_id, epoch, terms_json, status, created_at_ms)
+  SELECT id, circle_id, terms_hash, match_id, epoch, terms_json, status, created_at_ms FROM bundle_proposals;
+DROP TABLE bundle_proposals;
+ALTER TABLE bundle_proposals_new RENAME TO bundle_proposals;
+`;
+
 export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1101, name: "m11_intents", sql: V1101_INTENTS },
   { version: 1102, name: "m11_listings", sql: V1102_LISTINGS },
   { version: 1103, name: "m11_negotiation", sql: V1103_NEGOTIATION },
+  { version: 1104, name: "m11_solver_proposals", sql: V1104_SOLVER_PROPOSALS },
 ];

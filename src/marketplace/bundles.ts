@@ -3,7 +3,7 @@
 // pengiriman `commit_bundle` dilakukan solver/keeper, bukan backend. Dipisah dari `GET …/bundles` (BE-036) yang membaca bundle on-chain.
 import type Database from "better-sqlite3";
 import {
-  BarterFormatError, bundleFullySigned, bundleParticipants, planOffer, quickBarter, quickPay, serializeBundleTerms, verifyBundleSignature, type BundleSignature, type BundleTerms, type Listing,
+  BarterFormatError, bundleFullySigned, bundleParticipants, planOffer, termsHash, validateBundleTerms, quickBarter, quickPay, serializeBundleTerms, verifyBundleSignature, type BundleSignature, type BundleTerms, type Listing,
 } from "@x207/core";
 import { ApiError, invalidRequest } from "../api/errors.js";
 import { row, rows } from "../api/format.js";
@@ -257,6 +257,37 @@ export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver())
         status: 200,
         body: { kind: plan.kind, epoch: open, mode: offerRow.mode, discountValue: plan.discount, searcherValue: plan.searcher, searcher: searcher ?? null, breakdown, bundle, payment },
       };
+    },
+  },
+  {
+    // Usulan dari solver (SV-011): syarat cincin atau pasangan listing tanpa kecocokan di buku. Server menghitung ulang `terms_hash`,
+    // memeriksa epoch open dan bahwa semua peserta anggota aktif; peserta lalu menandatangani lewat `…/signatures` seperti biasa.
+    method: "POST",
+    pattern: "/x207/circles/{circle}/bundle-proposals",
+    circleScoped: true,
+    handler: async ({ db, circle, body, now }) => {
+      if (body === null || typeof body !== "object") throw invalidRequest("body harus objek");
+      const { terms, termsHash: claimed } = body as { terms?: unknown; termsHash?: unknown };
+      if (terms === null || typeof terms !== "object") throw invalidRequest("terms wajib objek");
+      const candidate = terms as BundleTerms;
+      try {
+        validateBundleTerms(candidate);
+      } catch (error) {
+        if (error instanceof BarterFormatError) throw invalidRequest(error.message);
+        throw error;
+      }
+      if (candidate.circle !== circle.contract_id) throw invalidRequest("terms.circle harus akun kontrak lingkaran", { expected: circle.contract_id, got: candidate.circle });
+      const hash = termsHash(candidate);
+      if (claimed !== undefined && claimed !== hash) throw invalidRequest("termsHash tidak sama dengan hasil hitung syarat", { computed: hash });
+      const open = await openEpoch(db, circle);
+      if (open === null || candidate.epoch !== open) throw new ApiError(409, "epoch_not_open", "Bundle harus untuk epoch open saat ini", { expected: open, got: candidate.epoch });
+      for (const account of bundleParticipants(candidate)) activeMemberKey(db, circle.circle_id, account);
+
+      const existing = row<ProposalRow>(db, "SELECT * FROM bundle_proposals WHERE circle_id = ? AND terms_hash = ?", circle.circle_id, hash);
+      if (existing) return { status: 200, body: proposalView(db, circle.circle_id, existing) };
+      db.prepare("INSERT INTO bundle_proposals (circle_id, terms_hash, match_id, epoch, terms_json, source, created_at_ms) VALUES (?, ?, NULL, ?, ?, 'solver', ?)")
+        .run(circle.circle_id, hash, candidate.epoch, JSON.stringify(candidate), now());
+      return { status: 201, body: proposalView(db, circle.circle_id, findProposal(db, circle.circle_id, hash)) };
     },
   },
   {

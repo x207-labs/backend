@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { acceptOffer, bundleFullySigned, listingHash, signBundle, type BundleTerms } from "@x207/core";
+import { acceptOffer, bundleFullySigned, listingHash, signBundle, termsHash, type BundleTerms } from "@x207/core";
 import { acct, bid, openEpoch, signedListing, startMarket, type Market } from "./helpers.js";
 
 // Angka contoh note F9: nilai 100, diskon 10 (1000 bps), jatah pencari 3 (300 bps); 1 credit = 1_000_000.
@@ -252,5 +252,80 @@ describe("BE-041 epoch open dari kontrak, bukan hanya dari D9", () => {
     expect((await m.post(`/listings/${hash}/offers/${offerHash}/accept`, { account: acct("andi") })).json.error.code).toBe("epoch_not_open");
     openEpoch(m, 1);
     expect((await m.post(`/listings/${hash}/offers/${offerHash}/accept`, { account: acct("andi") })).status).toBe(201);
+  });
+});
+
+describe("BE-041 usulan bundle dari solver tanpa kecocokan (SV-011)", () => {
+  let market: Market | undefined;
+  afterEach(async () => {
+    await market?.srv.close();
+    market?.db.close();
+  });
+
+  const ring = (epoch = 42) => ({
+    circle: "x207-circle.near", epoch,
+    legs: [
+      { payer: acct("andi"), payee: acct("budi"), max_amount: C(6) },
+      { payer: acct("budi"), payee: acct("citra"), max_amount: C(10) },
+      { payer: acct("citra"), payee: acct("andi"), max_amount: C(8) },
+    ],
+  });
+
+  it("solver mengirim syarat cincin, peserta menandatangani, status ready untuk di-commit", async () => {
+    market = await startMarket(["andi", "budi", "citra"]);
+    const m = market;
+    openEpoch(m, 42);
+    const terms = ring();
+    const hash = termsHash(terms);
+    const created = await m.post("/bundle-proposals", { terms, termsHash: hash });
+    expect(created.status).toBe(201);
+    expect(created.json).toMatchObject({ termsHash: hash, status: "proposed", epoch: 42, listingHash: null, searcher: null });
+    expect(created.json.participants.sort()).toEqual([acct("andi"), acct("budi"), acct("citra")]);
+    expect(created.json.missing).toHaveLength(3);
+    // idempoten: kiriman kedua mengembalikan usulan yang sama
+    const again = await m.post("/bundle-proposals", { terms });
+    expect([again.status, again.json.termsHash]).toEqual([200, hash]);
+    expect(m.db.prepare("SELECT COUNT(*) AS n FROM bundle_proposals").get()).toEqual({ n: 1 });
+    // agent menemukannya lewat akunnya dan menandatangani
+    const mine = await m.get(`/bundle-proposals?account=${acct("budi")}&status=proposed`);
+    expect(mine.json.items.map((p: any) => p.termsHash)).toEqual([hash]);
+    for (const name of ["andi", "budi", "citra"]) {
+      const sig = signBundle(terms, acct(name), m.keys[name]!.secretKey);
+      expect((await m.post(`/bundle-proposals/${hash}/signatures`, { account: acct(name), signature: sig.signature })).status).toBe(201);
+    }
+    const ready = await m.get("/bundle-proposals?status=ready");
+    expect(ready.json.items.map((p: any) => [p.termsHash, p.status, p.missing])).toEqual([[hash, "ready", []]]);
+  });
+
+  it("penolakan: epoch bukan open, lingkaran salah, anggota bukan aktif atau tidak ada, hash klaim salah, format cacat", async () => {
+    market = await startMarket(["andi", "budi"], ["citra"]);
+    const m = market;
+    openEpoch(m, 42);
+    expect((await m.post("/bundle-proposals", { terms: ring(41) })).json.error.code).toBe("epoch_not_open");
+    expect((await m.post("/bundle-proposals", { terms: { ...ring(), circle: "other.near" } })).status).toBe(400);
+    expect((await m.post("/bundle-proposals", { terms: ring() })).json.error.code).toBe("member_not_active"); // citra suspended
+    const unknown = { ...ring(), legs: ring().legs.map((l) => ({ ...l, payee: l.payee === acct("citra") ? acct("zed") : l.payee, payer: l.payer === acct("citra") ? acct("zed") : l.payer })) };
+    expect((await m.post("/bundle-proposals", { terms: unknown })).json.error.code).toBe("member_not_found");
+    expect((await m.post("/bundle-proposals", { terms: ring(), termsHash: "0".repeat(64) })).status).toBe(400);
+    expect((await m.post("/bundle-proposals", { terms: { circle: "x207-circle.near", epoch: 42, legs: [] } })).status).toBe(400);
+    expect((await m.post("/bundle-proposals", {})).status).toBe(400);
+    expect(m.db.prepare("SELECT COUNT(*) AS n FROM bundle_proposals").get()).toEqual({ n: 0 });
+  });
+
+  it("migrasi 1104 pada basis data lama mempertahankan usulan dan menandai sumbernya accept", async () => {
+    const { default: Database } = await import("better-sqlite3");
+    const { migrate } = await import("../../src/db/migrate.js");
+    const { MARKETPLACE_MIGRATIONS } = await import("../../src/marketplace/migrations.js");
+    const db = new Database(":memory:");
+    migrate(db);
+    migrate(db, MARKETPLACE_MIGRATIONS.filter((m) => m.version <= 1103));
+    db.prepare("INSERT INTO circles (circle_id, contract_id, network) VALUES ('agents-main', 'x207-circle.near', 'x207:agents-main')").run();
+    db.prepare("INSERT INTO matches (circle_id, listing_hash, offer_hash, seller, counterparty, mode, kind, epoch, terms_hash, listing_value, discount_value, searcher_value, matched_at_ms) VALUES ('agents-main', 'l', 'o', 'a', 'b', 'barter', 'bundle', 42, 'h', '1', '0', '0', 1)").run();
+    db.prepare("INSERT INTO bundle_proposals (circle_id, terms_hash, match_id, epoch, terms_json, created_at_ms) VALUES ('agents-main', 'h', 1, 42, '{}', 1)").run();
+    expect(migrate(db, MARKETPLACE_MIGRATIONS)).toEqual([1104]);
+    expect(db.prepare("SELECT terms_hash, match_id, source, status FROM bundle_proposals").all()).toEqual([{ terms_hash: "h", match_id: 1, source: "accept", status: "proposed" }]);
+    db.prepare("INSERT INTO bundle_proposals (circle_id, terms_hash, match_id, epoch, terms_json, source, created_at_ms) VALUES ('agents-main', 'h2', NULL, 42, '{}', 'solver', 2)").run();
+    expect(db.prepare("SELECT COUNT(*) AS n FROM bundle_proposals").get()).toEqual({ n: 2 });
+    db.close();
   });
 });
