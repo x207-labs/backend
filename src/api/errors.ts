@@ -22,7 +22,8 @@ export type ApiErrorCode =
   | "member_not_active"
   | "already_exists"
   | "listing_not_found"
-  | "listing_not_open";
+  | "listing_not_open"
+  | "asset_class_rejected";
 
 export class ApiError extends Error {
   constructor(
