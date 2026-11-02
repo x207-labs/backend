@@ -12,6 +12,10 @@ import { obligationRoutes } from "./routes/obligations.js";
 import { paramRoutes } from "./routes/params.js";
 import { reportRoutes } from "../report207/index.js";
 import { settlementRoutes } from "./routes/settlements.js";
+import { jobRoutes } from "./routes/jobs.js";
+import { depositQuoteRoutes, type AccountExists } from "../settlement/deposit/quote.js";
+import type { OneClickClient } from "../settlement/one-click.js";
+import { withdrawRoutes } from "../settlement/withdraw/routes.js";
 
 export interface ApiServerOptions {
   db: Database.Database;
@@ -20,6 +24,11 @@ export interface ApiServerOptions {
   now?: () => number;
   /** Route tambahan dari modul lain (laporan 207, settlement, dll.). */
   extraRoutes?: readonly Route[];
+  /**
+   * Settlement worker (M5): bila diisi, server melayani `POST /x207/settlement/deposit/quote`,
+   * `POST /x207/settlement/withdraw/{quote,intent,submit}` dan `GET /x207/settlement/jobs/{jobId}`.
+   */
+  settlement?: { client: OneClickClient; accountExists: AccountExists };
 }
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -69,12 +78,17 @@ function send(res: ServerResponse, result: RouteResult, extra: Record<string, st
   res.end(payload);
 }
 
+function workerRoutes(settlement: ApiServerOptions["settlement"]): Route[] {
+  if (!settlement) return [];
+  return [...depositQuoteRoutes(settlement), ...withdrawRoutes(settlement), ...jobRoutes(settlement.client)];
+}
+
 /** Server read API (Spec API Backend). Pemanggil yang memanggil `listen`. */
 export function createApiServer(options: ApiServerOptions): Server {
   const { db } = options;
   const now = options.now ?? Date.now;
   const limit = options.rateLimitPerMinute ?? 0;
-  const routes: Route[] = [...healthRoutes, ...memberRoutes, ...limitRoutes, ...epochRoutes, ...obligationRoutes, ...settlementRoutes, ...paramRoutes, ...metricRoutes, ...reportRoutes, ...(options.extraRoutes ?? [])];
+  const routes: Route[] = [...healthRoutes, ...memberRoutes, ...limitRoutes, ...epochRoutes, ...obligationRoutes, ...settlementRoutes, ...paramRoutes, ...metricRoutes, ...reportRoutes, ...workerRoutes(options.settlement), ...(options.extraRoutes ?? [])];
   const hits = new Map<string, { windowStart: number; count: number }>();
 
   function checkRate(ip: string): void {
