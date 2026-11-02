@@ -9,3 +9,4 @@ export * from "./deposit/quote.js";
 export * from "./withdraw/threshold.js";
 export * from "./withdraw/routes.js";
 export * from "./deposit/steps.js";
+export * from "./residual/batch.js";
