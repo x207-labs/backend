@@ -104,7 +104,7 @@ export async function startApp(env: NodeJS.ProcessEnv = process.env, log: (line:
   await indexer.bootstrap();
 
   const client = new OneClickClient({ config: settlement });
-  const server = createApiServer({ db, ...apiOptionsFromEnv(env), settlement: { client, accountExists: nearAccountExists(primary) }, daoView: rpcViewFunction(primary), extraRoutes: marketplaceRoutes(db) });
+  const server = createApiServer({ db, ...apiOptionsFromEnv(env), settlement: { client, accountExists: nearAccountExists(primary) }, daoView: rpcViewFunction(primary), extraRoutes: marketplaceRoutes(db, { chainView: rpcViewFunction(primary) }) });
   await new Promise<void>((ready) => server.listen(config.port, config.host, ready));
   const stopMonitor = startJobMonitor({ db, client }, config.jobPollMs);
 

@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { generateVoucherKeypair } from "@x207/core";
 import { marketplaceRoutes } from "../../src/marketplace/index.js";
+import type { ViewFunction } from "../../src/settlement/intents.js";
 import { acct, CIRCLE, CONTRACT, listen, seedCircle, seedMember, type TestServer } from "../helpers/d9-fixtures.js";
 
 export const NOW = Date.parse("2026-11-04T10:00:00Z");
@@ -17,7 +18,7 @@ export interface Market {
 }
 
 /** D9 dengan anggota `names` (kunci voucher nyata) dan route marketplace terpasang. */
-export async function startMarket(names: string[] = ["andi", "budi", "citra"], inactive: string[] = []): Promise<Market> {
+export async function startMarket(names: string[] = ["andi", "budi", "citra"], inactive: string[] = [], chainView?: ViewFunction): Promise<Market> {
   const db = new Database(":memory:");
   seedCircle(db);
   const keys: Market["keys"] = {};
@@ -27,7 +28,7 @@ export async function startMarket(names: string[] = ["andi", "budi", "citra"], i
     db.prepare("UPDATE members SET pubkey_voucher = ? WHERE circle_id = ? AND account_id = ?").run(keys[name]!.publicKey, CIRCLE, acct(name));
   }
   const clock = { now: NOW };
-  const srv = await listen({ db, now: () => clock.now, extraRoutes: marketplaceRoutes(db) });
+  const srv = await listen({ db, now: () => clock.now, extraRoutes: marketplaceRoutes(db, chainView ? { chainView } : {}) });
   const call = async (method: "GET" | "POST", path: string, body?: unknown) => {
     const res = await fetch(`${srv.url}/x207/circles/${CIRCLE}${path}`, {
       method,

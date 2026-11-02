@@ -11,6 +11,7 @@ import type { Route } from "../api/router.js";
 import { activeMemberKey, memberKeys } from "./auth.js";
 import { isoSeconds, nowSeconds } from "./common.js";
 import { effectiveStatus, findListing, type ListingRow } from "./listings.js";
+import { openEpochResolver, type OpenEpochResolver } from "./epoch.js";
 import { findOffer, offerView, type OfferRow } from "./offers.js";
 
 const HASH = /^[0-9a-f]{64}$/;
@@ -58,11 +59,6 @@ export function listingFromRow(contractId: string, r: ListingRow): Listing {
     discoverable: r.discoverable === 1n,
     nonce: r.nonce,
   };
-}
-
-function currentOpenEpoch(db: Database.Database, circleId: string): number | null {
-  const open = row<{ epoch: bigint }>(db, "SELECT epoch FROM epochs WHERE circle_id = ? AND phase = 'open' ORDER BY epoch DESC LIMIT 1", circleId);
-  return open ? Number(open.epoch) : null;
 }
 
 function signaturesOf(db: Database.Database, circleId: string, termsHash: string): BundleSignature[] {
@@ -131,8 +127,11 @@ interface AcceptInput {
 }
 
 /** Rencana penerimaan: epoch `open` saat ini, pencari tervalidasi, dan hasil `planOffer` (leg, `terms_hash`, diskon, jatah pencari). */
-function planAccept(db: Database.Database, circle: { circle_id: string; contract_id: string }, listingRow: ListingRow, offerRow: OfferRow, input: AcceptInput) {
-  const open = currentOpenEpoch(db, circle.circle_id);
+async function planAccept(
+  db: Database.Database, circle: { circle_id: string; contract_id: string }, listingRow: ListingRow, offerRow: OfferRow, input: AcceptInput,
+  openEpoch: OpenEpochResolver,
+) {
+  const open = await openEpoch(db, circle);
   if (open === null) throw new ApiError(409, "epoch_not_open", "Tidak ada epoch open");
   if (input.epoch !== undefined && input.epoch !== open) throw new ApiError(409, "epoch_not_open", "Bundle harus untuk epoch open saat ini", { expected: open, got: input.epoch as number });
   if (input.searcher !== undefined && typeof input.searcher !== "string") throw invalidRequest("searcher harus string");
@@ -158,12 +157,13 @@ function planAccept(db: Database.Database, circle: { circle_id: string; contract
   return { open, searcher, plan };
 }
 
-export const bundleRoutes: Route[] = [
+export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver()): Route[] {
+  return [
   {
     method: "POST",
     pattern: "/x207/circles/{circle}/listings/{hash}/offers/{offerHash}/accept",
     circleScoped: true,
-    handler: ({ db, circle, params, body, now }) => {
+    handler: async ({ db, circle, params, body, now }) => {
       const listingRow = findListing(db, circle.circle_id, params.hash as string);
       const offerRow = findOffer(db, circle.circle_id, listingRow.listing_hash, params.offerHash as string);
       if (body === null || typeof body !== "object") throw invalidRequest("body harus objek");
@@ -175,7 +175,7 @@ export const bundleRoutes: Route[] = [
       if (listingStatus !== "open") throw new ApiError(409, "listing_not_open", `Listing berstatus ${listingStatus}`, { listingHash: listingRow.listing_hash, status: listingStatus });
       if (offerRow.status !== "pending") throw new ApiError(409, "offer_not_open", `Penawaran berstatus ${offerRow.status}`, { offerHash: offerRow.offer_hash, status: offerRow.status });
 
-      const { open, searcher, plan } = planAccept(db, circle, listingRow, offerRow, input);
+      const { open, searcher, plan } = await planAccept(db, circle, listingRow, offerRow, input, openEpoch);
 
       let signature: string | null = null;
       if (plan.kind === "bundle") {
@@ -227,7 +227,7 @@ export const bundleRoutes: Route[] = [
     method: "POST",
     pattern: "/x207/circles/{circle}/listings/{hash}/offers/{offerHash}/preview",
     circleScoped: true,
-    handler: ({ db, circle, params, body, now }) => {
+    handler: async ({ db, circle, params, body, now }) => {
       const listingRow = findListing(db, circle.circle_id, params.hash as string);
       const offerRow = findOffer(db, circle.circle_id, listingRow.listing_hash, params.offerHash as string);
       if (body === null || typeof body !== "object") throw invalidRequest("body harus objek");
@@ -237,7 +237,7 @@ export const bundleRoutes: Route[] = [
       const listingStatus = effectiveStatus(listingRow, nowSeconds(now()));
       if (listingStatus !== "open") throw new ApiError(409, "listing_not_open", `Listing berstatus ${listingStatus}`, { listingHash: listingRow.listing_hash, status: listingStatus });
       if (offerRow.status !== "pending") throw new ApiError(409, "offer_not_open", `Penawaran berstatus ${offerRow.status}`, { offerHash: offerRow.offer_hash, status: offerRow.status });
-      const { open, searcher, plan } = planAccept(db, circle, listingRow, offerRow, input);
+      const { open, searcher, plan } = await planAccept(db, circle, listingRow, offerRow, input, openEpoch);
       const shareBps = searcher === undefined ? 0 : ((input.searcherShareBps as number | undefined) ?? 0);
       const quick = { value: offerRow.value, discountBps: Number(listingRow.discount_bps), searcherShareBps: shareBps };
       const breakdown = offerRow.mode === "pay" ? { mode: "pay", ...quickPay(quick) } : { mode: "barter", ...quickBarter(quick) };
@@ -290,7 +290,7 @@ export const bundleRoutes: Route[] = [
     method: "POST",
     pattern: "/x207/circles/{circle}/bundle-proposals/{termsHash}/signatures",
     circleScoped: true,
-    handler: ({ db, circle, params, body, now }) => {
+    handler: async ({ db, circle, params, body, now }) => {
       const proposal = findProposal(db, circle.circle_id, params.termsHash as string);
       if (body === null || typeof body !== "object") throw invalidRequest("body harus objek");
       const { account, signature } = body as { account?: unknown; signature?: unknown };
@@ -298,7 +298,7 @@ export const bundleRoutes: Route[] = [
       if (typeof signature !== "string") throw invalidRequest("signature wajib string");
       const terms = JSON.parse(proposal.terms_json) as BundleTerms;
       if (!bundleParticipants(terms).includes(account)) throw invalidRequest("akun bukan peserta bundle", { account });
-      const open = currentOpenEpoch(db, circle.circle_id);
+      const open = await openEpoch(db, circle);
       if (open !== Number(proposal.epoch)) throw new ApiError(409, "epoch_not_open", "Epoch bundle ini bukan epoch open lagi", { bundleEpoch: Number(proposal.epoch), open });
       const pubkey = activeMemberKey(db, circle.circle_id, account);
       if (!verifyBundleSignature(terms, signature, pubkey)) {
@@ -313,3 +313,4 @@ export const bundleRoutes: Route[] = [
     },
   },
 ];
+}

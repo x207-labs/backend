@@ -209,3 +209,48 @@ describe("BE-041 lawan menerima penawaran balik pemasang", () => {
     expect(res.json.match).toMatchObject({ seller: acct("andi"), counterparty: acct("budi") });
   });
 });
+
+describe("BE-041 epoch open dari kontrak, bukan hanya dari D9", () => {
+  let market: Market | undefined;
+  afterEach(async () => {
+    await market?.srv.close();
+    market?.db.close();
+  });
+
+  async function negotiated(chainView?: Parameters<typeof startMarket>[2]) {
+    market = await startMarket(["andi", "budi"], [], chainView);
+    const m = market;
+    const body = signedListing(m, "andi", { offer: { asset_type: "gpu-hours", asset_class: "A", quantity: 10, value: C(100) } });
+    const hash = listingHash(body.listing);
+    await m.post("/listings", body);
+    const first = bid(m, "budi", body.listing, { mode: "pay", value: C(100) });
+    const offerHash = (await m.post(`/listings/${hash}/offers`, first)).json.offerHash;
+    return { m, hash, offerHash };
+  }
+
+  it("epoch pertama tanpa baris D9: penerimaan jalan lewat view get_epoch", async () => {
+    const calls: string[] = [];
+    const { m, hash, offerHash } = await negotiated(async (contract, method) => (calls.push(`${contract}:${method}`), { epoch: 1, phase: "open" }));
+    expect(m.db.prepare("SELECT COUNT(*) AS n FROM epochs").get()).toEqual({ n: 0 });
+    const res = await m.post(`/listings/${hash}/offers/${offerHash}/accept`, { account: acct("andi") });
+    expect(res.status).toBe(201);
+    expect(res.json.result).toMatchObject({ kind: "payment" });
+    expect(calls).toEqual(["x207-circle.near:get_epoch"]);
+  });
+
+  it("view menjawab epoch bukan open: ditolak epoch_not_open walau D9 masih menyebut open", async () => {
+    const { m, hash, offerHash } = await negotiated(async () => ({ epoch: 1, phase: "clearing" }));
+    openEpoch(m, 1);
+    const res = await m.post(`/listings/${hash}/offers/${offerHash}/accept`, { account: acct("andi") });
+    expect([res.status, res.json.error.code]).toEqual([409, "epoch_not_open"]);
+  });
+
+  it("view gagal: jatuh ke D9; tanpa D9 juga ditolak epoch_not_open", async () => {
+    const { m, hash, offerHash } = await negotiated(async () => {
+      throw new Error("rpc down");
+    });
+    expect((await m.post(`/listings/${hash}/offers/${offerHash}/accept`, { account: acct("andi") })).json.error.code).toBe("epoch_not_open");
+    openEpoch(m, 1);
+    expect((await m.post(`/listings/${hash}/offers/${offerHash}/accept`, { account: acct("andi") })).status).toBe(201);
+  });
+});
