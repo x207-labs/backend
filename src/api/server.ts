@@ -3,6 +3,7 @@ import type Database from "better-sqlite3";
 import { ApiError, invalidRequest } from "./errors.js";
 import { row } from "./format.js";
 import { matchRoute, type CircleRow, type Route, type RouteResult } from "./router.js";
+import { bundleRoutes } from "./routes/bundles.js";
 import { epochRoutes } from "./routes/epochs.js";
 import { healthRoutes } from "./routes/health.js";
 import { limitRoutes } from "./routes/limits.js";
@@ -92,7 +93,7 @@ export function createApiServer(options: ApiServerOptions): Server {
   const { db } = options;
   const now = options.now ?? Date.now;
   const limit = options.rateLimitPerMinute ?? 0;
-  const routes: Route[] = [...healthRoutes, ...memberRoutes, ...limitRoutes, ...epochRoutes, ...obligationRoutes, ...settlementRoutes, ...paramRoutes, ...metricRoutes, ...reportRoutes, ...workerRoutes(options.settlement), ...(options.daoView ? proposalRoutes(options.daoView) : []), ...(options.extraRoutes ?? [])];
+  const routes: Route[] = [...healthRoutes, ...memberRoutes, ...limitRoutes, ...epochRoutes, ...obligationRoutes, ...settlementRoutes, ...paramRoutes, ...bundleRoutes, ...metricRoutes, ...reportRoutes, ...workerRoutes(options.settlement), ...(options.daoView ? proposalRoutes(options.daoView) : []), ...(options.extraRoutes ?? [])];
   const hits = new Map<string, { windowStart: number; count: number }>();
 
   function checkRate(ip: string): void {

@@ -210,4 +210,35 @@ CREATE INDEX idx_jobs_account ON settlement_jobs (account_id, created_at);
 CREATE INDEX idx_jobs_status  ON settlement_jobs (status);
 `;
 
-export const MIGRATIONS: readonly Migration[] = [{ version: 1, name: "d9_initial", sql: V1_D9_INITIAL }];
+/** BE-036: bundles committed on chain (event `bundle_committed`) and their legs. Amounts are TEXT decimal (U128). */
+const V2_BUNDLES = `
+CREATE TABLE bundles (
+  circle_id    TEXT    NOT NULL REFERENCES circles (circle_id),
+  bundle_id    INTEGER NOT NULL,
+  terms_hash   TEXT    NOT NULL,
+  epoch        INTEGER NOT NULL,
+  solver       TEXT    NOT NULL,
+  status       TEXT    NOT NULL DEFAULT 'active' CHECK (status IN ('active')),
+  block_height INTEGER NOT NULL,
+  receipt_id   TEXT    NOT NULL,
+  log_index    INTEGER NOT NULL,
+  PRIMARY KEY (circle_id, bundle_id),
+  UNIQUE (circle_id, terms_hash)
+);
+CREATE INDEX idx_bundles_epoch ON bundles (circle_id, epoch);
+CREATE TABLE bundle_legs (
+  circle_id  TEXT    NOT NULL,
+  bundle_id  INTEGER NOT NULL,
+  leg_index  INTEGER NOT NULL,
+  payer      TEXT    NOT NULL,
+  payee      TEXT    NOT NULL,
+  max_amount TEXT    NOT NULL,
+  PRIMARY KEY (circle_id, bundle_id, leg_index),
+  FOREIGN KEY (circle_id, bundle_id) REFERENCES bundles (circle_id, bundle_id)
+);
+`;
+
+export const MIGRATIONS: readonly Migration[] = [
+  { version: 1, name: "d9_initial", sql: V1_D9_INITIAL },
+  { version: 2, name: "d9_bundles", sql: V2_BUNDLES },
+];

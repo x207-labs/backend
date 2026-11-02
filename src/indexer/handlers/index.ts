@@ -1,4 +1,5 @@
 import type { HandlerMap } from "./context.js";
+import { bundleHandlers } from "./bundles.js";
 import { epochHandlers } from "./epochs.js";
 import { memberHandlers } from "./members.js";
 import { paramsHandlers } from "./params.js";
@@ -19,4 +20,5 @@ export const defaultHandlers: HandlerMap = {
   ...settlementHandlers,
   ...riskHandlers,
   ...paramsHandlers,
+  ...bundleHandlers,
 };
