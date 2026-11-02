@@ -32,3 +32,12 @@ puts the commit under test into `backend/`, and runs install, build and test at 
 private repository of the organization). `intents-sdk` asks for `typescript@^5` as a peer; the root lockfile resolves
 it with `typescript@7.0.2` and `npm ci` at the root passes. The old `package-lock.json` of this folder is only for
 local use outside the workspace.
+
+## Menjalankan
+Isi `.env` (`NEAR_RPC_PRIMARY_URL`, `X207_CONTRACT_ID`, `X207_START_BLOCK`, dan `X207_SETTLEMENT_MODE`; default `dry`), lalu:
+
+```bash
+npm run build && npm start
+```
+
+`src/main.ts` menjalankan indexer RPC, read API, endpoint settlement (deposit, withdraw, job) dan pemantau job dalam satu proses. Worker tidak memegang kunci.
