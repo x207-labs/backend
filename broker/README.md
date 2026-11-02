@@ -31,3 +31,11 @@ never to the facilitator, and a scan of responses and facilitator traffic in `te
 
 `limits.scope` of a class C grant is `{"path_prefixes": ["/v1/echo"], "methods": ["GET", "POST"]}`, `limits.quota` is the number of calls
 per epoch, `unit` is `call`.
+
+### Several providers, rotation, audit log (BK-011)
+- Several providers are served at once: one entry per asset type in `BROKER_PROVIDERS`, each with its own secret variable.
+- Rotation: `providers.rotate(assetType, newSecretEnv)` (or SIGHUP with `BROKER_SECRETS_FILE`) points the provider at the new secret. Grants name an
+  asset type, not a secret, so no grant is cut and the quota keeps counting. A rotation to an empty variable is refused and the old secret stays.
+- Audit log (`BROKER_AUDIT_PATH`, JSON lines): calls, refusals and rotations with grant, asset type, method, path, status and the version of the secret.
+  It holds no secret, no header and no body. **It is not encrypted**: sealing it to an enclave key needs the TEE this build does not have, and the
+  broker still runs without any TEE or attestation. The update of broker code announced through attestation is not built either.

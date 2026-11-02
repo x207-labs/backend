@@ -5,3 +5,18 @@ import { startBroker } from "./broker.js";
 const broker = await startBroker({ config: readConfig(process.env), log: (line) => console.log(line) });
 console.log(`x207 broker listening at ${broker.url}`);
 for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => void broker.stop().then(() => process.exit(0)));
+
+// BK-011: SIGHUP re-reads BROKER_SECRETS_FILE (a dotenv file) and rotates every provider to the value now in its variable. No grant is cut.
+if (process.env.BROKER_SECRETS_FILE) {
+  process.on("SIGHUP", () => {
+    try {
+      process.loadEnvFile(process.env.BROKER_SECRETS_FILE as string);
+      for (const provider of readConfig(process.env).providers) {
+        const version = broker.providers.rotate(provider.assetType, provider.secretEnv, process.env);
+        console.log(`secret of ${provider.assetType} rotated, version ${version}`);
+      }
+    } catch (error) {
+      console.error(`rotation failed, the old secrets stay: ${(error as Error).message}`);
+    }
+  });
+}

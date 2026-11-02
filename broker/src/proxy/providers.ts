@@ -1,3 +1,5 @@
+import type { AuditLog } from "../audit.js";
+
 /** A provider whose API the broker calls with the secret of the grantor. */
 export interface ProviderConfig {
   assetType: string;
@@ -38,18 +40,31 @@ export function inScope(scope: ProxyScope, method: string, path: string): boolea
   return scope.path_prefixes.some((prefix) => path === prefix || path.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`));
 }
 
-/** Providers by asset type, with the secrets read from the environment when needed and never copied anywhere else. */
+/**
+ * Providers by asset type, with the secrets read from the environment when needed and never copied anywhere else. Several providers are served
+ * at once (one entry per `assetType`). A secret is rotated by pointing the provider at another variable, or at the same variable after its
+ * value was replaced in the environment of the registry: grants name an asset type, not a secret, so no grant is cut by a rotation.
+ */
 export class ProviderRegistry {
   readonly #providers = new Map<string, ProviderConfig>();
+  readonly #versions = new Map<string, number>();
   readonly #env: Record<string, string | undefined>;
 
-  constructor(providers: readonly ProviderConfig[], env: Record<string, string | undefined> = process.env) {
+  constructor(providers: readonly ProviderConfig[], env: Record<string, string | undefined> = process.env, private readonly audit?: AuditLog) {
     this.#env = env;
-    for (const p of providers) this.#providers.set(p.assetType, p);
+    for (const p of providers) {
+      this.#providers.set(p.assetType, p);
+      this.#versions.set(p.assetType, 1);
+    }
   }
 
   get(assetType: string): ProviderConfig | undefined {
     return this.#providers.get(assetType);
+  }
+
+  /** How many secrets this provider has had; goes up by one at each rotation. */
+  version(assetType: string): number {
+    return this.#versions.get(assetType) ?? 0;
   }
 
   /** `[header name, header value]` for the call to the provider; throws without naming the value when the variable is empty. */
@@ -57,6 +72,24 @@ export class ProviderRegistry {
     const secret = this.#env[provider.secretEnv];
     if (secret === undefined || secret === "") throw new Error(`secret variable ${provider.secretEnv} is not set`);
     return [provider.header ?? "authorization", `${provider.prefix ?? "Bearer "}${secret}`];
+  }
+
+  /**
+   * Switches the provider to the secret in `secretEnv` (default: the same variable, which the caller has just refreshed in the environment given to
+   * the registry). Refused, with the old secret kept, when the new variable is empty. The audit entry names the variables, never the values.
+   */
+  rotate(assetType: string, secretEnv?: string, env?: Record<string, string | undefined>): number {
+    const provider = this.#providers.get(assetType);
+    if (provider === undefined) throw new Error(`no provider for ${assetType}`);
+    if (env !== undefined) Object.assign(this.#env, env);
+    const next = secretEnv ?? provider.secretEnv;
+    const value = this.#env[next];
+    if (value === undefined || value === "") throw new Error(`secret variable ${next} is not set, the old secret stays`);
+    this.#providers.set(assetType, { ...provider, secretEnv: next });
+    const version = (this.#versions.get(assetType) ?? 1) + 1;
+    this.#versions.set(assetType, version);
+    this.audit?.record({ kind: "secret_rotated", assetType, from: provider.secretEnv, to: next, secretVersion: version });
+    return version;
   }
 }
 

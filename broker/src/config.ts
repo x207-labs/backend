@@ -17,6 +17,8 @@ export interface BrokerConfig {
   pollSeconds: number;
   /** Class C providers (BK-008); empty = class C off. The secrets are read from the environment variables they name. */
   providers: ProviderConfig[];
+  /** JSON lines audit log of the class C calls (BK-011); empty = no file. */
+  auditPath: string;
 }
 
 /** Reads the variables of `.env.example`. The error names the variable, never its value (keys are secrets). */
@@ -51,5 +53,6 @@ export function readConfig(env: Record<string, string | undefined>): BrokerConfi
     dbPath: env.BROKER_DB_PATH || "./broker.db",
     pollSeconds: int("BROKER_POLL_SECONDS", 15),
     providers: providersFromEnv(env),
+    auditPath: env.BROKER_AUDIT_PATH ?? "",
   };
 }

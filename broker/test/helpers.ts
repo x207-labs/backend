@@ -20,7 +20,7 @@ export function grant(patch: Partial<AccessGrant> = {}): AccessGrant {
 
 export class FakeChain implements BrokerChain {
   readonly leaseAccount = LEASE;
-  grants = new Map<number, AccessGrant>();
+  grants: Map<number, AccessGrant> = new Map<number, AccessGrant>();
   now = NOW;
   calls: string[] = [];
   keys = new Set<string>();

@@ -4,6 +4,7 @@ import type { Server } from "node:http";
 import { NearBrokerChain, type BrokerChain } from "./chain.js";
 import type { BrokerConfig } from "./config.js";
 import { Dispatcher } from "./dispatcher.js";
+import { FileAudit, type AuditLog } from "./audit.js";
 import { ClassCAdapter } from "./proxy/class-c.js";
 import { ProviderRegistry } from "./proxy/providers.js";
 import { ClassBAdapter } from "./keys/class-b.js";
@@ -17,6 +18,8 @@ export interface RunningBroker {
   store: BrokerStore;
   revoker: Revoker;
   classB: ClassBAdapter;
+  /** The providers of class C; `providers.rotate(assetType)` switches a secret without cutting a grant. */
+  providers: ProviderRegistry;
   /** One round: events from the read API, then the clock sweep. Resolves with what the sweep and the watcher closed. */
   tick(): Promise<void>;
   stop(): Promise<void>;
@@ -31,6 +34,8 @@ export interface StartOptions {
   log?: (line: string) => void;
   /** Cache of the `extra` (epoch) read from the facilitator, ms. The default is 60 s; an epoch that turns inside it gives `epoch_mismatch`. */
   extraCacheMs?: number;
+  /** Audit log; default: the file of `config.auditPath`, if any. */
+  audit?: AuditLog;
   /** Environment that holds the provider secrets (default `process.env`). */
   env?: Record<string, string | undefined>;
   /** Start the poll loop; tests call `tick()` themselves. */
@@ -49,6 +54,8 @@ export async function startBroker(options: StartOptions): Promise<RunningBroker>
     });
   const store = new BrokerStore(config.dbPath);
   const classB = new ClassBAdapter({ chain, store, viewAccessKey: createViewAccessKeyFn({ rpcUrls: [config.rpcUrl], finality: "optimistic" }), now });
+  const audit = options.audit ?? (config.auditPath === "" ? undefined : new FileAudit(config.auditPath));
+  const providers = new ProviderRegistry(config.providers, options.env ?? process.env, audit);
   const classC = new ClassCAdapter({ baseUrl: "", store });
   const dispatcher = new Dispatcher({ chain, adapters: { B: classB, ...(config.providers.length > 0 ? { C: classC } : {}) } });
   const revoker = new Revoker({ chain, store, classB, now, ...(options.log ? { log: options.log } : {}) });
@@ -58,7 +65,7 @@ export async function startBroker(options: StartOptions): Promise<RunningBroker>
   });
   const handler = createBrokerHandler({
     dispatcher, classB, facilitatorUrl: config.facilitatorUrl, circleId: config.circleId, brokerAccount: config.brokerAccount, extra,
-    ...(config.providers.length > 0 ? { proxy: { classC, providers: new ProviderRegistry(config.providers, options.env ?? process.env), chain, store } } : {}),
+    ...(config.providers.length > 0 ? { proxy: { classC, providers, chain, store, ...(audit ? { audit } : {}) } } : {}),
     ...(options.fetch ? { fetch: options.fetch } : {}),
   });
   const { server, url } = await serve(handler, config.port);
@@ -79,7 +86,7 @@ export async function startBroker(options: StartOptions): Promise<RunningBroker>
     loop();
   }
   return {
-    url, store, revoker, classB, tick,
+    url, store, revoker, classB, providers, tick,
     async stop() {
       if (timer) clearTimeout(timer);
       await closeServer(server);

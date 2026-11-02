@@ -1,5 +1,6 @@
 import { x207Middleware, X207ExtraSource } from "@x207/scheme";
 import type { AccessGrant } from "@x207/core";
+import type { AuditLog } from "../audit.js";
 import type { BrokerChain } from "../chain.js";
 import { DispatchError, type Dispatcher } from "../dispatcher.js";
 import type { BrokerStore } from "../store.js";
@@ -18,6 +19,8 @@ export interface ProxyOptions {
   extra: X207ExtraSource;
   creditPrice: (baseUnits: string) => string;
   fetch?: typeof fetch;
+  /** Audit log of the calls and refusals (BK-011). */
+  audit?: AuditLog;
   /** Timeout of the call to the provider. */
   timeoutMs?: number;
 }
@@ -58,7 +61,10 @@ export function createProxyHandler(options: ProxyOptions): (request: Request, ta
     } catch (error) {
       return json(403, { error: "grant_scope_denied", message: (error as Error).message });
     }
-    if (!inScope(scope, request.method, path)) return json(403, { error: "grant_scope_denied", message: `${request.method} ${path} is outside the scope` });
+    if (!inScope(scope, request.method, path)) {
+      options.audit?.record({ kind: "proxy_refused", grantId, assetType: grant.asset_type, method: request.method, path, status: 403, code: "grant_scope_denied" });
+      return json(403, { error: "grant_scope_denied", message: `${request.method} ${path} is outside the scope` });
+    }
 
     let epoch: number;
     try {
@@ -68,6 +74,7 @@ export function createProxyHandler(options: ProxyOptions): (request: Request, ta
     }
     const quota = grant.limits.quota === null || grant.limits.quota === undefined ? undefined : BigInt(grant.limits.quota);
     if (quota !== undefined && BigInt(options.store.calls(grantId, epoch)) >= quota) {
+      options.audit?.record({ kind: "proxy_refused", grantId, assetType: grant.asset_type, method: request.method, path, status: 429, code: "grant_quota_exceeded" });
       return json(429, { error: "grant_quota_exceeded", message: `quota of ${quota} calls in epoch ${epoch} is used` });
     }
 
@@ -81,6 +88,7 @@ export function createProxyHandler(options: ProxyOptions): (request: Request, ta
     const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.clone().arrayBuffer();
     return middleware(request, async (paid) => {
       const payer = payerOf(paid.headers.get("PAYMENT-SIGNATURE"));
+      if (payer !== grant.grantee) options.audit?.record({ kind: "proxy_refused", grantId, assetType: grant.asset_type, method: request.method, path, status: 403, code: "payer_not_grantee" });
       if (payer !== grant.grantee) return json(403, { error: "payer_not_grantee", message: `grant ${grantId} is leased to ${grant.grantee}` });
       let auth: [string, string];
       try {
@@ -100,6 +108,10 @@ export function createProxyHandler(options: ProxyOptions): (request: Request, ta
         return json(502, { error: "provider_unreachable", message: (error as Error).name });
       }
       const text = await upstream.arrayBuffer();
+      options.audit?.record({
+        kind: "proxy_call", grantId, assetType: grant.asset_type, method: request.method, path, status: upstream.status,
+        secretVersion: options.providers.version(grant.asset_type),
+      });
       // a provider that failed is passed on as it is; the middleware does not settle a status of 400 or more
       if (upstream.status >= 400) return new Response(text, { status: upstream.status, headers: { "content-type": upstream.headers.get("content-type") ?? "application/octet-stream" } });
       options.store.countCall(grantId, epoch);
