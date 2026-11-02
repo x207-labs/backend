@@ -124,7 +124,7 @@ describe("BK-008 class C proxy", () => {
     expect((await handler(pay(x207))).status).toBe(200);
   });
 
-  it("TC-BK-008-06 a provider error is passed on and neither settled nor counted; an unreachable provider is 502", async () => {
+  it("TC-BK-008-06 a provider error is passed on and neither settled nor counted", async () => {
     const { handler, net, store, chain } = setup();
     const { x207 } = await challenge(handler);
     net.state.providerStatus = 500;
