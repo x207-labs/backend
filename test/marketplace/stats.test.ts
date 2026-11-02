@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { acceptOffer, listingHash, signCancelListing } from "@x207/core";
-import { acct, bid, NOW_S, openEpoch, signedListing, startMarket, type Market, acceptWithSearchLeg } from "./helpers.js";
+import { acct, bid, NOW_S, openEpoch, signedListing, startMarket, type Market } from "./helpers.js";
 
 const C = (n: number) => String(n * 1_000_000);
 
@@ -49,7 +49,7 @@ describe("BE-043 statistik marketplace dari data", () => {
     await m.post("/listings", signedListing(m, "budi", { nonce: "l5", expires_at: NOW_S + 300 }));
 
     m.clock.now = start + 60_000;
-    const mine = acceptWithSearchLeg({ listing: l1.listing, offer: b1.offer, epoch: 42, searcher: acct("citra"), searcherShareBps: 300, account: acct("andi") }, m.keys.andi!.secretKey);
+    const mine = acceptOffer({ listing: l1.listing, offer: b1.offer, epoch: 42, searcher: acct("citra"), searcherShareBps: 300, account: acct("andi") }, m.keys.andi!.secretKey);
     if (mine.kind !== "bundle") throw new Error("harus bundle");
     expect((await m.post(`/listings/${h1}/offers/${o1}/accept`, { account: acct("andi"), signature: mine.signature.signature, searcher: acct("citra"), searcherShareBps: 300 })).status).toBe(201);
 

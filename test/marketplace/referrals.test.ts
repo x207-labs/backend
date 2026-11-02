@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { acceptOffer, listingHash, referralHash, signCancelListing, signRefuseReferral } from "@x207/core";
-import { acct, bid, NOW_S, openEpoch, referral, signedListing, signedReferral, startMarket, type Market, acceptWithSearchLeg } from "./helpers.js";
+import { acct, bid, NOW_S, openEpoch, referral, signedListing, signedReferral, startMarket, type Market } from "./helpers.js";
 
 const C = (n: number) => String(n * 1_000_000);
 
@@ -43,7 +43,7 @@ describe("BE-044 kotak masuk ajakan pencari", () => {
     const preview = await m.post(`/listings/${hash}/offers/${offered.json.offerHash}/preview`, { account: acct("andi") });
     expect(preview.json).toMatchObject({ kind: "bundle", searcher: acct("citra"), searcherValue: C(3), discountValue: C(10) });
     expect(preview.json.breakdown).toMatchObject({ mode: "barter", cashback: C(7), sellerBears: C(10) });
-    const mine = acceptWithSearchLeg({ listing: l, offer: first.offer, epoch: 42, searcher: acct("citra"), searcherShareBps: 300, account: acct("andi") }, m.keys.andi!.secretKey);
+    const mine = acceptOffer({ listing: l, offer: first.offer, epoch: 42, searcher: acct("citra"), searcherShareBps: 300, account: acct("andi") }, m.keys.andi!.secretKey);
     if (mine.kind !== "bundle") throw new Error("harus bundle");
     expect(preview.json.bundle.termsHash).toBe(mine.terms_hash);
     const accepted = await m.post(`/listings/${hash}/offers/${offered.json.offerHash}/accept`, { account: acct("andi"), signature: mine.signature.signature });

@@ -14,7 +14,6 @@ import { effectiveStatus, findListing, type ListingRow } from "./listings.js";
 import { openEpochResolver, type OpenEpochResolver } from "./epoch.js";
 import { findOffer, offerView, type OfferRow } from "./offers.js";
 import { threadReferral } from "./referrals.js";
-import { withSearchLeg } from "./search-leg.js";
 
 const HASH = /^[0-9a-f]{64}$/;
 const PROPOSAL_STATUSES = ["proposed", "ready", "all"] as const;
@@ -154,7 +153,7 @@ async function planAccept(
   };
   let plan;
   try {
-    plan = withSearchLeg(planOffer({ listing, offer, epoch: open, counterparty: offerRow.counterparty, ...(searcher === undefined ? {} : { searcher }), ...(shareBps === undefined ? {} : { searcherShareBps: shareBps }) }), searcher);
+    plan = planOffer({ listing, offer, epoch: open, counterparty: offerRow.counterparty, ...(searcher === undefined ? {} : { searcher }), ...(shareBps === undefined ? {} : { searcherShareBps: shareBps }) });
   } catch (error) {
     if (error instanceof BarterFormatError) throw invalidRequest(error.message);
     throw error;
