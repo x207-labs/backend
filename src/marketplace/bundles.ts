@@ -197,7 +197,7 @@ export const bundleRoutes: Route[] = [
                discount_value, searcher_account, searcher_value, matched_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(circle.circle_id, listingRow.listing_hash, offerRow.offer_hash, listingRow.account_id, offerRow.counterparty, offerRow.mode, plan.kind, open,
-            plan.kind === "bundle" ? plan.terms_hash : null, listingRow.offer_value, plan.discount, searcher ?? null, plan.searcher, now());
+            plan.kind === "bundle" ? plan.terms_hash : null, offerRow.value, plan.discount, searcher ?? null, plan.searcher, now());
         const matchId = match.lastInsertRowid;
         db.prepare("UPDATE offers SET status = 'accepted' WHERE id = ?").run(offerRow.id);
         db.prepare("UPDATE offers SET status = 'closed' WHERE circle_id = ? AND listing_hash = ? AND id <> ? AND status IN ('pending')").run(circle.circle_id, listingRow.listing_hash, offerRow.id);
@@ -239,7 +239,7 @@ export const bundleRoutes: Route[] = [
       if (offerRow.status !== "pending") throw new ApiError(409, "offer_not_open", `Penawaran berstatus ${offerRow.status}`, { offerHash: offerRow.offer_hash, status: offerRow.status });
       const { open, searcher, plan } = planAccept(db, circle, listingRow, offerRow, input);
       const shareBps = searcher === undefined ? 0 : ((input.searcherShareBps as number | undefined) ?? 0);
-      const quick = { value: listingRow.offer_value, discountBps: Number(listingRow.discount_bps), searcherShareBps: shareBps };
+      const quick = { value: offerRow.value, discountBps: Number(listingRow.discount_bps), searcherShareBps: shareBps };
       const breakdown = offerRow.mode === "pay" ? { mode: "pay", ...quickPay(quick) } : { mode: "barter", ...quickBarter(quick) };
       const bundle =
         plan.kind === "bundle"

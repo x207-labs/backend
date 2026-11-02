@@ -195,9 +195,12 @@ describe("BE-041 lawan menerima penawaran balik pemasang", () => {
 
     const preview = await m.post(`/listings/${hash}/offers/${o2}/preview`, { account: acct("budi") });
     expect(preview.status).toBe(200);
-    const expected = acceptOffer({ listing: body.listing, offer: first.offer, epoch: 42, account: acct("andi") }, m.keys.andi!.secretKey);
+    // nilai kesepakatan 95 (penawaran balik), bukan 100 di listing atau 85 di tawaran pertama
+    const expected = acceptOffer({ listing: body.listing, offer: second.offer, counterparty: acct("budi"), epoch: 42, account: acct("andi") }, m.keys.andi!.secretKey);
     if (expected.kind !== "bundle") throw new Error("harus bundle");
     expect(preview.json.bundle.termsHash).toBe(expected.terms_hash);
+    expect(expected.terms.legs.map((l) => l.max_amount).sort()).toEqual([C(95), String(109_500_000)].sort());
+    expect(preview.json.breakdown).toMatchObject({ mode: "barter", sellerBears: String(9_500_000) });
 
     const mine = signBundle(expected.terms, acct("budi"), m.keys.budi!.secretKey);
     const res = await m.post(`/listings/${hash}/offers/${o2}/accept`, { account: acct("budi"), signature: mine.signature });
