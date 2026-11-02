@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fxServer } from "../helpers/fx-api.js";
 import { acct, block, claimFailedLog, eventLog } from "../helpers/fx-log42.js";
 
-// Event yang dipancarkan kontrak 0.0.1 (spec bagian 6 dan 14). Satu fixture log untuk tiap event.
+// Event yang dipancarkan kontrak 0.0.1 (spec bagian 6 dan 14); event 0.0.2 ada di TC-BE-013-03. Satu fixture log untuk tiap event.
 const CONTRACT_EVENTS = [
   "member_joined", "stake_added", "voucher_registered", "epoch_cutoff", "clearing_submitted", "clearing_applied",
   "epoch_committed", "residual_paid", "member_defaulted", "limits_updated", "epoch_finalized", "residual_claimed",
@@ -48,6 +48,25 @@ describe("BE-013 setiap handler indexer dengan fixture log", () => {
       expect(cursor.h).toBe(1011);
     } finally {
       await after.close();
+    }
+  });
+
+  it("TC-BE-013-03 event antarmuka 0.0.2 sampai ke handler atau events_raw, semuanya handled", async () => {
+    const extra = [
+      block(1011, { logs: [eventLog("member_admitted", { account_id: acct("scraper"), status: "pending" })] }),
+      block(1012, { logs: [eventLog("member_reactivated", { account_id: acct("scraper"), stake: "100000000", limit: "80000000", effective_epoch: 44 })] }),
+      block(1013, { logs: [eventLog("solver_fee_claimed", { account_id: acct("gpu"), amount: "750000" })] }),
+      block(1014, { logs: [eventLog("solver_fee_claim_failed", { account_id: acct("gpu"), amount: "750000" })] }),
+    ];
+    const f = await fxServer(11, extra);
+    try {
+      const rows = f.db.prepare("SELECT event, handled FROM events_raw WHERE block_height > 1010").all() as { event: string; handled: number }[];
+      expect(rows.map((r) => r.event)).toEqual(["member_admitted", "member_reactivated", "solver_fee_claimed", "solver_fee_claim_failed"]);
+      for (const r of rows) expect(r.handled, r.event).toBe(1);
+      const scraper = f.db.prepare("SELECT admitted, reactivate_epoch FROM members WHERE account_id = ?").get(acct("scraper")) as { admitted: number; reactivate_epoch: number };
+      expect(scraper).toEqual({ admitted: 1, reactivate_epoch: 44 });
+    } finally {
+      await f.close();
     }
   });
 });
