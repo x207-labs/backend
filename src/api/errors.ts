@@ -17,7 +17,10 @@ export type ApiErrorCode =
   | "high_fee_requires_ack"
   | "not_found"
   | "rate_limited"
-  | "indexer_unavailable";
+  | "indexer_unavailable"
+  | "invalid_signature"
+  | "member_not_active"
+  | "already_exists";
 
 export class ApiError extends Error {
   constructor(
