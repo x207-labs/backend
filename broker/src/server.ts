@@ -4,6 +4,7 @@ import { x207Middleware, X207ExtraSource, type X207Middleware } from "@x207/sche
 import type { AccessGrant } from "@x207/core";
 import { DispatchError, type Dispatcher } from "./dispatcher.js";
 import type { ClassBAdapter } from "./keys/class-b.js";
+import { createProxyHandler, matchProxy, type ProxyOptions } from "./proxy/handler.js";
 
 export interface BrokerServerOptions {
   dispatcher: Dispatcher;
@@ -14,6 +15,8 @@ export interface BrokerServerOptions {
   brokerAccount: string;
   extra?: X207ExtraSource;
   fetch?: typeof fetch;
+  /** Class C proxy (BK-008). Without it `/grants/{id}/proxy/*` is `class_not_supported`. */
+  proxy?: Omit<ProxyOptions, "dispatcher" | "facilitatorUrl" | "circleId" | "brokerAccount" | "extra" | "creditPrice" | "fetch">;
 }
 
 const json = (status: number, body: unknown): Response => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -33,9 +36,17 @@ const LEASE_PATH = /^\/grants\/(0|[1-9]\d*)\/lease$/;
  */
 export function createBrokerHandler(options: BrokerServerOptions): (request: Request) => Promise<Response> {
   const extra = options.extra ?? new X207ExtraSource({ facilitatorUrl: options.facilitatorUrl.replace(/\/+$/, ""), ...(options.fetch ? { fetch: options.fetch } : {}) });
+  const proxy = options.proxy
+    ? createProxyHandler({
+        ...options.proxy, dispatcher: options.dispatcher, facilitatorUrl: options.facilitatorUrl, circleId: options.circleId,
+        brokerAccount: options.brokerAccount, extra, creditPrice, ...(options.fetch ? { fetch: options.fetch } : {}),
+      })
+    : undefined;
   return async (request) => {
     const url = new URL(request.url);
     if (url.pathname === "/health") return json(200, { ok: true });
+    const target = matchProxy(url);
+    if (target !== null) return proxy ? proxy(request, target) : json(501, { error: "class_not_supported" });
     const match = LEASE_PATH.exec(url.pathname);
     if (request.method !== "GET" || match === null) return json(404, { error: "not_found" });
     const grantId = Number(match[1]);

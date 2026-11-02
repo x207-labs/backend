@@ -11,8 +11,8 @@ grantor (`payTo` = grantor, `extra.grantId`, `resource` = `x207:grant:<grantId>`
 | --- | --- | --- |
 | `src/watcher/` | reads `grant_activated`, `grant_revoked`, `member_defaulted` from the read API (BK-003) | built |
 | `src/keys/` | class B: `AddKey` and `DeleteKey` on the lease sub-account (BK-006, BK-007) | built |
-| `src/proxy/` | class C: forwarding with the secret inside the enclave (BK-008..BK-010) | roadmap |
-| `src/attest/` | class C: TEE attestation (BK-011) | roadmap |
+| `src/proxy/` | class C (BK-008): `POST /grants/{grantId}/proxy/*` checks the grant, the scope and the quota of the epoch, forwards the call with the secret of the grantor and settles only when the provider answered with success | built, **no TEE** |
+| `src/attest/` | class C (BK-009): the `Attestor` interface and `NoAttestation` | interface only |
 
 ```bash
 npm install   # from the repository root, workspaces
@@ -21,3 +21,13 @@ npm run build && npm start
 ```
 
 Variables are in `.env.example`.
+
+## Class C: what it is and what it is not
+The secret of the grantor (the API key of the provider) is read from the environment variable that `BROKER_PROVIDERS` names. **There is no
+TEE in this build and no attestation**: whoever runs the broker can read the secret, and `prove` for class C answers `no_attestation`
+unless a real `Attestor` is given. The sealing of secrets to an enclave key (BK-009, BK-010) and the upload endpoint `POST /secrets`
+are not built. What is built is checked against a local mock provider: the secret is sent to the provider only, never back to the lessee,
+never to the facilitator, and a scan of responses and facilitator traffic in `test/proxy.test.ts` finds none.
+
+`limits.scope` of a class C grant is `{"path_prefixes": ["/v1/echo"], "methods": ["GET", "POST"]}`, `limits.quota` is the number of calls
+per epoch, `unit` is `call`.

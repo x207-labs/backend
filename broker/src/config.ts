@@ -1,3 +1,5 @@
+import { providersFromEnv, type ProviderConfig } from "./proxy/providers.js";
+
 export class ConfigError extends Error {}
 
 export interface BrokerConfig {
@@ -13,6 +15,8 @@ export interface BrokerConfig {
   port: number;
   dbPath: string;
   pollSeconds: number;
+  /** Class C providers (BK-008); empty = class C off. The secrets are read from the environment variables they name. */
+  providers: ProviderConfig[];
 }
 
 /** Reads the variables of `.env.example`. The error names the variable, never its value (keys are secrets). */
@@ -46,5 +50,6 @@ export function readConfig(env: Record<string, string | undefined>): BrokerConfi
     port: int("BROKER_PORT", 8090),
     dbPath: env.BROKER_DB_PATH || "./broker.db",
     pollSeconds: int("BROKER_POLL_SECONDS", 15),
+    providers: providersFromEnv(env),
   };
 }

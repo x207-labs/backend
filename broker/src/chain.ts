@@ -18,6 +18,8 @@ export interface BrokerChain {
   revokeGrant(grantId: number, reason: RevokeReason): Promise<{ ok: true; txHash: string } | { ok: false; error: string }>;
   /** Block time in ms, to compare with `expires_at`. */
   nowMs(): Promise<number>;
+  /** The running epoch of the circle (`get_epoch`), for the quota per epoch of class C. */
+  currentEpoch(): Promise<number>;
 }
 
 export interface NearBrokerChainOptions {
@@ -100,6 +102,10 @@ export class NearBrokerChain implements BrokerChain {
     } catch (error) {
       return { ok: false, error: (error as Error).message };
     }
+  }
+
+  async currentEpoch(): Promise<number> {
+    return (await this.#view<{ epoch: number }>("get_epoch", {})).epoch;
   }
 
   async nowMs(): Promise<number> {

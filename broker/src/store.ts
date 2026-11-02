@@ -36,6 +36,7 @@ export class BrokerStore {
         key_added     INTEGER NOT NULL DEFAULT 0,
         closed        INTEGER NOT NULL DEFAULT 0
       );
+      CREATE TABLE IF NOT EXISTS calls (grant_id INTEGER NOT NULL, epoch INTEGER NOT NULL, n INTEGER NOT NULL, PRIMARY KEY (grant_id, epoch));
       CREATE TABLE IF NOT EXISTS cursor (name TEXT PRIMARY KEY, value TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS seen_events (receipt_id TEXT NOT NULL, log_index INTEGER NOT NULL, PRIMARY KEY (receipt_id, log_index));
     `);
@@ -62,6 +63,15 @@ export class BrokerStore {
            key_added = excluded.key_added, closed = excluded.closed`,
       )
       .run(lease.grantId, lease.publicKey, lease.paidUntilMs, lease.keyAdded ? 1 : 0, lease.closed ? 1 : 0);
+  }
+
+  /** Calls of a class C grant that the provider answered with success in `epoch`. */
+  calls(grantId: number, epoch: number): number {
+    return (this.db.prepare("SELECT n FROM calls WHERE grant_id = ? AND epoch = ?").get(grantId, epoch) as { n: number } | undefined)?.n ?? 0;
+  }
+
+  countCall(grantId: number, epoch: number): void {
+    this.db.prepare("INSERT INTO calls (grant_id, epoch, n) VALUES (?, ?, 1) ON CONFLICT (grant_id, epoch) DO UPDATE SET n = n + 1").run(grantId, epoch);
   }
 
   cursor(name: string): string | undefined {

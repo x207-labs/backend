@@ -51,6 +51,10 @@ export class FakeChain implements BrokerChain {
     if (this.revokeResult.ok && g) this.grants.set(id, { ...g, status: reason === "expired" ? "expired" : "revoked" } as AccessGrant);
     return this.revokeResult;
   }
+  epoch = 42;
+  async currentEpoch(): Promise<number> {
+    return this.epoch;
+  }
   async nowMs(): Promise<number> {
     return this.now;
   }
