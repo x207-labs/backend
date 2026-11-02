@@ -70,3 +70,13 @@ Langkah (masuk, `due` atau stake): quote `recipientType: INTENTS`, pemilik mengi
 Per tahap: tanggal UTC, mode, hasil (lulus atau gagal), `amountIn` / `amountOut` / `withdrawFee`, dan untuk tahap 4 tx hash serta status akhir 1Click. Jangan mencatat JWT, kunci, atau isi `.env`.
 
 BE-026 selesai bila tahap 1–3 lulus dan tahap 4 sukses sekali. Dokumen ini adalah prosedurnya; eksekusi tahap 4 menunggu persetujuan pemilik dan belum dilakukan.
+
+## Hasil yang sudah dijalankan (2026-11-02, Main A2)
+Tahap tanpa dana (1–3), memakai `X207_INTEGRATION=1 npx vitest run test/settlement` terhadap 1Click dan RPC mainnet nyata, selalu `dry: true`:
+- Quote deposit stake 50 USDC Base dan quote settle dari D9: 201, job `waiting_deposit` (TC-BE-027-12, TC-BE-032-01).
+- Quote withdraw 1 USDT ke USDC Base: 201, `withdrawFee` `"2400"` (TC-BE-030-13, TC-BE-032-02).
+- `simulate_intents` di `intents.near`: input kosong sukses, intent tidak sah dipetakan ke `simulation_failed` (TC-BE-032-03).
+- `refundTo` akun NEAR yang tidak ada ditolak sebelum 1Click (TC-BE-032-04); aset tidak didukung 422, alamat tidak sah dan jumlah terlalu kecil 502 (TC-BE-032-05); tidak ada request `dry: false` selama suite (TC-BE-032-06).
+- Temuan: RPC mainnet menjawab akun yang tidak ada dengan error tingkat atas `UNKNOWN_ACCOUNT`; `nearAccountExists` sudah menanganinya.
+
+Belum dijalankan: tahap 4, satu transaksi residual nominal kecil di mainnet (deposit dari chain asal, `ft_withdraw` ke akun NEAR, `ft_transfer_call` ke kontrak, lalu pencairan ke USDC Base). Butuh dana, kunci pemilik, dan konfirmasi manusia; tidak dikerjakan oleh sesi kerja.
