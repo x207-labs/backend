@@ -238,7 +238,41 @@ CREATE TABLE bundle_legs (
 );
 `;
 
+/** BE-038 (F8): D10 registry and D11 grants as the events tell them; scope, quota and operator are read with the `get_grant` view. */
+const V3_GRANTS = `
+CREATE TABLE asset_classes (
+  circle_id    TEXT    NOT NULL REFERENCES circles (circle_id),
+  asset_type   TEXT    NOT NULL,
+  class        TEXT    NOT NULL CHECK (class IN ('A','B','C','D','X')),
+  block_height INTEGER NOT NULL,
+  receipt_id   TEXT    NOT NULL,
+  log_index    INTEGER NOT NULL,
+  PRIMARY KEY (circle_id, asset_type)
+);
+CREATE TABLE grants (
+  circle_id       TEXT    NOT NULL REFERENCES circles (circle_id),
+  grant_id        INTEGER NOT NULL,
+  asset_type      TEXT    NOT NULL,
+  grantor         TEXT    NOT NULL,
+  grantee         TEXT,
+  class           TEXT    NOT NULL CHECK (class IN ('A','B','C','D','X')),
+  unit            TEXT    NOT NULL,
+  unit_price      INTEGER NOT NULL,
+  expires_at_ns   INTEGER NOT NULL,
+  delivery_pubkey TEXT,
+  status          TEXT    NOT NULL CHECK (status IN ('offered','active','revoked','expired')),
+  revoke_reason   TEXT,
+  block_height    INTEGER NOT NULL,
+  receipt_id      TEXT    NOT NULL,
+  log_index       INTEGER NOT NULL,
+  PRIMARY KEY (circle_id, grant_id)
+);
+CREATE INDEX idx_grants_grantee ON grants (circle_id, grantee, status);
+CREATE INDEX idx_grants_grantor ON grants (circle_id, grantor, status);
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "d9_initial", sql: V1_D9_INITIAL },
   { version: 2, name: "d9_bundles", sql: V2_BUNDLES },
+  { version: 3, name: "d9_grants", sql: V3_GRANTS },
 ];

@@ -24,6 +24,7 @@ export type ApiErrorCode =
   | "listing_not_found"
   | "listing_not_open"
   | "asset_class_rejected"
+  | "grant_not_found"
   | "offer_not_found"
   | "offer_not_open"
   | "negotiation_closed"
