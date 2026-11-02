@@ -14,6 +14,7 @@ import { effectiveStatus, findListing, type ListingRow } from "./listings.js";
 import { openEpochResolver, type OpenEpochResolver } from "./epoch.js";
 import { findOffer, offerView, type OfferRow } from "./offers.js";
 import { threadReferral } from "./referrals.js";
+import { withSearchLeg } from "./search-leg.js";
 
 const HASH = /^[0-9a-f]{64}$/;
 const PROPOSAL_STATUSES = ["proposed", "ready", "all"] as const;
@@ -153,7 +154,7 @@ async function planAccept(
   };
   let plan;
   try {
-    plan = planOffer({ listing, offer, epoch: open, counterparty: offerRow.counterparty, ...(searcher === undefined ? {} : { searcher }), ...(shareBps === undefined ? {} : { searcherShareBps: shareBps }) });
+    plan = withSearchLeg(planOffer({ listing, offer, epoch: open, counterparty: offerRow.counterparty, ...(searcher === undefined ? {} : { searcher }), ...(shareBps === undefined ? {} : { searcherShareBps: shareBps }) }), searcher);
   } catch (error) {
     if (error instanceof BarterFormatError) throw invalidRequest(error.message);
     throw error;
@@ -271,7 +272,7 @@ export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver())
     circleScoped: true,
     handler: async ({ db, circle, body, now }) => {
       if (body === null || typeof body !== "object") throw invalidRequest("body harus objek");
-      const { terms, termsHash: claimed } = body as { terms?: unknown; termsHash?: unknown };
+      const { terms, termsHash: claimed, searcher } = body as { terms?: unknown; termsHash?: unknown; searcher?: unknown };
       if (terms === null || typeof terms !== "object") throw invalidRequest("terms wajib objek");
       const candidate = terms as BundleTerms;
       try {
@@ -279,6 +280,12 @@ export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver())
       } catch (error) {
         if (error instanceof BarterFormatError) throw invalidRequest(error.message);
         throw error;
+      }
+      // A bundle that pays a seeker must name that leg, or max_search_share_bps would not apply to it (CT-082)
+      if (searcher !== undefined) {
+        if (typeof searcher !== "string") throw invalidRequest("searcher harus string");
+        if (!candidate.legs.some((l) => l.payee === searcher)) throw invalidRequest("searcher bukan penerima leg mana pun di terms", { searcher });
+        if (candidate.search_leg?.payee !== searcher) throw invalidRequest("search_leg wajib ada dan menunjuk leg pencari", { searcher });
       }
       if (candidate.circle !== circle.contract_id) throw invalidRequest("terms.circle harus akun kontrak lingkaran", { expected: circle.contract_id, got: candidate.circle });
       const hash = termsHash(candidate);

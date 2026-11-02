@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
-import { generateVoucherKeypair } from "@x207/core";
+import { acceptOffer, generateVoucherKeypair, signBundle, type AcceptResult } from "@x207/core";
+import { withSearchLeg } from "../../src/marketplace/search-leg.js";
 import { marketplaceRoutes } from "../../src/marketplace/index.js";
 import type { ViewFunction } from "../../src/settlement/intents.js";
 import { acct, CIRCLE, CONTRACT, listen, seedCircle, seedMember, type TestServer } from "../helpers/d9-fixtures.js";
@@ -92,3 +93,12 @@ export const signedReferral = (m: Market, seeker: string, to: string, l: Listing
   const r = referral(seeker, to, l, over);
   return { referral: r, signature: signReferral(r, m.keys[seeker]!.secretKey) };
 };
+
+/** `acceptOffer` of the sdk with the seeker leg named in the terms (CT-082) and the signature made over those terms. */
+export function acceptWithSearchLeg(input: Parameters<typeof acceptOffer>[0], key: Parameters<typeof acceptOffer>[1]): AcceptResult {
+  const result = acceptOffer(input, key);
+  if (result.kind !== "bundle") return result;
+  const plan = withSearchLeg({ kind: "bundle", terms: result.terms, terms_hash: result.terms_hash, discount: "0", searcher: "0" }, input.searcher);
+  if (plan.kind !== "bundle") return result;
+  return { kind: "bundle", terms: plan.terms, terms_hash: plan.terms_hash, signature: signBundle(plan.terms, input.account, key) };
+}
