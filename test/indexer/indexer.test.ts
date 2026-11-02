@@ -165,7 +165,7 @@ describe("BE-006 inti indexer", () => {
   });
 
   it("TC-BE-006-19 event P1 hanya disimpan", async () => {
-    const b = block(1000, { logs: [eventLog("solver_fee_claimed", { solver: "solver-b", amount: "5" })] });
+    const b = block(1000, { logs: [eventLog("solver_fee_claimed", { account_id: "solver-b.near", amount: "5" })] });
     await run(new ArrayBlockSource([b]));
     expect(db.prepare("SELECT event, handled FROM events_raw").all()).toEqual([{ event: "solver_fee_claimed", handled: 1 }]);
     expect(count("members") + count("obligations")).toBe(0);
