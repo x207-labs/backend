@@ -3,7 +3,7 @@
 // pengiriman `commit_bundle` dilakukan solver/keeper, bukan backend. Dipisah dari `GET …/bundles` (BE-036) yang membaca bundle on-chain.
 import type Database from "better-sqlite3";
 import {
-  BarterFormatError, bundleFullySigned, bundleParticipants, planOffer, verifyBundleSignature, type BundleSignature, type BundleTerms, type Listing,
+  BarterFormatError, bundleFullySigned, bundleParticipants, planOffer, quickBarter, quickPay, serializeBundleTerms, verifyBundleSignature, type BundleSignature, type BundleTerms, type Listing,
 } from "@x207/core";
 import { ApiError, invalidRequest } from "../api/errors.js";
 import { row, rows } from "../api/format.js";
@@ -11,7 +11,7 @@ import type { Route } from "../api/router.js";
 import { activeMemberKey, memberKeys } from "./auth.js";
 import { isoSeconds, nowSeconds } from "./common.js";
 import { effectiveStatus, findListing, type ListingRow } from "./listings.js";
-import { findOffer, offerView } from "./offers.js";
+import { findOffer, offerView, type OfferRow } from "./offers.js";
 
 const HASH = /^[0-9a-f]{64}$/;
 const PROPOSAL_STATUSES = ["proposed", "ready", "all"] as const;
@@ -124,6 +124,40 @@ function refreshStatus(db: Database.Database, circleId: string, p: ProposalRow):
   db.prepare("UPDATE bundle_proposals SET status = ? WHERE id = ?").run(ready ? "ready" : "proposed", p.id);
 }
 
+interface AcceptInput {
+  epoch?: unknown;
+  searcher?: unknown;
+  searcherShareBps?: unknown;
+}
+
+/** Rencana penerimaan: epoch `open` saat ini, pencari tervalidasi, dan hasil `planOffer` (leg, `terms_hash`, diskon, jatah pencari). */
+function planAccept(db: Database.Database, circle: { circle_id: string; contract_id: string }, listingRow: ListingRow, offerRow: OfferRow, input: AcceptInput) {
+  const open = currentOpenEpoch(db, circle.circle_id);
+  if (open === null) throw new ApiError(409, "epoch_not_open", "Tidak ada epoch open");
+  if (input.epoch !== undefined && input.epoch !== open) throw new ApiError(409, "epoch_not_open", "Bundle harus untuk epoch open saat ini", { expected: open, got: input.epoch as number });
+  if (input.searcher !== undefined && typeof input.searcher !== "string") throw invalidRequest("searcher harus string");
+  if (input.searcherShareBps !== undefined && !Number.isSafeInteger(input.searcherShareBps)) throw invalidRequest("searcherShareBps harus integer");
+  const searcher = input.searcher as string | undefined;
+  if (searcher !== undefined) {
+    activeMemberKey(db, circle.circle_id, searcher);
+    if (searcher === listingRow.account_id || searcher === offerRow.counterparty) throw invalidRequest("pencari harus akun di luar kedua pihak");
+  }
+
+  const listing = listingFromRow(circle.contract_id, listingRow);
+  const offer = {
+    circle: circle.contract_id, listing_hash: listingRow.listing_hash, proposer: offerRow.proposer, round: Number(offerRow.round),
+    mode: offerRow.mode as "pay" | "barter", value: offerRow.value, quantity: Number(offerRow.quantity), deliver_by: Number(offerRow.deliver_by),
+  };
+  let plan;
+  try {
+    plan = planOffer({ listing, offer, epoch: open, ...(searcher === undefined ? {} : { searcher }), ...(input.searcherShareBps === undefined ? {} : { searcherShareBps: input.searcherShareBps as number }) });
+  } catch (error) {
+    if (error instanceof BarterFormatError) throw invalidRequest(error.message);
+    throw error;
+  }
+  return { open, searcher, plan };
+}
+
 export const bundleRoutes: Route[] = [
   {
     method: "POST",
@@ -141,29 +175,7 @@ export const bundleRoutes: Route[] = [
       if (listingStatus !== "open") throw new ApiError(409, "listing_not_open", `Listing berstatus ${listingStatus}`, { listingHash: listingRow.listing_hash, status: listingStatus });
       if (offerRow.status !== "pending") throw new ApiError(409, "offer_not_open", `Penawaran berstatus ${offerRow.status}`, { offerHash: offerRow.offer_hash, status: offerRow.status });
 
-      const open = currentOpenEpoch(db, circle.circle_id);
-      if (open === null) throw new ApiError(409, "epoch_not_open", "Tidak ada epoch open");
-      if (input.epoch !== undefined && input.epoch !== open) throw new ApiError(409, "epoch_not_open", "Bundle harus untuk epoch open saat ini", { expected: open, got: input.epoch as number });
-      if (input.searcher !== undefined && typeof input.searcher !== "string") throw invalidRequest("searcher harus string");
-      if (input.searcherShareBps !== undefined && !Number.isSafeInteger(input.searcherShareBps)) throw invalidRequest("searcherShareBps harus integer");
-      const searcher = input.searcher as string | undefined;
-      if (searcher !== undefined) {
-        activeMemberKey(db, circle.circle_id, searcher);
-        if (searcher === listingRow.account_id || searcher === offerRow.counterparty) throw invalidRequest("pencari harus akun di luar kedua pihak");
-      }
-
-      const listing = listingFromRow(circle.contract_id, listingRow);
-      const offer = {
-        circle: circle.contract_id, listing_hash: listingRow.listing_hash, proposer: offerRow.proposer, round: Number(offerRow.round),
-        mode: offerRow.mode as "pay" | "barter", value: offerRow.value, quantity: Number(offerRow.quantity), deliver_by: Number(offerRow.deliver_by),
-      };
-      let plan;
-      try {
-        plan = planOffer({ listing, offer, epoch: open, ...(searcher === undefined ? {} : { searcher }), ...(input.searcherShareBps === undefined ? {} : { searcherShareBps: input.searcherShareBps as number }) });
-      } catch (error) {
-        if (error instanceof BarterFormatError) throw invalidRequest(error.message);
-        throw error;
-      }
+      const { open, searcher, plan } = planAccept(db, circle, listingRow, offerRow, input);
 
       let signature: string | null = null;
       if (plan.kind === "bundle") {
@@ -208,6 +220,43 @@ export const bundleRoutes: Route[] = [
           ? { kind: "payment", payer: plan.payer, payee: plan.payee, amount: plan.amount }
           : { kind: "bundle", proposal: proposalView(db, circle.circle_id, findProposal(db, circle.circle_id, plan.terms_hash)) };
       return { status: 201, body: { match: matchView(match), offer: offerView(findOffer(db, circle.circle_id, listingRow.listing_hash, offerRow.offer_hash)), result } };
+    },
+  },
+  {
+    // Pratinjau penerimaan tanpa menyimpan apa pun: angka akhir dan pesan yang akan ditandatangani (FE-020).
+    method: "POST",
+    pattern: "/x207/circles/{circle}/listings/{hash}/offers/{offerHash}/preview",
+    circleScoped: true,
+    handler: ({ db, circle, params, body, now }) => {
+      const listingRow = findListing(db, circle.circle_id, params.hash as string);
+      const offerRow = findOffer(db, circle.circle_id, listingRow.listing_hash, params.offerHash as string);
+      if (body === null || typeof body !== "object") throw invalidRequest("body harus objek");
+      const input = body as AcceptInput & { account?: unknown };
+      if (typeof input.account !== "string") throw invalidRequest("account wajib string");
+      if (input.account !== offerRow.awaiting) throw invalidRequest("hanya pihak yang ditunggu jawabannya boleh menerima", { expected: offerRow.awaiting });
+      const listingStatus = effectiveStatus(listingRow, nowSeconds(now()));
+      if (listingStatus !== "open") throw new ApiError(409, "listing_not_open", `Listing berstatus ${listingStatus}`, { listingHash: listingRow.listing_hash, status: listingStatus });
+      if (offerRow.status !== "pending") throw new ApiError(409, "offer_not_open", `Penawaran berstatus ${offerRow.status}`, { offerHash: offerRow.offer_hash, status: offerRow.status });
+      const { open, searcher, plan } = planAccept(db, circle, listingRow, offerRow, input);
+      const shareBps = searcher === undefined ? 0 : ((input.searcherShareBps as number | undefined) ?? 0);
+      const quick = { value: listingRow.offer_value, discountBps: Number(listingRow.discount_bps), searcherShareBps: shareBps };
+      const breakdown = offerRow.mode === "pay" ? { mode: "pay", ...quickPay(quick) } : { mode: "barter", ...quickBarter(quick) };
+      const bundle =
+        plan.kind === "bundle"
+          ? {
+              termsHash: plan.terms_hash,
+              message: serializeBundleTerms(plan.terms),
+              nonce: Buffer.from(plan.terms_hash, "hex").toString("base64"),
+              recipient: circle.contract_id,
+              terms: plan.terms,
+              participants: bundleParticipants(plan.terms),
+            }
+          : null;
+      const payment = plan.kind === "payment" ? { payer: plan.payer, payee: plan.payee, amount: plan.amount } : null;
+      return {
+        status: 200,
+        body: { kind: plan.kind, epoch: open, mode: offerRow.mode, discountValue: plan.discount, searcherValue: plan.searcher, searcher: searcher ?? null, breakdown, bundle, payment },
+      };
     },
   },
   {

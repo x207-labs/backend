@@ -123,3 +123,53 @@ describe("BE-041 terima penawaran menjadi usulan bundle", () => {
     expect((await m.post(`/bundle-proposals/${mine.terms_hash}/signatures`, { account: acct("budi"), signature: byBudi.signature })).json.error.code).toBe("epoch_not_open");
   });
 });
+
+describe("BE-041 pratinjau penerimaan", () => {
+  let market: Market | undefined;
+  afterEach(async () => {
+    await market?.srv.close();
+    market?.db.close();
+  });
+
+  it("preview memuat angka akhir dan pesan yang ditandatangani tanpa menyimpan apa pun", async () => {
+    market = await startMarket(["andi", "budi", "citra"]);
+    const m = market;
+    openEpoch(m, 42);
+    const body = signedListing(m, "andi", { offer: { asset_type: "gpu-hours", asset_class: "A", quantity: 10, value: C(100) }, want: { asset_type: "translation", asset_class: "B", quantity: 5, value: C(100) } });
+    const hash = listingHash(body.listing);
+    await m.post("/listings", body);
+    const first = bid(m, "budi", body.listing, { value: C(100) });
+    const offerHash = (await m.post(`/listings/${hash}/offers`, first)).json.offerHash;
+
+    const res = await m.post(`/listings/${hash}/offers/${offerHash}/preview`, { account: acct("andi"), searcher: acct("citra"), searcherShareBps: 300 });
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ kind: "bundle", epoch: 42, mode: "barter", discountValue: C(10), searcherValue: C(3), searcher: acct("citra") });
+    expect(res.json.breakdown).toMatchObject({ mode: "barter", cashback: C(7), searcher: C(3), sellerBears: C(10), counterpartyGives: C(100) });
+    const mine = acceptOffer({ listing: body.listing, offer: first.offer, epoch: 42, searcher: acct("citra"), searcherShareBps: 300, account: acct("andi") }, m.keys.andi!.secretKey);
+    if (mine.kind !== "bundle") throw new Error("harus bundle");
+    expect(res.json.bundle).toMatchObject({ termsHash: mine.terms_hash, recipient: "x207-circle.near", participants: [acct("andi"), acct("budi"), acct("citra")].sort() });
+    expect(JSON.parse(res.json.bundle.message)).toMatchObject({ circle: "x207-circle.near", epoch: 42 });
+    expect(Buffer.from(res.json.bundle.nonce, "base64").toString("hex")).toBe(mine.terms_hash);
+
+    // tidak ada yang tersimpan
+    expect((await m.get(`/listings/${hash}`)).json.status).toBe("open");
+    expect((await m.get("/bundle-proposals")).json.items).toHaveLength(0);
+    expect((await m.post(`/listings/${hash}/offers/${offerHash}/preview`, { account: acct("budi") })).status).toBe(400);
+  });
+
+  it("preview jalur bayar tanpa pencari menampilkan satu pembayaran", async () => {
+    const { m, hash, offerHash } = await (async () => {
+      market = await startMarket(["andi", "budi"]);
+      const mm = market;
+      openEpoch(mm, 42);
+      const body = signedListing(mm, "andi", { offer: { asset_type: "gpu-hours", asset_class: "A", quantity: 10, value: C(100) } });
+      await mm.post("/listings", body);
+      const h = listingHash(body.listing);
+      const o = (await mm.post(`/listings/${h}/offers`, bid(mm, "budi", body.listing, { mode: "pay", value: C(100) }))).json.offerHash;
+      return { m: mm, hash: h, offerHash: o };
+    })();
+    const res = await m.post(`/listings/${hash}/offers/${offerHash}/preview`, { account: acct("andi") });
+    expect(res.json).toMatchObject({ kind: "payment", bundle: null, payment: { payer: acct("budi"), payee: acct("andi"), amount: C(90) } });
+    expect(res.json.breakdown).toMatchObject({ mode: "pay", counterpartyPays: C(90), sellerReceives: C(90), searcher: "0", discount: C(10) });
+  });
+});
