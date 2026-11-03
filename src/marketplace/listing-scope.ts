@@ -115,6 +115,10 @@ export function scopeCheck(options: ScopeOptions = {}): ListingCheck {
     if (entry.kind === "rwa" && !whitelist.has(d.ft_contract as string)) {
       invalid(`token ${String(d.ft_contract)} tidak ada di whitelist RWA circle ini`, { ftContract: d.ft_contract, whitelisted: [...whitelist] });
     }
+    // the USDT of the circle is not an escrow asset as a NEP-141 either (ERR_ESCROW_USDT on the contract): such a listing could never be bought
+    if (shape === "ft" && options.usdtTokenId !== undefined && d.ft_contract === options.usdtTokenId) {
+      invalid("USDT lingkaran bukan aset escrow: kontrak menolak titipannya (ERR_ESCROW_USDT)", { ftContract: d.ft_contract });
+    }
     if (shape === "mt" && options.intentsId !== undefined && options.usdtTokenId !== undefined && d.mt_contract === options.intentsId && d.token_id === `nep141:${options.usdtTokenId}`) {
       invalid("USDT lingkaran yang disimpan di Intents bukan aset escrow", { tokenId: d.token_id });
     }

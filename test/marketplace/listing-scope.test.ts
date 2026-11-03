@@ -151,6 +151,15 @@ describe("BE-049 validation of a listing per kind of asset (catalogue #1 to #10)
     expect((await fromTemplate(m, "intents-balance", (d) => ({ ...d, mt_contract: "other.near", token_id: "nep141:usdt.token.near" }))).status).toBe(201);
   });
 
+  it("TC-BE-049-08b the USDT of the circle as a NEP-141 token (ft, lst, pool share) is refused, since the contract refuses its deposit", async () => {
+    const m = await start({ intentsId: "intents.near", usdtTokenId: "usdt.token.near" });
+    for (const key of ["ft", "lst", "pool-share-ft"]) {
+      const r = await fromTemplate(m, key, (d) => ({ ...d, ft_contract: "usdt.token.near" }));
+      expect([key, r.status, r.json.error?.code, r.json.error?.message]).toEqual([key, 400, "scope_invalid", expect.stringContaining("ERR_ESCROW_USDT")]);
+    }
+    expect((await fromTemplate(m, "ft")).status).toBe(201);
+  });
+
   it("TC-BE-049-09 a pool share is told apart by its keys; a detail with both kinds of keys is refused", async () => {
     const m = await start();
     expect((await fromTemplate(m, "pool-share-ft")).status).toBe(201);
