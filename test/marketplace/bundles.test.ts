@@ -342,7 +342,7 @@ describe("BE-041 usulan bundle dari solver tanpa kecocokan (SV-011)", () => {
     db.prepare("INSERT INTO circles (circle_id, contract_id, network) VALUES ('agents-main', 'x207-circle.near', 'x207:agents-main')").run();
     db.prepare("INSERT INTO matches (circle_id, listing_hash, offer_hash, seller, counterparty, mode, kind, epoch, terms_hash, listing_value, discount_value, searcher_value, matched_at_ms) VALUES ('agents-main', 'l', 'o', 'a', 'b', 'barter', 'bundle', 42, 'h', '1', '0', '0', 1)").run();
     db.prepare("INSERT INTO bundle_proposals (circle_id, terms_hash, match_id, epoch, terms_json, created_at_ms) VALUES ('agents-main', 'h', 1, 42, '{}', 1)").run();
-    expect(migrate(db, MARKETPLACE_MIGRATIONS)).toEqual([1104, 1105]);
+    expect(migrate(db, MARKETPLACE_MIGRATIONS)).toEqual([1104, 1105, 1106]);
     expect(db.prepare("SELECT terms_hash, match_id, source, status FROM bundle_proposals").all()).toEqual([{ terms_hash: "h", match_id: 1, source: "accept", status: "proposed" }]);
     db.prepare("INSERT INTO bundle_proposals (circle_id, terms_hash, match_id, epoch, terms_json, source, created_at_ms) VALUES ('agents-main', 'h2', NULL, 42, '{}', 'solver', 2)").run();
     expect(db.prepare("SELECT COUNT(*) AS n FROM bundle_proposals").get()).toEqual({ n: 2 });

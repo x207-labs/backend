@@ -172,10 +172,50 @@ CREATE INDEX idx_referrals_pair ON referrals (circle_id, seeker, to_account, lis
 ALTER TABLE offers ADD COLUMN referral_hash TEXT;
 `;
 
+// Delivery of an off-chain asset (BE-047): one row per match whose offered asset needs the receiver to confirm, and the signed notices behind it.
+const V1106_DELIVERIES = `
+CREATE TABLE deliveries (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  circle_id      TEXT    NOT NULL,
+  listing_hash   TEXT    NOT NULL,
+  offer_hash     TEXT    NOT NULL,
+  match_id       INTEGER NOT NULL REFERENCES matches(id),
+  deliverer      TEXT    NOT NULL,
+  receiver       TEXT    NOT NULL,
+  deliver_by     INTEGER NOT NULL,
+  state          TEXT    NOT NULL DEFAULT 'awaiting' CHECK (state IN ('awaiting','delivered','confirmed','disputed','cancelled')),
+  proof_hash     TEXT,
+  delivered_at   INTEGER,
+  confirm_by     INTEGER,
+  confirmed_at   INTEGER,
+  disputed_at    INTEGER,
+  dispute_reason TEXT,
+  cancelled_at   INTEGER,
+  cancelled_by   TEXT,
+  created_at_ms  INTEGER NOT NULL,
+  UNIQUE (circle_id, listing_hash)
+);
+CREATE TABLE delivery_notices (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  circle_id      TEXT    NOT NULL,
+  listing_hash   TEXT    NOT NULL,
+  notice_hash    TEXT    NOT NULL,
+  actor          TEXT    NOT NULL,
+  action         TEXT    NOT NULL,
+  at_s           INTEGER NOT NULL,
+  proof_hash     TEXT,
+  reason         TEXT,
+  signature      TEXT    NOT NULL,
+  recorded_at_ms INTEGER NOT NULL,
+  UNIQUE (circle_id, notice_hash)
+);
+`;
+
 export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1101, name: "m11_intents", sql: V1101_INTENTS },
   { version: 1102, name: "m11_listings", sql: V1102_LISTINGS },
   { version: 1103, name: "m11_negotiation", sql: V1103_NEGOTIATION },
   { version: 1104, name: "m11_solver_proposals", sql: V1104_SOLVER_PROPOSALS },
   { version: 1105, name: "m11_referrals", sql: V1105_REFERRALS },
+  { version: 1106, name: "m11_deliveries", sql: V1106_DELIVERIES },
 ];

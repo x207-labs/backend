@@ -14,6 +14,7 @@ import { effectiveStatus, findListing, type ListingRow } from "./listings.js";
 import { openEpochResolver, type OpenEpochResolver } from "./epoch.js";
 import { findOffer, offerView, type OfferRow } from "./offers.js";
 import { threadReferral } from "./referrals.js";
+import { DEFAULT_CONFIRM_CLASSES, findDelivery, paymentReleased, startDeliveryIfNeeded } from "./delivery-core.js";
 
 const HASH = /^[0-9a-f]{64}$/;
 const PROPOSAL_STATUSES = ["proposed", "ready", "all"] as const;
@@ -117,8 +118,17 @@ function refreshStatus(db: Database.Database, circleId: string, p: ProposalRow):
   const terms = JSON.parse(p.terms_json) as BundleTerms;
   const sigs = signaturesOf(db, circleId, p.terms_hash);
   const keys = memberKeys(db, circleId, bundleParticipants(terms));
-  const ready = bundleFullySigned(terms, sigs, keys);
+  // BE-047: a bundle on an off-chain asset is not ready to commit until the receiver confirmed the delivery
+  const matchRow = p.match_id === null ? undefined : row<{ listing_hash: string }>(db, "SELECT listing_hash FROM matches WHERE id = ?", p.match_id);
+  const released = matchRow === undefined || paymentReleased(db, circleId, matchRow.listing_hash);
+  const ready = released && bundleFullySigned(terms, sigs, keys);
   db.prepare("UPDATE bundle_proposals SET status = ? WHERE id = ?").run(ready ? "ready" : "proposed", p.id);
+}
+
+/** After the receiver confirmed a delivery: the bundle of that match may become `ready` now. */
+export function refreshProposalOfMatch(db: Database.Database, circleId: string, matchId: bigint | number): void {
+  const p = row<ProposalRow>(db, "SELECT * FROM bundle_proposals WHERE circle_id = ? AND match_id = ?", circleId, matchId);
+  if (p) refreshStatus(db, circleId, p);
 }
 
 interface AcceptInput {
@@ -161,7 +171,8 @@ async function planAccept(
   return { open, searcher, shareBps, plan };
 }
 
-export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver()): Route[] {
+export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver(), options: { confirmClasses?: readonly string[] } = {}): Route[] {
+  const confirmClasses = options.confirmClasses ?? DEFAULT_CONFIRM_CLASSES;
   return [
   {
     method: "POST",
@@ -203,6 +214,11 @@ export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver())
           .run(circle.circle_id, listingRow.listing_hash, offerRow.offer_hash, listingRow.account_id, offerRow.counterparty, offerRow.mode, plan.kind, open,
             plan.kind === "bundle" ? plan.terms_hash : null, offerRow.value, plan.discount, searcher ?? null, plan.searcher, now());
         const matchId = match.lastInsertRowid;
+        startDeliveryIfNeeded(
+          db, circle.circle_id,
+          { id: matchId, listing_hash: listingRow.listing_hash, offer_hash: offerRow.offer_hash, seller: listingRow.account_id, counterparty: offerRow.counterparty, offerClass: listingRow.offer_class, deliverBy: Number(offerRow.deliver_by) },
+          confirmClasses, now(),
+        );
         db.prepare("UPDATE offers SET status = 'accepted' WHERE id = ?").run(offerRow.id);
         db.prepare("UPDATE offers SET status = 'closed' WHERE circle_id = ? AND listing_hash = ? AND id <> ? AND status IN ('pending')").run(circle.circle_id, listingRow.listing_hash, offerRow.id);
         db.prepare("UPDATE listings SET status = 'matched', closed_at_ms = ? WHERE id = ?").run(now(), listingRow.id);
@@ -219,10 +235,13 @@ export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver())
       });
       const matchId = commit();
       const match = row<MatchRow>(db, "SELECT * FROM matches WHERE id = ?", matchId) as MatchRow;
+      const delivery = findDelivery(db, circle.circle_id, listingRow.listing_hash);
+      // only a match that needs the confirmation carries `delivery`; the others keep the shape they always had
+      const gate = delivery === undefined ? {} : { delivery: { required: true, payable: delivery.state === "confirmed", state: delivery.state } };
       const result =
         plan.kind === "payment"
-          ? { kind: "payment", payer: plan.payer, payee: plan.payee, amount: plan.amount }
-          : { kind: "bundle", proposal: proposalView(db, circle.circle_id, findProposal(db, circle.circle_id, plan.terms_hash)) };
+          ? { kind: "payment", payer: plan.payer, payee: plan.payee, amount: plan.amount, ...gate }
+          : { kind: "bundle", proposal: proposalView(db, circle.circle_id, findProposal(db, circle.circle_id, plan.terms_hash)), ...gate };
       return { status: 201, body: { match: matchView(match), offer: offerView(findOffer(db, circle.circle_id, listingRow.listing_hash, offerRow.offer_hash)), result } };
     },
   },
