@@ -6,7 +6,8 @@
     "test": "vitest run --passWithNoTests",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.test.json --noEmit",
-    "start": "node dist/main.js"
+    "start": "node dist/main.js",
+    "openapi": "node scripts/build-openapi.mjs"
   },
   "license": "Apache-2.0",
   "type": "module",

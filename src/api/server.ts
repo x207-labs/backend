@@ -93,13 +93,18 @@ function workerRoutes(settlement: ApiServerOptions["settlement"]): Route[] {
   return [...depositQuoteRoutes(settlement), ...withdrawRoutes(settlement), ...jobRoutes(settlement.client)];
 }
 
+/** Semua route yang dilayani server ini; dipakai juga oleh test dokumen OpenAPI (BE-068) supaya dokumen dan router tidak berpisah. */
+export function collectRoutes(options: Pick<ApiServerOptions, "settlement" | "daoView" | "extraRoutes">): Route[] {
+  return [...healthRoutes, ...memberRoutes, ...limitRoutes, ...epochRoutes, ...obligationRoutes, ...settlementRoutes, ...paramRoutes, ...bundleRoutes, ...grantRoutes, ...intentRoutes, ...eventRoutes, ...metricRoutes, ...ruleRoutes, ...reportRoutes, ...workerRoutes(options.settlement), ...(options.daoView ? proposalRoutes(options.daoView) : []), ...(options.extraRoutes ?? [])];
+}
+
 /** Server read API (Spec API Backend). Pemanggil yang memanggil `listen`. */
 export function createApiServer(options: ApiServerOptions): Server {
   const { db } = options;
   const now = options.now ?? Date.now;
   const limit = options.rateLimitPerMinute ?? 0;
   const abuse: AbuseLimits = { ...DEFAULT_LIMITS, ipPerMinute: limit, writeIpPerMinute: 0, writeAccountPerMinute: 0, ...options.abuse };
-  const routes: Route[] = [...healthRoutes, ...memberRoutes, ...limitRoutes, ...epochRoutes, ...obligationRoutes, ...settlementRoutes, ...paramRoutes, ...bundleRoutes, ...grantRoutes, ...intentRoutes, ...eventRoutes, ...metricRoutes, ...ruleRoutes, ...reportRoutes, ...workerRoutes(options.settlement), ...(options.daoView ? proposalRoutes(options.daoView) : []), ...(options.extraRoutes ?? [])];
+  const routes = collectRoutes(options);
   const ipHits = new WindowCounter();
   const writeIpHits = new WindowCounter();
   const accountHits = new WindowCounter();
