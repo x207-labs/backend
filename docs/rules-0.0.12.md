@@ -25,3 +25,6 @@ The events of the bond with an arbiter (CT-094), of `freeze_member` (CT-095) and
 - `GET /asset-contracts`: the official contracts per asset type.
 
 The facilitator that refuses the vouchers of a frozen account (`is_frozen`, spec 22.2) is part of the SDK repository (`sdk/apps/facilitator`), not of this one.
+
+## When `limits_updated` follows a ruling
+After `rule_deal` the event `limits_updated` (reason `ruling` in the read model) appears only when the limit of a party really changes; the contract keeps `limit <= stake - bond_locked`, so a verdict alone never pushes the stake under the limit and, in the normal flow, no such event follows (proven on near-sandbox, `test/sandbox/deals.sandbox.test.ts`: stake and limit of both parties in the read model equal the view `member`, limits unchanged). The edge case is a limit that was lowered by another path before the verdict (C-7).
