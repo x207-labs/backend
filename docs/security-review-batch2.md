@@ -47,6 +47,8 @@ Fix: an `OrderLedger` (or a `paid: number[]` argument that is required) that ref
 `https://localhost./` (trailing dot), `https://metadata.google.internal./` and a name such as `127.0.0.1.nip.io` pass the check (`metered-presets.ts:64`, `resource-listing.ts:42`). The check is only about the text. A buyer agent that calls the endpoint is sent to its own network, with a payment header. Test `F6`.
 Fix: strip one trailing dot before the checks; document that a buyer must resolve the name and refuse non-public addresses when it connects (the guard of BE-054, `ssrf.ts`, can be moved into `core` for that).
 
+**Status:** fixed in the backend (`resource-listing.ts` and `ssrf.ts`, commit `eb1ffc9`): the trailing dot is removed, `nip.io` and the other wildcard DNS names and any name holding an IPv4 address are refused, and `guardedGet` resolves and sends the name without the dot. The copy in `sdk/.../metered-presets.ts` is still open.
+
 ## F7 (Low): `SellerJob.accept` ignores `resource`
 `job-escrow.ts:156` checks circle, payer, payee, epoch and unit, not `resource`. A voucher of the same pair for another purpose, with a cumulative that fits, is counted as the payment of the next chunk. Test: `F8` in the reproduction file (its F7 test is finding F8 of this list, its F8 test is finding F7). Fix: require `resource === "job:<jobId>"` in the argument type and the check.
 
