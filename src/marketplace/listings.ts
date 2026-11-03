@@ -86,6 +86,39 @@ function boolParam(query: URLSearchParams, name: string): boolean | null {
   return raw === "true";
 }
 
+/**
+ * Everything that `POST listings` checks before it stores a listing: the checks of the asset kinds (D10 class, scope, RWA whitelist, USDT of the circle, metered
+ * resource), the format, the circle, the time, the signature and the duplicate. One function, so that the dry run (`POST listings/check`) cannot say anything else.
+ * Returns the listing, its signature and its hash; throws the same `ApiError` as the POST.
+ */
+function checkListingRequest(
+  { db, circle, body, nowMs }: { db: Database.Database; circle: { circle_id: string; contract_id: string }; body: unknown; nowMs: number },
+  checks: readonly ListingCheck[],
+): { listing: Listing; signature: string; hash: string; nowS: number } {
+  const { listing, signature } = parseListingBody(body);
+  const nowS = nowSeconds(nowMs);
+  for (const check of checks) check(listing, { db, circleId: circle.circle_id, nowS });
+  try {
+    validateListing(listing);
+  } catch (error) {
+    if (error instanceof BarterFormatError) throw invalidRequest(error.message);
+    throw error;
+  }
+  if (listing.circle !== circle.contract_id) {
+    throw invalidRequest("listing.circle harus akun kontrak lingkaran", { expected: circle.contract_id, got: listing.circle });
+  }
+  if (listing.expires_at <= nowS) throw invalidRequest("expires_at sudah lewat", { expires_at: listing.expires_at });
+  const pubkey = activeMemberKey(db, circle.circle_id, listing.account);
+  if (!verifyListingSignature(listing, signature, pubkey)) {
+    throw new ApiError(401, "invalid_signature", "Tanda tangan listing tidak cocok dengan kunci voucher anggota", { account: listing.account });
+  }
+  const hash = listingHash(listing);
+  if (row(db, "SELECT 1 AS x FROM listings WHERE circle_id = ? AND listing_hash = ?", circle.circle_id, hash)) {
+    throw new ApiError(409, "already_exists", "Listing dengan hash ini sudah tercatat", { listingHash: hash });
+  }
+  return { listing, signature, hash, nowS };
+}
+
 export function listingRoutes(checks: readonly ListingCheck[] = []): Route[] {
   return [
     {
@@ -93,24 +126,7 @@ export function listingRoutes(checks: readonly ListingCheck[] = []): Route[] {
       pattern: "/x207/circles/{circle}/listings",
       circleScoped: true,
       handler: ({ db, circle, body, now }) => {
-        const { listing, signature } = parseListingBody(body);
-        for (const check of checks) check(listing, { db, circleId: circle.circle_id, nowS: nowSeconds(now()) });
-        try {
-          validateListing(listing);
-        } catch (error) {
-          if (error instanceof BarterFormatError) throw invalidRequest(error.message);
-          throw error;
-        }
-        if (listing.circle !== circle.contract_id) {
-          throw invalidRequest("listing.circle harus akun kontrak lingkaran", { expected: circle.contract_id, got: listing.circle });
-        }
-        const nowS = nowSeconds(now());
-        if (listing.expires_at <= nowS) throw invalidRequest("expires_at sudah lewat", { expires_at: listing.expires_at });
-        const pubkey = activeMemberKey(db, circle.circle_id, listing.account);
-        if (!verifyListingSignature(listing, signature, pubkey)) {
-          throw new ApiError(401, "invalid_signature", "Tanda tangan listing tidak cocok dengan kunci voucher anggota", { account: listing.account });
-        }
-        const hash = listingHash(listing);
+        const { listing, signature, hash, nowS } = checkListingRequest({ db, circle, body, nowMs: now() }, checks);
         const inserted = db
           .prepare(
             `INSERT OR IGNORE INTO listings (circle_id, listing_hash, account_id, offer_asset_type, offer_class, offer_quantity, offer_value,
@@ -124,6 +140,17 @@ export function listingRoutes(checks: readonly ListingCheck[] = []): Route[] {
             listing.discoverable ? 1 : 0, listing.nonce, signature, now());
         if (inserted.changes === 0) throw new ApiError(409, "already_exists", "Listing dengan hash ini sudah tercatat", { listingHash: hash });
         return { status: 201, body: listingView(findListing(db, circle.circle_id, hash), nowS) };
+      },
+    },
+    {
+      // BE-052: dry run of `POST listings`. The same body, the same checks in the same order and the same errors; nothing is stored. The owner calls it BEFORE
+      // `offer_grant` and the deposit, so that a listing the backend would refuse does not leave an asset in escrow (security-review-batch1.md, X4).
+      method: "POST",
+      pattern: "/x207/circles/{circle}/listings/check",
+      circleScoped: true,
+      handler: ({ db, circle, body, now }) => {
+        const { listing, hash } = checkListingRequest({ db, circle, body, nowMs: now() }, checks);
+        return { status: 200, body: { valid: true, listingHash: hash, account: listing.account, offerAssetType: listing.offer.asset_type, expiresAt: listing.expires_at, stored: false } };
       },
     },
     {
