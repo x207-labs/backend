@@ -50,10 +50,22 @@ Levels: **High** (a proof or money can be forged by the other party), **Medium**
 | C-11 | Info | contracts | The bond is avoided by splitting a swap below the threshold or by a ring of three | info | A2 |
 | C-12 | Info | contracts | Nothing ends by itself: `settle_deal` must be called to free a bond and the exit | info | A2 |
 
+## Batch 5 (SD-074 facilitator, SD-072 delegate order)
+| ID | Level | Repo | Summary | Status | Owner |
+| --- | --- | --- | --- | --- | --- |
+| B5-F1 | Medium | sdk | `payForProofs` of a delegate order: `alreadyPaid` must hold the keys (`proposal:<id>`), not the `paid` hashes, or a proposal is paid twice | open | Main B |
+| B5-F2 | Medium | sdk | Facilitator against a contract older than 0.0.12: `is_frozen` view missing, every verify is `500 internal_error` | open | Main B |
+| B5-F3 | Low | sdk | `verifyTx` is synchronous and cannot ask the chain | open | Main B |
+| B5-F4 | Low | backend | `mandate.dao` is not checked against the DAO registry | open (needs a decision) | Main C |
+| B5-F5 | Low | sdk | Order of the refusals in `docs/order.md` differs from the code | open | Main B |
+| B5-F6 | Info | sdk | 10 s window of `is_frozen`, stricter rule in the epoch of the freeze | info | Main B |
+| B5-F7 | Info | sdk | The mandate does not bind the direction of the vote | info | Main B |
+| B5-F8 | Info | backend | `before_order` uses the first-post time of the order | info | Main C |
+
 ## Found by the near-sandbox test
 | ID | Level | Repo | Summary | Status | Owner |
 | --- | --- | --- | --- | --- | --- |
 | BE-055-S1 | Medium | backend | `events_raw.data_json` is an array with one object on a real chain, and the queries of the proofs (`epoch`, `solver`), of the installments (`voucher_registered`) and of the intent book (`intent_posted`) read `$.field`: on a real chain the epoch of a proof was null, no solver proof was ever found, the event of an installment was never matched and the on-chain data of an intent was empty. Found only by the run on near-sandbox (the unit tests stored a bare object). Solver (A2) asked to check the same reading | fixed `6a2a6ef`, `7220eeb`, `1caffb0` (`event-data.ts` reads both shapes); confirmed on near-sandbox in run 4 | Main C |
 
 ## Counts
-Fixed: BE-055-S1, B2-F1 to F12 (F6 in the backend and in the SDK), B3-F1 to F9. Open: none. Fixed also: C-1, C-6 to C-10 (contracts 0.0.12, A2). By design: C-2, C-3. Info (documented): C-4, C-5, C-11, C-12. Limits written in the table: B3-F2 (buyer account from the API, confirmed by fingerprint), B3-F4 (CSP not tried with a real wallet), B3-F7 (text only), B3-F9 (warning only).
+Fixed: BE-055-S1, B2-F1 to F12 (F6 in the backend and in the SDK), B3-F1 to F9. Open: B5-F1 to B5-F5. Fixed also: C-1, C-6 to C-10 (contracts 0.0.12, A2). By design: C-2, C-3. Info (documented): C-4, C-5, C-11, C-12. Limits written in the table: B3-F2 (buyer account from the API, confirmed by fingerprint), B3-F4 (CSP not tried with a real wallet), B3-F7 (text only), B3-F9 (warning only).
