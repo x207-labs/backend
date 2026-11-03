@@ -9,3 +9,4 @@ export * from "./discord.js";
 export * from "./aws-sts.js";
 export * from "./routes.js";
 export * from "./dao-vote.js";
+export * from "./openrouter-subkey.js";
