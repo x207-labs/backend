@@ -73,11 +73,11 @@ export type Resolver = (host: string) => Promise<string[]>;
 export const systemResolver: Resolver = async (host) => (await dnsLookup(host, { all: true, verbatim: true })).map((a) => a.address);
 
 export interface Transport {
-  (args: { host: string; address: string; path: string; timeoutMs: number; method?: "GET" | "HEAD"; maxBytes?: number }): Promise<{ status: number; body: Buffer; truncated: boolean }>;
+  (args: { host: string; address: string; path: string; timeoutMs: number; method?: "GET" | "HEAD"; maxBytes?: number; onChunk?: (chunk: Buffer) => void }): Promise<{ status: number; body: Buffer; truncated: boolean }>;
 }
 
 /** The real transport: TLS to the address that was checked, with the name for SNI and certificate. The address is checked once more by the `lookup` hook of the socket. */
-export const httpsTransport = (resolver: Resolver, forbid: () => never): Transport => ({ host, address, path, timeoutMs, method = "GET", maxBytes = MAX_BODY_BYTES }) =>
+export const httpsTransport = (resolver: Resolver, forbid: () => never): Transport => ({ host, address, path, timeoutMs, method = "GET", maxBytes = MAX_BODY_BYTES, onChunk }) =>
   new Promise((resolveRaw, rejectRaw) => {
     const resolve = (v: { status: number; body: Buffer; truncated: boolean }): void => done(resolveRaw)(v);
     const reject = (e: unknown): void => done(rejectRaw)(e);
@@ -106,7 +106,9 @@ export const httpsTransport = (resolver: Resolver, forbid: () => never): Transpo
           resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks), truncated });
           return;
         }
-        chunks.push(c);
+        // with a sink the body is handed on and not kept: a large download must not sit in memory
+        if (onChunk) onChunk(c);
+        else chunks.push(c);
       });
       res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks), truncated }));
       res.on("error", reject);
@@ -125,6 +127,8 @@ export interface GuardedOptions {
   method?: "GET" | "HEAD";
   /** Largest body accepted; default 4 KB. BE-056 raises it to download a ciphertext. */
   maxBytes?: number;
+  /** Receives the body piece by piece instead of the result holding it (BE-056: hash and write to a file while it arrives). */
+  onChunk?: (chunk: Buffer) => void;
   timeoutMs?: number;
 }
 
@@ -170,7 +174,7 @@ export async function guardedGet(rawUrl: string, options: GuardedOptions = {}): 
   let timer: NodeJS.Timeout | undefined;
   try {
     res = await Promise.race([
-      transport({ host, address: addresses[0] as string, path: `${url.pathname}${url.search}`, timeoutMs: options.timeoutMs ?? FETCH_TIMEOUT_MS, method: options.method ?? "GET", maxBytes: options.maxBytes ?? MAX_BODY_BYTES }),
+      transport({ host, address: addresses[0] as string, path: `${url.pathname}${url.search}`, timeoutMs: options.timeoutMs ?? FETCH_TIMEOUT_MS, method: options.method ?? "GET", maxBytes: options.maxBytes ?? MAX_BODY_BYTES, ...(options.onChunk ? { onChunk: options.onChunk } : {}) }),
       // the deadline of the whole request, whatever the transport does
       new Promise<never>((_r, rej) => {
         timer = setTimeout(() => rej(new Error("timeout")), total);

@@ -1,9 +1,12 @@
+import { readdirSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   contentHash, createRelease, deriveBoxKey, encryptContent, licenseDocumentHash, licenseResource, listingHash, makeCheatProof, signVoucher,
   type LicenseDocument, type LicenseRelease, type UnsignedVoucher,
 } from "@x207/core";
 import { sha256Hex, signNoticeJson } from "../../src/marketplace/notice.js";
+import { MAX_DOWNLOADS, Semaphore } from "../../src/marketplace/purchases.js";
 import type { Transport } from "../../src/marketplace/ssrf.js";
 import { acct, CONTRACT, openEpoch, signedListing, startMarket, type Market } from "./helpers.js";
 
@@ -19,10 +22,18 @@ describe("BE-056 license handover: fair exchange with encryption", () => {
   });
   /** What the "internet" serves: https://store.example.com/<path> -> bytes. */
   const files = new Map<string, Uint8Array>();
-  const transport: Transport = async ({ host, path, method }) => {
+  const asked: Array<{ timeoutMs: number; maxBytes: number | undefined; sink: boolean }> = [];
+  const transport: Transport = async ({ host, path, method, onChunk, timeoutMs, maxBytes }) => {
+    if (method !== "HEAD") asked.push({ timeoutMs, maxBytes, sink: onChunk !== undefined });
     const bytes = files.get(`${host}${path}`);
     if (!bytes) return { status: 404, body: Buffer.alloc(0), truncated: false };
-    return { status: 200, body: method === "HEAD" ? Buffer.alloc(0) : Buffer.from(bytes), truncated: false };
+    if (method === "HEAD") return { status: 200, body: Buffer.alloc(0), truncated: false };
+    // like the real transport: with a sink the body is handed on in pieces and not kept
+    if (onChunk) {
+      for (let i = 0; i < bytes.length; i += 16_384) onChunk(Buffer.from(bytes.subarray(i, i + 16_384)));
+      return { status: 200, body: Buffer.alloc(0), truncated: false };
+    }
+    return { status: 200, body: Buffer.from(bytes), truncated: false };
   };
   const resolver = async (host: string) => (host.startsWith("internal") ? ["10.0.0.7"] : ["93.184.216.34"]);
 
@@ -277,5 +288,52 @@ describe("BE-056 license handover: fair exchange with encryption", () => {
     m.clock.now += 73 * 3600 * 1000;
     expect((await buyerNotice(m, id, "cancelled", "budi")).json.status).toBe("cancelled");
     expect((await m.get(`/purchases/999`)).json.error.code).toBe("purchase_not_found");
+  });
+
+  it("TC-BE-056-11 the ciphertext is streamed through a temporary file: a mismatch is refused without being read, the file is deleted, and the deadline follows the size allowed", async () => {
+    const before = () => readdirSync(tmpdir()).filter((n) => n.startsWith("x207-cipher-"));
+    const left = before().length;
+    files.clear();
+    market = await startMarket(["andi", "budi", "citra", "dewi"], [], undefined, { sourceFetch: { resolver, transport }, maxCiphertextBytes: 4 * 1024 * 1024 });
+    const m = market;
+    openEpoch(m, 42);
+    const s = await sell(m);
+    const id = (await buy(m, s)).json.purchase_id as string;
+    await postCipher(m, id, s);
+    const rel = releaseKey(m, id, s);
+    await rel.post();
+    const proof = { release: rel.release, signature: rel.signature, box_key: toHex(deriveBoxKey(Buffer.from(rel.release.sealed_key, "hex"), m.keys.budi!.secretKey)) };
+    asked.length = 0;
+    files.set("store.example.com/d1.bin", utf8("a different file"));
+    expect((await buyerNotice(m, id, "disputed", "budi", "content_mismatch", proof)).json.error.code).toBe("proof_invalid");
+    expect(asked).toEqual([{ timeoutMs: 64_000, maxBytes: 4 * 1024 * 1024, sink: true }]); // 60 s + 1 s per MiB allowed
+    expect(before().length).toBe(left); // the temporary file is gone
+    files.set("store.example.com/d1.bin", s.ciphertext);
+    expect((await buyerNotice(m, id, "disputed", "budi", "content_mismatch", proof)).json.status).toBe("refuted");
+    expect(before().length).toBe(left);
+  });
+
+  it("TC-BE-056-12 at most two ciphertexts are handled at once; the others wait their turn, and a failing one gives its place back", async () => {
+    const sem = new Semaphore(MAX_DOWNLOADS);
+    expect(MAX_DOWNLOADS).toBe(2);
+    let running = 0;
+    let peak = 0;
+    const job = async (fail: boolean) => {
+      await sem.acquire();
+      try {
+        running += 1;
+        peak = Math.max(peak, running);
+        await new Promise((r) => setTimeout(r, 15));
+        if (fail) throw new Error("boom");
+      } finally {
+        running -= 1;
+        sem.release();
+      }
+    };
+    const results = await Promise.allSettled([job(false), job(true), job(false), job(false), job(true), job(false)]);
+    expect(results.map((r) => r.status)).toEqual(["fulfilled", "rejected", "fulfilled", "fulfilled", "rejected", "fulfilled"]);
+    expect(peak).toBe(2);
+    await sem.acquire();
+    await sem.acquire(); // both places are free again
   });
 });

@@ -4,9 +4,12 @@
 // proven by the proof of cheating of the SDK (`checkCheatProof`), which the backend runs by itself: it downloads the ciphertext from the source the seller named, checks it against
 // `cipher_hash`, and checks the proof. A valid proof ends in `disputed` (not paid); a proof for a correct file ends in `refuted` (paid). Every download goes through the SSRF guard.
 // Also here: the exclusive license per `content_hash`, the takedown of a listing, the list of `license_id`, and the scan of the preview of a dataset for personal data.
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import { closeSync, openSync, readFileSync, unlinkSync, writeSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type Database from "better-sqlite3";
-import { LicenseError, checkCheatProof, contentHash, httpsRefProblem, licenseResource, parseRawCid, verifyRelease, verifyVoucher, type CheatProof, type LicenseRelease, type UnsignedVoucher, type Voucher } from "@x207/core";
+import { ContentHasher, LicenseError, checkCheatProof, httpsRefProblem, licenseResource, parseRawCid, verifyRelease, verifyVoucher, type CheatProof, type LicenseRelease, type UnsignedVoucher, type Voucher } from "@x207/core";
 import { ApiError, invalidRequest } from "../api/errors.js";
 import { row, rows } from "../api/format.js";
 import type { Route } from "../api/router.js";
@@ -37,7 +40,30 @@ export const CONTENT_LICENSE_TYPES: ReadonlySet<string> = new Set([
 const DISPUTE_REASONS = ["content_mismatch", "contains_pii", "other"] as const;
 const BUYER_ACTIONS = ["confirmed", "disputed", "cancelled"] as const;
 const ACTIVE = "('paid_held','cipher_posted','key_released','confirmed')";
-const MAX_CIPHERTEXT_BYTES = 256 * 1024 * 1024;
+const MIB = 1024 * 1024;
+const MAX_CIPHERTEXT_BYTES = 256 * MIB;
+/** Downloads of a ciphertext that run at the same time (memory is bounded by this many files). */
+export const MAX_DOWNLOADS = 2;
+
+export class Semaphore {
+  #free: number;
+  readonly #waiting: Array<() => void> = [];
+  constructor(n: number) {
+    this.#free = n;
+  }
+  acquire(): Promise<void> {
+    if (this.#free > 0) {
+      this.#free -= 1;
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => this.#waiting.push(resolve));
+  }
+  release(): void {
+    const next = this.#waiting.shift();
+    if (next) next();
+    else this.#free += 1;
+  }
+}
 
 export interface PurchaseOptions {
   disputeWindowSeconds?: number;
@@ -193,6 +219,7 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
   const maxBytes = options.maxCiphertextBytes ?? MAX_CIPHERTEXT_BYTES;
   const guard = { ...(options.sourceFetch?.resolver ? { resolver: options.sourceFetch.resolver } : {}), ...(options.sourceFetch?.transport ? { transport: options.sourceFetch.transport } : {}), code: "source_forbidden" as const };
   const ids = options.licenseIds ?? DEFAULT_LICENSE_IDS;
+  const downloads = new Semaphore(MAX_DOWNLOADS);
 
   const refuse = (message: string, details: Record<string, unknown> = {}): never => {
     throw new ApiError(409, "purchase_bad_state", message, details);
@@ -207,15 +234,44 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
     if (!res.reachable || res.status < 200 || res.status >= 300) refuse("Sumber tidak menjawab dengan sukses (HEAD)", { kind: source.kind, status: res.reachable ? res.status : null });
   }
 
-  /** The ciphertext as the source serves it now; an IPFS answer must match its CID. */
-  async function download(source: Source): Promise<Buffer> {
-    const res = await guardedGet(sourceUrl(source, gateways), { ...guard, maxBytes, timeoutMs: 60_000 });
-    if (!res.reachable || res.status !== 200) refuse("Ciphertext tidak bisa diunduh dari sumber", { kind: source.kind, status: res.reachable ? res.status : null });
-    const ok = res as { reachable: true; bytes: Buffer };
-    if (source.kind === "ipfs" && !digestMatches(ok.bytes, source.ref)) {
-      throw new ApiError(400, "proof_invalid", "Byte dari gateway tidak cocok dengan CID", {});
+  /**
+   * The ciphertext as the source serves it now, CHECKED while it arrives: its hash (`cipher_hash`, the Merkle root of the SDK) is computed piece by piece and the pieces go to a temporary
+   * file, so a file that does not match is refused without ever being loaded. Only a file that matches is read back for the proof, and `fn` gets it. At most `MAX_DOWNLOADS` run at once,
+   * so the memory in use is bounded by that many files; the temporary file is always deleted. The deadline grows with the size allowed: 60 s plus one second per MiB, at most ten minutes.
+   */
+  async function withCiphertext<T>(source: Source, cipherHash: string, fn: (ciphertext: Buffer) => T | Promise<T>): Promise<T> {
+    await downloads.acquire();
+    const path = join(tmpdir(), `x207-cipher-${randomBytes(8).toString("hex")}.tmp`);
+    const fd = openSync(path, "w", 0o600);
+    const hasher = new ContentHasher();
+    const plain = createHash("sha256");
+    try {
+      const res = await guardedGet(sourceUrl(source, gateways), {
+        ...guard, maxBytes, timeoutMs: Math.min(60_000 + Math.ceil(maxBytes / MIB) * 1000, 600_000),
+        onChunk: (c) => {
+          hasher.update(c);
+          plain.update(c);
+          writeSync(fd, c);
+        },
+      });
+      if (!res.reachable || res.status !== 200) refuse("Ciphertext tidak bisa diunduh dari sumber", { kind: source.kind, status: res.reachable ? res.status : null });
+      if (source.kind === "ipfs" && !Buffer.from(parseRawCid(source.ref).digest).equals(plain.digest())) throw new ApiError(400, "proof_invalid", "Byte dari gateway tidak cocok dengan CID", {});
+      if (hasher.digest() !== cipherHash) throw new ApiError(400, "proof_invalid", "Sumber tidak lagi menyajikan ciphertext dengan cipher_hash yang dipasang", {});
+      closeSync(fd);
+      return await fn(readFileSync(path));
+    } finally {
+      try {
+        closeSync(fd);
+      } catch {
+        // already closed
+      }
+      try {
+        unlinkSync(path);
+      } catch {
+        // already gone
+      }
+      downloads.release();
     }
-    return ok.bytes;
   }
 
   function record(db: Database.Database, circleId: string, p: PurchaseRow, actor: string, action: string, at: number, signature: string, nowMs: number, noticeText: string): void {
@@ -400,10 +456,9 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
             }
             if (JSON.stringify(pr.release) !== p.release_json || pr.signature !== p.release_signature) throw new ApiError(400, "proof_invalid", "proof harus memuat rilis yang dilepas penjual untuk pembelian ini", {});
             const source: Source = { kind: p.source_kind as "https" | "ipfs", ref: p.source_ref as string };
-            const ciphertext = await download(source);
-            if (contentHash(ciphertext) !== p.cipher_hash) throw new ApiError(400, "proof_invalid", "Sumber tidak lagi menyajikan ciphertext dengan cipher_hash yang dipasang", {});
-            const checked = checkCheatProof({ ciphertext, release: pr.release, signature: pr.signature, box_key: pr.box_key } as CheatProof, activeMemberKey(db, circle.circle_id, p.seller));
-            outcome = checked.valid ? "disputed" : "refuted";
+            const sellerKey = activeMemberKey(db, circle.circle_id, p.seller);
+            outcome = await withCiphertext(source, p.cipher_hash as string, (ciphertext) =>
+              checkCheatProof({ ciphertext, release: pr.release, signature: pr.signature, box_key: pr.box_key } as CheatProof, sellerKey).valid ? ("disputed" as const) : ("refuted" as const));
           } else if (proof !== null) {
             throw invalidRequest("proof hanya untuk content_mismatch");
           }
@@ -448,4 +503,3 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
 }
 
 /** `true` when the SHA-256 of `bytes` is the digest in the raw CID. */
-const digestMatches = (bytes: Buffer, cid: string): boolean => Buffer.from(parseRawCid(cid).digest).equals(createHash("sha256").update(bytes).digest());
