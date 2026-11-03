@@ -136,7 +136,11 @@ export async function startApp(env: NodeJS.ProcessEnv = process.env, log: (line:
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const app = await startApp();
+  // a start that cannot go on (a file from a newer build, a missing variable) ends with one JSON line and a code that is not 0, not with a stack
+  const app = await startApp().catch((error: unknown) => {
+    createLogger({}).error("backend tidak bisa mulai", { error: error instanceof Error ? { name: error.name, message: error.message } : String(error) });
+    process.exit(1);
+  });
   const shutdown = () => void app.stop().then(() => process.exit(0));
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);

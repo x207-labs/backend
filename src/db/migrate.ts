@@ -1,5 +1,22 @@
 import Database from "better-sqlite3";
+import { MARKETPLACE_MIGRATIONS } from "../marketplace/migrations.js";
 import { MIGRATIONS, type Migration } from "./migrations.js";
+
+/** The file has migrations that this build does not have: it was written by a NEWER build (BE-073). Migrations only go forward, so an older build must not run on it. */
+export class SchemaTooNewError extends Error {
+  constructor(readonly unknown: number[], readonly inDatabase: { d9: number | null; marketplace: number | null }, readonly inCode: { d9: number; marketplace: number }) {
+    super(
+      `database punya migrasi ${unknown.join(", ")} yang tidak dikenal build ini (versi tertinggi di database: D9 ${inDatabase.d9 ?? "-"}, marketplace ${inDatabase.marketplace ?? "-"}; di kode: D9 ${inCode.d9}, marketplace ${inCode.marketplace}). ` +
+        "Jangan jalankan build lama di file ini: pulihkan backup sebelum upgrade (docs/operations.md), atau pakai build yang baru.",
+    );
+    this.name = "SchemaTooNewError";
+  }
+}
+
+const highest = (versions: readonly number[], pick: (v: number) => boolean): number | null => {
+  const some = versions.filter(pick);
+  return some.length === 0 ? null : Math.max(...some);
+};
 
 /** Terapkan migrasi yang belum tercatat di `schema_migrations`; aman dipanggil berulang. */
 export function migrate(db: Database.Database, migrations: readonly Migration[] = MIGRATIONS): number[] {
@@ -7,6 +24,16 @@ export function migrate(db: Database.Database, migrations: readonly Migration[] 
   const applied = new Set(
     (db.prepare("SELECT version FROM schema_migrations").all() as { version: number }[]).map((r) => r.version),
   );
+  // the start guard: a version recorded in the file that no migration of this build has (D9, marketplace, or the list given) is a file from a newer build
+  const known = new Set([...MIGRATIONS, ...MARKETPLACE_MIGRATIONS, ...migrations].map((m) => m.version));
+  const unknown = [...applied].filter((v) => !known.has(v)).sort((a, b) => a - b);
+  if (unknown.length > 0) {
+    throw new SchemaTooNewError(
+      unknown,
+      { d9: highest([...applied], (v) => v < 1000), marketplace: highest([...applied], (v) => v >= 1100) },
+      { d9: highest([...known], (v) => v < 1000) ?? 0, marketplace: highest([...known], (v) => v >= 1100) ?? 0 },
+    );
+  }
   const record = db.prepare("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)");
   const done: number[] = [];
   for (const m of [...migrations].sort((a, b) => a.version - b.version)) {
