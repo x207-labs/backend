@@ -9,6 +9,7 @@ import { decodeCursor, encodeCursor, parseLimit } from "../api/pagination.js";
 import type { Route } from "../api/router.js";
 import { activeMemberKey } from "./auth.js";
 import { isoSeconds } from "./common.js";
+import { eventField } from "./event-data.js";
 
 const STATUSES = ["open", "matched", "expired", "all"] as const;
 
@@ -33,8 +34,8 @@ interface IntentRow {
 function onchain(db: Database.Database, contractId: string, hashB58: string) {
   const posted = row<{ block_height: bigint; account: string | null }>(
     db,
-    `SELECT block_height, json_extract(data_json, '$.account_id') AS account FROM events_raw
-     WHERE contract_id = ? AND event = 'intent_posted' AND json_extract(data_json, '$.intent_hash') = ? LIMIT 1`,
+    `SELECT block_height, ${eventField('account_id')} AS account FROM events_raw
+     WHERE contract_id = ? AND event = 'intent_posted' AND ${eventField('intent_hash')} = ? LIMIT 1`,
     contractId,
     hashB58,
   );
