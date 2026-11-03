@@ -74,6 +74,19 @@ export class BrokerStore {
     this.db.prepare("INSERT INTO calls (grant_id, epoch, n) VALUES (?, ?, 1) ON CONFLICT (grant_id, epoch) DO UPDATE SET n = n + 1").run(grantId, epoch);
   }
 
+  /** Takes one call of `quota` for `epoch` in one statement; `false` when none is left. Parallel requests cannot both take the last one. */
+  reserveCall(grantId: number, epoch: number, quota: bigint): boolean {
+    const result = this.db
+      .prepare("INSERT INTO calls (grant_id, epoch, n) VALUES (?, ?, 1) ON CONFLICT (grant_id, epoch) DO UPDATE SET n = n + 1 WHERE n < ?")
+      .run(grantId, epoch, Number(quota));
+    return result.changes > 0;
+  }
+
+  /** Gives back a call taken by `reserveCall` when the call to the provider did not succeed. */
+  releaseCall(grantId: number, epoch: number): void {
+    this.db.prepare("UPDATE calls SET n = n - 1 WHERE grant_id = ? AND epoch = ? AND n > 0").run(grantId, epoch);
+  }
+
   cursor(name: string): string | undefined {
     return (this.db.prepare("SELECT value FROM cursor WHERE name = ?").get(name) as { value: string } | undefined)?.value;
   }

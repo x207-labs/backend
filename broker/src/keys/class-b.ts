@@ -53,8 +53,21 @@ export class ClassBAdapter implements AccessAssetAdapter<LeaseDelivery> {
     return verifyFunctionCallKey(this.#o.chain.leaseAccount, grant.delivery_pubkey, grant, this.#o.viewAccessKey);
   }
 
+  readonly #queues = new Map<number, Promise<unknown>>();
+
+  /** Payments of one grant run one after the other: two parallel payments must add the key once and each move `paid_until` (security review 2). */
+  deliver(grant: AccessGrant, days = 1): Promise<LeaseDelivery> {
+    const run = (this.#queues.get(grant.grant_id) ?? Promise.resolve()).then(() => this.#deliver(grant, days));
+    const tail = run.catch(() => undefined);
+    this.#queues.set(grant.grant_id, tail);
+    void tail.then(() => {
+      if (this.#queues.get(grant.grant_id) === tail) this.#queues.delete(grant.grant_id);
+    });
+    return run;
+  }
+
   /** Adds the key on the first payment; every payment moves `paid_until` forward by `days`, up to `expires_at`. */
-  async deliver(grant: AccessGrant, days = 1): Promise<LeaseDelivery> {
+  async #deliver(grant: AccessGrant, days: number): Promise<LeaseDelivery> {
     if (grant.delivery_pubkey === null || grant.delivery_pubkey === undefined) throw new AccessGrantError(`grant ${grant.grant_id} has no delivery_pubkey`);
     const scope = parseFunctionCallKeyScope(grant.limits.scope);
     const { store, chain } = this.#o;

@@ -33,10 +33,28 @@ export function parseProxyScope(scope: string): ProxyScope {
   return { path_prefixes: s.path_prefixes, methods: s.methods.map((m) => m.toUpperCase()) };
 }
 
+/**
+ * A path that cannot walk out of its prefix once the provider decodes it (security review 2): no encoded slash or backslash, no NUL, no dot
+ * segment, plain or percent-encoded. `URL` already folds `.` and `..` segments written with a literal slash; the encoded forms reach the provider as typed.
+ */
+export function plainPath(path: string): boolean {
+  if (/%(2f|5c|00)|[\\\u0000]/i.test(path)) return false;
+  for (const segment of path.split("/")) {
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(segment);
+    } catch {
+      return false;
+    }
+    if (decoded === "." || decoded === ".." || decoded.includes("/") || decoded.includes("\\")) return false;
+  }
+  return true;
+}
+
 /** The request is inside the scope: method listed and the path under one prefix (a prefix matches whole segments). */
 export function inScope(scope: ProxyScope, method: string, path: string): boolean {
   if (!scope.methods.includes(method.toUpperCase())) return false;
-  if (path.split("/").includes("..")) return false;
+  if (!plainPath(path)) return false;
   return scope.path_prefixes.some((prefix) => path === prefix || path.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`));
 }
 
@@ -72,6 +90,16 @@ export class ProviderRegistry {
     const secret = this.#env[provider.secretEnv];
     if (secret === undefined || secret === "") throw new Error(`secret variable ${provider.secretEnv} is not set`);
     return [provider.header ?? "authorization", `${provider.prefix ?? "Bearer "}${secret}`];
+  }
+
+  /** `body` with the secret of the provider replaced, for a provider that echoes the request headers back. Binary bodies without the secret are left alone. */
+  redact(provider: ProviderConfig, body: ArrayBuffer): ArrayBuffer {
+    const secret = this.#env[provider.secretEnv];
+    if (secret === undefined || secret === "") return body;
+    const bytes = Buffer.from(body);
+    if (!bytes.includes(secret)) return body;
+    const clean = Buffer.from(bytes.toString("utf8").split(secret).join("[redacted]"), "utf8");
+    return clean.buffer.slice(clean.byteOffset, clean.byteOffset + clean.byteLength) as ArrayBuffer;
   }
 
   /**
