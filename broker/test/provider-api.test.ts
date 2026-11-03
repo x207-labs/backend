@@ -42,13 +42,13 @@ describe("BE-059 GitHub adapter (mock HTTP)", () => {
       "GET /users/alice-dev": [200, '{"login":"alice-dev"}'], "GET /users/ghost-nobody": [404, '{"message":"Not Found"}'],
       "PUT /repos/x207-test-org/site/collaborators/alice-dev": [201, '{"id":777}'],
       "DELETE /repos/x207-test-org/site/invitations/777": [204, ""], "DELETE /repos/x207-test-org/site/collaborators/alice-dev": [204, ""],
-      "GET /repos/x207-test-org/site/collaborators/alice-dev": [404, ""],
+      "GET /repos/x207-test-org/site/collaborators/alice-dev": [404, ""], "GET /repos/x207-test-org/site/invitations": [200, "[]"],
     });
     expect(await adapter.verifyGranteeRef("alice-dev")).toEqual({ ok: true });
     expect(await adapter.verifyGranteeRef("ghost-nobody")).toMatchObject({ ok: false });
     expect(await adapter.verifyGranteeRef("bad login!")).toMatchObject({ ok: false });
     const g = await adapter.grant({ grantId: 1, granteeRef: "alice-dev", resource: "x207-test-org/site", permission: "push", expiresAtMs: NOW + DAY });
-    expect(g).toMatchObject({ handle: "gh:x207-test-org/site:alice-dev", nativeExpiresAtMs: null, delivery: { invitation: "pending", permission: "push" } });
+    expect(g).toMatchObject({ handle: "gh:x207-test-org/site:alice-dev|g1|i777", nativeExpiresAtMs: null, delivery: { invitation: "pending", permission: "push" } });
     const put = seen.find((s) => s.method === "PUT")!;
     expect(JSON.parse(put.body!)).toEqual({ permission: "push" });
     expect(put.headers.authorization).toBe(`Bearer ${TOKEN}`);
@@ -61,12 +61,12 @@ describe("BE-059 GitHub adapter (mock HTTP)", () => {
 
   it("TC-BE-059-02 an organization seat; a repository of another owner, a bad resource or a permission outside the list are refused before any call", async () => {
     const { adapter, seen } = make({
-      "PUT /orgs/x207-test-org/memberships/bob-dev": [200, '{"state":"pending"}'], "DELETE /orgs/x207-test-org/memberships/bob-dev": [204, ""],
+      "GET /orgs/x207-test-org/memberships/bob-dev": [404, ""], "PUT /orgs/x207-test-org/memberships/bob-dev": [200, '{"state":"pending"}'], "DELETE /orgs/x207-test-org/memberships/bob-dev": [204, ""],
     });
     const seat = await adapter.grant({ grantId: 2, granteeRef: "bob-dev", resource: "org:x207-test-org", permission: null, expiresAtMs: NOW + DAY });
-    expect(seat).toMatchObject({ handle: "gh:org:x207-test-org:bob-dev", delivery: { membership: "pending" } });
+    expect(seat).toMatchObject({ handle: "gh:org:x207-test-org:bob-dev|g2", delivery: { membership: "pending" } });
     await adapter.revoke(seat.handle);
-    expect(seen.map((s) => `${s.method} ${new URL(s.url).pathname}`)).toEqual(["PUT /orgs/x207-test-org/memberships/bob-dev", "DELETE /orgs/x207-test-org/memberships/bob-dev"]);
+    expect(seen.map((s) => `${s.method} ${new URL(s.url).pathname}`)).toEqual(["GET /orgs/x207-test-org/memberships/bob-dev", "PUT /orgs/x207-test-org/memberships/bob-dev", "DELETE /orgs/x207-test-org/memberships/bob-dev"]);
     seen.length = 0;
     for (const resource of ["evil-org/site", "org:evil-org", "x207-test-org/../admin", "x207-test-org/a/b", "x207-test-org", null]) {
       await expect(adapter.grant({ grantId: 3, granteeRef: "bob-dev", resource, permission: null, expiresAtMs: NOW + DAY }), String(resource)).rejects.toThrow();
@@ -77,7 +77,7 @@ describe("BE-059 GitHub adapter (mock HTTP)", () => {
 
   it("TC-BE-059-03 a failing API leaves the access revoke_pending in the manager, and the retry removes it; the error text holds no token", async () => {
     const answers: Array<[number, string]> = [[503, "unavailable"], [204, ""]];
-    const { adapter } = make({ "GET /users/alice-dev": [200, "{}"], "PUT /repos/x207-test-org/site/collaborators/alice-dev": [204, ""], "DELETE /repos/x207-test-org/site/collaborators/alice-dev": answers });
+    const { adapter } = make({ "GET /users/alice-dev": [200, "{}"], "PUT /repos/x207-test-org/site/collaborators/alice-dev": [201, '{"id":5}'], "DELETE /repos/x207-test-org/site/invitations/5": [204, ""], "DELETE /repos/x207-test-org/site/collaborators/alice-dev": answers });
     const clock = { now: NOW };
     const store = new BrokerStore(":memory:");
     const manager = new ProviderAccessManager({ store, now: () => clock.now });
@@ -92,6 +92,104 @@ describe("BE-059 GitHub adapter (mock HTTP)", () => {
     expect(first.lastError).not.toContain(TOKEN);
     clock.now += RETRY_BASE_MS;
     expect((await manager.sweep())[0]!.status).toBe("revoked");
+    store.close();
+  });
+});
+
+describe("BE-059 fix B4-F1 and B4-F2: the handle keeps the invitation and the grant, and what was there before is not removed", () => {
+  const make = (table: Parameters<typeof mockFetch>[0]) => {
+    const m = mockFetch(table);
+    const adapter = () => new GithubAdapter({ token: TOKEN, allowedOwners: ["x207-test-org"], fetch: m.fetchImpl, baseUrl: "https://api.github.test" });
+    return { ...m, adapter };
+  };
+  const paths = (seen: Seen[], method: string) => seen.filter((s) => s.method === method).map((s) => new URL(s.url).pathname);
+  const REPO = "x207-test-org/site";
+
+  it("TC-BE-059-10 a restart of the broker still cancels the pending invitation (the id is in the handle)", async () => {
+    const { adapter, seen } = make({
+      "PUT /repos/x207-test-org/site/collaborators/alice-dev": [201, '{"id":4242}'],
+      "DELETE /repos/x207-test-org/site/invitations/4242": [204, ""], "DELETE /repos/x207-test-org/site/collaborators/alice-dev": [204, ""],
+    });
+    const g = await adapter().grant({ grantId: 1, granteeRef: "alice-dev", resource: REPO, permission: "pull", expiresAtMs: NOW + DAY });
+    seen.length = 0;
+    await adapter().revoke(g.handle); // another object: the memory of the first is gone
+    expect(paths(seen, "DELETE")).toEqual(["/repos/x207-test-org/site/invitations/4242", "/repos/x207-test-org/site/collaborators/alice-dev"]);
+  });
+
+  it("TC-BE-059-11 a handle of an older broker (no id) finds the pending invitation in the list and cancels it; with none it only removes the collaborator", async () => {
+    const withInvite = make({
+      "GET /repos/x207-test-org/site/invitations": [200, '[{"id":9,"invitee":{"login":"Other"}},{"id":10,"invitee":{"login":"Alice-Dev"}}]'],
+      "DELETE /repos/x207-test-org/site/invitations/10": [204, ""], "DELETE /repos/x207-test-org/site/collaborators/alice-dev": [204, ""],
+    });
+    await withInvite.adapter().revoke("gh:x207-test-org/site:alice-dev");
+    expect(paths(withInvite.seen, "DELETE")).toEqual(["/repos/x207-test-org/site/invitations/10", "/repos/x207-test-org/site/collaborators/alice-dev"]);
+    const none = make({ "GET /repos/x207-test-org/site/invitations": [200, "[]"], "DELETE /repos/x207-test-org/site/collaborators/alice-dev": [204, ""] });
+    await none.adapter().revoke("gh:x207-test-org/site:alice-dev");
+    expect(paths(none.seen, "DELETE")).toEqual(["/repos/x207-test-org/site/collaborators/alice-dev"]);
+  });
+
+  it("TC-BE-059-12 status is active while an invitation is pending, absent when there is nothing", async () => {
+    const pending = make({ "GET /repos/x207-test-org/site/collaborators/alice-dev": [404, ""], "GET /repos/x207-test-org/site/invitations": [200, '[{"id":3,"invitee":{"login":"alice-dev"}}]'] });
+    expect(await pending.adapter().status("gh:x207-test-org/site:alice-dev|g1")).toBe("active");
+    const none = make({ "GET /repos/x207-test-org/site/collaborators/alice-dev": [404, ""], "GET /repos/x207-test-org/site/invitations": [200, "[]"] });
+    expect(await none.adapter().status("gh:x207-test-org/site:alice-dev|g1")).toBe("absent");
+  });
+
+  it("TC-BE-059-13 a login that was a collaborator before the grant is not removed at the end of the rent, and a renewal keeps what the first call learned", async () => {
+    const { adapter, seen } = make({ "PUT /repos/x207-test-org/site/collaborators/bob-dev": [204, ""], "DELETE /repos/x207-test-org/site/collaborators/bob-dev": [204, ""] });
+    const a = adapter();
+    const first = await a.grant({ grantId: 4, granteeRef: "bob-dev", resource: REPO, permission: "pull", expiresAtMs: NOW + DAY });
+    expect(first).toMatchObject({ handle: "gh:x207-test-org/site:bob-dev|g4|p", delivery: { invitation: "already_collaborator" } });
+    const again = await a.grant({ grantId: 4, granteeRef: "bob-dev", resource: REPO, permission: "pull", expiresAtMs: NOW + 2 * DAY, existingHandle: first.handle });
+    expect(again.handle).toBe(first.handle);
+    seen.length = 0;
+    await a.revoke(first.handle);
+    expect(seen).toEqual([]); // nothing removed
+  });
+
+  it("TC-BE-059-14 a collaborator that this grant invited and who accepted is still removed after a renewal (204 on the second call is not 'was there before')", async () => {
+    const { adapter, seen } = make({
+      "PUT /repos/x207-test-org/site/collaborators/cara-dev": [[201, '{"id":31}'], [204, ""]] as never,
+      "DELETE /repos/x207-test-org/site/invitations/31": [404, ""], "DELETE /repos/x207-test-org/site/collaborators/cara-dev": [204, ""],
+    });
+    const a = adapter();
+    const first = await a.grant({ grantId: 5, granteeRef: "cara-dev", resource: REPO, permission: "pull", expiresAtMs: NOW + DAY });
+    const second = await a.grant({ grantId: 5, granteeRef: "cara-dev", resource: REPO, permission: "pull", expiresAtMs: NOW + 2 * DAY, existingHandle: first.handle });
+    expect(second.handle).toBe("gh:x207-test-org/site:cara-dev|g5|i31");
+    seen.length = 0;
+    await a.revoke(second.handle);
+    expect(paths(seen, "DELETE")).toEqual(["/repos/x207-test-org/site/invitations/31", "/repos/x207-test-org/site/collaborators/cara-dev"]);
+  });
+
+  it("TC-BE-059-15 an organization member from before the grant stays a member; a new seat is removed", async () => {
+    const member = make({ "GET /orgs/x207-test-org/memberships/dan-dev": [200, '{"state":"active"}'], "PUT /orgs/x207-test-org/memberships/dan-dev": [200, '{"state":"active"}'], "DELETE /orgs/x207-test-org/memberships/dan-dev": [204, ""] });
+    const g = await member.adapter().grant({ grantId: 6, granteeRef: "dan-dev", resource: "org:x207-test-org", permission: null, expiresAtMs: NOW + DAY });
+    expect(g).toMatchObject({ handle: "gh:org:x207-test-org:dan-dev|g6|p", delivery: { preexisting: true } });
+    member.seen.length = 0;
+    await member.adapter().revoke(g.handle);
+    expect(member.seen).toEqual([]);
+  });
+
+  it("TC-BE-059-16 the manager refuses a second live grant for the same login and repository; after the first ended it is allowed", async () => {
+    const { adapter } = make({
+      "PUT /repos/x207-test-org/site/collaborators/alice-dev": [201, '{"id":1}'], "DELETE /repos/x207-test-org/site/invitations/1": [204, ""], "DELETE /repos/x207-test-org/site/collaborators/alice-dev": [204, ""],
+      "GET /users/alice-dev": [200, "{}"],
+    });
+    const clock = { now: NOW };
+    const store = new BrokerStore(":memory:");
+    const manager = new ProviderAccessManager({ store, now: () => clock.now });
+    const a = adapter();
+    (a as { needsChallenge: boolean }).needsChallenge = false;
+    a.proveGranteeRef = async () => true;
+    manager.register(a);
+    await manager.grantAccess(input("github", "alice-dev", REPO, { permission: "pull" }, 1));
+    await expect(manager.grantAccess(input("github", "alice-dev", REPO, { permission: "pull" }, 2))).rejects.toMatchObject({ code: "grant_failed" });
+    await manager.grantAccess(input("github", "alice-dev", "x207-test-org/other", {}, 3)).catch(() => undefined); // another repository is another thing (no mock: it may fail on the API, not on the rule)
+    clock.now = NOW + DAY + 1;
+    await manager.sweep();
+    expect(manager.access(1)?.status).toBe("revoked");
+    await manager.grantAccess(input("github", "alice-dev", REPO, { permission: "pull" }, 2));
+    expect(manager.access(2)?.status).toBe("active");
     store.close();
   });
 });

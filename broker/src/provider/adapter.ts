@@ -14,6 +14,8 @@ export interface ProviderGrantRequest {
   permission: string | null;
   /** The access ends here (unix ms): the end of the paid day, never past `expires_at` of the grant. A provider with native expiry sets this on its own side. */
   expiresAtMs: number;
+  /** The handle this grant already has (a renewal of the next day), so an adapter keeps what it learned at the first call (an invitation id, an access that was there before). `null` at the first call. */
+  existingHandle?: string | null;
 }
 
 export interface ProveGranteeArgs {
@@ -54,6 +56,11 @@ export interface ProviderAccessAdapter {
   proveGranteeRef?(args: ProveGranteeArgs): Promise<boolean | { unproven: string }>;
   /** `true` when the proof binds the challenge of the broker (a nonce per grant): the lessee must ask `GET …/access/challenge` first. */
   readonly needsChallenge?: boolean;
+  /**
+   * Optional: names the thing a grant shares (e.g. `github:owner/repo:login`). The manager refuses a second live grant with the same key, because `revoke` of the first would take away
+   * what the second still pays for (B4-F2).
+   */
+  sharedKey?(args: { granteeRef: string; resource: string | null }): string | null;
   /** Open the access. Idempotent by `grantId`: a second call (the next day's rent) moves the expiry and returns the same `handle`. */
   grant(request: ProviderGrantRequest): Promise<ProviderGrantResult>;
   /** Close the access. Idempotent: an access that is already gone is a success. Throws when the provider could not be reached. */

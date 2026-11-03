@@ -36,6 +36,27 @@ function parseTarget(resource: string | null, allowed: readonly string[]): Targe
   return t;
 }
 
+interface Handle { target: Target; login: string; grantId: number | null; invitationId: number | null; preexisting: boolean }
+/**
+ * The handle holds all that `revoke` needs, so a restart of the broker loses nothing: `gh:owner/repo:login` (or `gh:org:org:login`) then `|g<grant>`, `|i<invitation id>` and `|p` (the access
+ * was there before the grant, so the end of the rent does not remove it). A handle without the flags is one of an older broker.
+ */
+function encodeHandle(h: Handle): string {
+  const base = h.target.kind === "repo" ? `gh:${h.target.owner}/${h.target.repo}:${h.login}` : `gh:org:${h.target.owner}:${h.login}`;
+  return `${base}${h.grantId === null ? "" : `|g${h.grantId}`}${h.invitationId === null ? "" : `|i${h.invitationId}`}${h.preexisting ? "|p" : ""}`;
+}
+function decodeHandle(handle: string): Handle {
+  const [base = "", ...flags] = handle.split("|");
+  const grantId = flags.map((f) => /^g(\d+)$/.exec(f)?.[1]).find((v) => v !== undefined);
+  const inv = flags.map((f) => /^i(\d+)$/.exec(f)?.[1]).find((v) => v !== undefined);
+  const common = { grantId: grantId === undefined ? null : Number(grantId), invitationId: inv === undefined ? null : Number(inv), preexisting: flags.includes("p") };
+  const org = /^gh:org:([^:]+):([^:]+)$/.exec(base);
+  if (org) return { target: { kind: "org", owner: org[1] as string }, login: org[2] as string, ...common };
+  const repo = /^gh:([^/:]+)\/([^:]+):([^:]+)$/.exec(base);
+  if (repo) return { target: { kind: "repo", owner: repo[1] as string, repo: repo[2] as string }, login: repo[3] as string, ...common };
+  throw new Error("handle GitHub tidak dikenal");
+}
+
 export class GithubAdapter implements ProviderAccessAdapter {
   readonly provider = "github";
   readonly real = true;
@@ -44,8 +65,6 @@ export class GithubAdapter implements ProviderAccessAdapter {
   readonly #o: GithubOptions;
   readonly #base: string;
   readonly #fetch: FetchLike;
-  /** handle -> what to remove. */
-  readonly #handles = new Map<string, { target: Target; login: string; invitationId: number | null }>();
 
   constructor(options: GithubOptions) {
     this.#o = options;
@@ -93,48 +112,62 @@ export class GithubAdapter implements ProviderAccessAdapter {
     return true;
   }
 
+  sharedKey(args: { granteeRef: string; resource: string | null }): string | null {
+    return args.resource === null ? null : `github:${args.resource.toLowerCase()}:${args.granteeRef.toLowerCase()}`;
+  }
+
   async grant(request: ProviderGrantRequest): Promise<ProviderGrantResult> {
     const target = parseTarget(request.resource, this.#o.allowedOwners);
     const login = request.granteeRef;
-    const handle = target.kind === "repo" ? `gh:${target.owner}/${target.repo}:${login}` : `gh:org:${target.owner}:${login}`;
+    const before = request.existingHandle ? decodeHandle(request.existingHandle) : null;
+    const same = before !== null && before.grantId === request.grantId && before.login === login ? before : null;
     if (target.kind === "repo") {
       const permission = request.permission ?? "pull";
       if (!(GITHUB_PERMISSIONS as readonly string[]).includes(permission)) throw new Error(`permission ${permission} tidak dikenal`);
       const r = await call(this.#fetch, this.#base, this.#headers(), { method: "PUT", path: `/repos/${target.owner}/${target.repo}/collaborators/${login}`, body: JSON.stringify({ permission }) });
-      const id = r.status === 201 ? (JSON.parse(r.text) as { id?: number }).id ?? null : null;
-      this.#handles.set(handle, { target, login, invitationId: id });
-      return { handle, nativeExpiresAtMs: null, delivery: { provider: "github", resource: request.resource, permission, invitation: r.status === 201 ? "pending" : "already_collaborator" } };
+      // 201 = a new invitation; 204 = the login is a collaborator already. At the first call that means it was there before this grant (never removed at the end); at a renewal, it is what this grant gave
+      const invitationId = r.status === 201 ? (JSON.parse(r.text) as { id?: number }).id ?? null : same?.invitationId ?? null;
+      const preexisting = r.status === 201 ? false : same ? same.preexisting : true;
+      const handle = encodeHandle({ target, login, grantId: request.grantId, invitationId, preexisting });
+      return { handle, nativeExpiresAtMs: null, delivery: { provider: "github", resource: request.resource, permission, invitation: r.status === 201 ? "pending" : preexisting ? "already_collaborator" : "accepted" } };
     }
+    // a seat: if the login is a member of the organization already, it stays one when the rent ends
+    let preexisting = same?.preexisting ?? false;
+    if (same === null) preexisting = (await call(this.#fetch, this.#base, this.#headers(), { method: "GET", path: `/orgs/${target.owner}/memberships/${login}` }, [200, 404])).status === 200;
     const r = await call(this.#fetch, this.#base, this.#headers(), { method: "PUT", path: `/orgs/${target.owner}/memberships/${login}`, body: JSON.stringify({ role: "member" }) });
-    this.#handles.set(handle, { target, login, invitationId: null });
-    return { handle, nativeExpiresAtMs: null, delivery: { provider: "github", resource: request.resource, membership: (JSON.parse(r.text) as { state?: string }).state ?? "pending" } };
+    return {
+      handle: encodeHandle({ target, login, grantId: request.grantId, invitationId: null, preexisting }), nativeExpiresAtMs: null,
+      delivery: { provider: "github", resource: request.resource, membership: (JSON.parse(r.text) as { state?: string }).state ?? "pending", ...(preexisting ? { preexisting: true } : {}) },
+    };
   }
 
-  /** The handle says what to remove, so a restart of the broker does not lose it. */
-  #decode(handle: string): { target: Target; login: string; invitationId: number | null } {
-    const known = this.#handles.get(handle);
-    if (known) return known;
-    const org = /^gh:org:([^:]+):([^:]+)$/.exec(handle);
-    if (org) return { target: { kind: "org", owner: org[1] as string }, login: org[2] as string, invitationId: null };
-    const repo = /^gh:([^/:]+)\/([^:]+):([^:]+)$/.exec(handle);
-    if (repo) return { target: { kind: "repo", owner: repo[1] as string, repo: repo[2] as string }, login: repo[3] as string, invitationId: null };
-    throw new Error("handle GitHub tidak dikenal");
+  /** The pending invitation of `login` on a repository, found by the list (when the id was not kept), or `null`. */
+  async #pendingInvitation(target: Extract<Target, { kind: "repo" }>, login: string): Promise<number | null> {
+    const r = await call(this.#fetch, this.#base, this.#headers(), { method: "GET", path: `/repos/${target.owner}/${target.repo}/invitations?per_page=100` }, [200, 404]);
+    if (r.status === 404) return null;
+    const list = JSON.parse(r.text) as Array<{ id?: number; invitee?: { login?: string } }>;
+    return list.find((i) => i.invitee?.login?.toLowerCase() === login.toLowerCase())?.id ?? null;
   }
 
   async revoke(handle: string): Promise<void> {
-    const { target, login, invitationId } = this.#decode(handle);
+    const { target, login, invitationId, preexisting } = decodeHandle(handle);
     if (target.kind === "org") {
-      await call(this.#fetch, this.#base, this.#headers(), { method: "DELETE", path: `/orgs/${target.owner}/memberships/${login}` }, [200, 204, 404]);
+      if (!preexisting) await call(this.#fetch, this.#base, this.#headers(), { method: "DELETE", path: `/orgs/${target.owner}/memberships/${login}` }, [200, 204, 404]);
       return;
     }
-    if (invitationId !== null) await call(this.#fetch, this.#base, this.#headers(), { method: "DELETE", path: `/repos/${target.owner}/${target.repo}/invitations/${invitationId}` }, [200, 204, 404]);
+    if (preexisting) return; // it was a collaborator before this grant: the rent does not take it away
+    // cancel the invitation (the lessee may still accept it after the rent): by the id in the handle, else by the list of pending invitations
+    const pending = invitationId ?? await this.#pendingInvitation(target, login);
+    if (pending !== null) await call(this.#fetch, this.#base, this.#headers(), { method: "DELETE", path: `/repos/${target.owner}/${target.repo}/invitations/${pending}` }, [200, 204, 404]);
     await call(this.#fetch, this.#base, this.#headers(), { method: "DELETE", path: `/repos/${target.owner}/${target.repo}/collaborators/${login}` }, [200, 204, 404]);
   }
 
   async status(handle: string): Promise<AccessState> {
-    const { target, login } = this.#decode(handle);
+    const { target, login } = decodeHandle(handle);
     const path = target.kind === "org" ? `/orgs/${target.owner}/memberships/${login}` : `/repos/${target.owner}/${target.repo}/collaborators/${login}`;
     const r = await call(this.#fetch, this.#base, this.#headers(), { method: "GET", path }, [200, 204, 404]);
-    return r.status === 404 ? "absent" : "active";
+    if (r.status !== 404) return "active";
+    // an invitation that is not accepted yet is still a way in
+    return target.kind === "repo" && (await this.#pendingInvitation(target, login)) !== null ? "active" : "absent";
   }
 }

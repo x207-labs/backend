@@ -113,6 +113,10 @@ export class ProviderAccessManager {
         reason            TEXT,
         proof             TEXT
       );
+      CREATE TABLE IF NOT EXISTS provider_shared_keys (
+        grant_id INTEGER PRIMARY KEY,
+        key      TEXT    NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS provider_charges (
         grant_id INTEGER NOT NULL,
         day      INTEGER NOT NULL,
@@ -191,9 +195,17 @@ export class ProviderAccessManager {
     if (existing && existing.status !== "active") throw new ProviderAccessError("grant_failed", `akses grant ${grant.grant_id} sudah ${existing.status}`);
     const now = this.#now();
     const paidUntil = Math.min(Math.max(now, existing?.paidUntilMs ?? 0) + days * DAY_MS, nsToMs(grant.limits.expires_at));
+    // two live grants for one thing: the end of the first would take away what the second still pays for (B4-F2)
+    const key = adapter.sharedKey?.({ granteeRef: scope.grantee_ref, resource: scope.resource }) ?? null;
+    if (key !== null) {
+      const other = this.#store.db.prepare(
+        `SELECT k.grant_id FROM provider_shared_keys k JOIN provider_access a ON a.grant_id = k.grant_id WHERE k.key = ? AND k.grant_id <> ? AND a.status IN ('active','revoke_pending') LIMIT 1`,
+      ).get(key, grant.grant_id) as { grant_id: number } | undefined;
+      if (other) throw new ProviderAccessError("grant_failed", `grant ${other.grant_id} sudah membuka akses yang sama (${scope.provider}, ${scope.grantee_ref}); tunggu sampai berakhir`);
+    }
     let result: ProviderGrantResult;
     try {
-      result = await adapter.grant({ grantId: grant.grant_id, granteeRef: scope.grantee_ref, resource: scope.resource, permission: scope.permission, expiresAtMs: paidUntil });
+      result = await adapter.grant({ grantId: grant.grant_id, granteeRef: scope.grantee_ref, resource: scope.resource, permission: scope.permission, expiresAtMs: paidUntil, existingHandle: existing?.handle ?? null });
     } catch (error) {
       // a refusal that the adapter names itself (a vote kind that is not for rent) keeps its code
       if (error instanceof ProviderAccessError) throw error;
@@ -209,6 +221,7 @@ export class ProviderAccessManager {
       nativeExpiresMs: result.nativeExpiresAtMs, attempts: 0, nextRetryMs: null, lastError: null, reason: null, proof: proven,
     };
     this.#save(access);
+    if (key !== null) this.#store.db.prepare("INSERT INTO provider_shared_keys (grant_id, key) VALUES (?, ?) ON CONFLICT (grant_id) DO UPDATE SET key = excluded.key").run(grant.grant_id, key);
     this.#log?.(`provider access grant=${grant.grant_id} provider=${scope.provider} ref=${scope.grantee_ref} until=${new Date(paidUntil).toISOString()}`);
     return { access, delivery: result.delivery, warnings };
   }
