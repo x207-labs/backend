@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { acct, CIRCLE, CONTRACT, NOW_S, openEpoch, startMarket, type Market } from "./helpers.js";
-import { signSpotCheck, type SpotCheckNotice } from "../../src/marketplace/reputation.js";
+import { signSpotCheck, spotCheckHash, serializeSpotCheck, type SpotCheckNotice } from "../../src/marketplace/reputation.js";
 
 const PAID = 90_000_000; // listing 100 credit, discount 10: what the seller must have registered
 
@@ -172,5 +172,13 @@ describe("BE-053 minimal reputation: paid deals only, one count per counterparty
     expect((await m.get(`/reputation/${acct("ghost")}`)).json.error.code).toBe("member_not_found");
     expect((await m.get("/reputation/BAD NAME")).status).toBe(400);
     expect((await m.get("/reputation?limit=1")).json.items).toHaveLength(1);
+  });
+
+  it("TC-BE-053-10 golden vector of the random-check notice: the solver (SV-018) signs exactly these bytes", () => {
+    const secret = `ed25519:${"3".repeat(88)}` as const;
+    const n: SpotCheckNotice = { circle: "x207-circle.near", subject: "andi.x207-circle.near", verifier: "fina.x207-circle.near", job_hash: "ab".repeat(32), passed: false, expected_hash: "cd".repeat(32), got_hash: "ef".repeat(32), at: 1793000000 };
+    expect(serializeSpotCheck(n)).toBe('{"circle":"x207-circle.near","subject":"andi.x207-circle.near","verifier":"fina.x207-circle.near","job_hash":"' + "ab".repeat(32) + '","passed":false,"expected_hash":"' + "cd".repeat(32) + '","got_hash":"' + "ef".repeat(32) + '","at":1793000000}');
+    expect(spotCheckHash(n)).toBe("325958b0b59c669df4b8b3c51fa4645d3b01e7c788feffc7d0066bd5287a9501");
+    expect(signSpotCheck(n, secret)).toBe("ed25519:4zFBUFgwfVuHexfymRiWs28WXZ49bZckfVDrw7Xuzr2CbpTXc8RV3A87gQnpMoKu1CNiVmEMpdyHc2RbNJqJbj9k");
   });
 });
