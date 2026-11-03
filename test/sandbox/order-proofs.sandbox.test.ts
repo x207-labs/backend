@@ -31,8 +31,15 @@ describe.skipIf(!sandboxAvailable)("BE-055 on-chain proofs on near-sandbox", () 
     const source = new RpcBlockSource(rpcChainReader(new FailoverRpcClient({ endpoints: [rpcUrl], timeoutMs: 30_000 })), circle.accountId, startBlock);
     const indexer = new Indexer({ db, source, circleId: "agents-main", contractId: circle.accountId, startBlock, fetchParams: () => sandbox.view(circle.accountId, "get_params", {}) });
     await indexer.bootstrap();
-    const follow = async () => {
-      for (let i = 0; i < 20; i++) if ((await indexer.drain(200)) === 0) await new Promise((r) => setTimeout(r, 200));
+    // read blocks until the indexer has stored `events` events named `event` (the transactions are final a few seconds after the call)
+    const follow = async (event?: string, events = 0) => {
+      const have = () => (db.prepare("SELECT COUNT(*) AS n FROM events_raw WHERE event = ?").get(event ?? "") as { n: number }).n;
+      for (let i = 0; i < 150; i++) {
+        await indexer.drain(200);
+        if (event === undefined || have() >= events) return;
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      if (event !== undefined) throw new Error(`the indexer did not store ${events} ${event} event(s)`);
     };
 
     // the two parties of the order are members of the circle in the read model (the order book asks for their voucher keys)
@@ -65,17 +72,20 @@ describe.skipIf(!sandboxAvailable)("BE-055 on-chain proofs on near-sandbox", () 
       // epoch 1 ends: the OTHER account closes it
       const epoch1 = await sandbox.view<{ epoch: number; cutoff_at: string }>(circle.accountId, "get_epoch", {});
       await sandbox.advanceTo(Number(BigInt(epoch1.cutoff_at) / 1_000_000n) + 1000);
-      const closedByB = await keeperB.call({ receiverId: circle.accountId, methodName: "close_epoch", args: { epoch: epoch1.epoch }, deposit: 0n });
+      await new Promise((r) => setTimeout(r, 3_000));
+      // after a fast forward an Account holds an old block hash: a fresh object for the same key
+      const closedByB = await sandbox.accountFrom(keeperB.accountId, keeperB.secretKey).call({ receiverId: circle.accountId, methodName: "close_epoch", args: { epoch: epoch1.epoch }, deposit: 0n }, "EXECUTED_OPTIMISTIC");
       expect(closedByB.failures).toEqual([]);
-      await follow();
+      await follow("epoch_cutoff", 1);
       expect((await call("GET", `/orders/${hash}/onchain-proofs`)).json.items).toEqual([]); // not the seller: no proof
 
       // epoch 2 ends: the SELLER closes it
       const epoch2 = await sandbox.view<{ epoch: number; cutoff_at: string }>(circle.accountId, "get_epoch", {});
       await sandbox.advanceTo(Number(BigInt(epoch2.cutoff_at) / 1_000_000n) + 1000);
-      const closedByA = await keeperA.call({ receiverId: circle.accountId, methodName: "close_epoch", args: { epoch: epoch2.epoch }, deposit: 0n });
+      await new Promise((r) => setTimeout(r, 3_000));
+      const closedByA = await sandbox.accountFrom(keeperA.accountId, keeperA.secretKey).call({ receiverId: circle.accountId, methodName: "close_epoch", args: { epoch: epoch2.epoch }, deposit: 0n }, "EXECUTED_OPTIMISTIC");
       expect(closedByA.failures).toEqual([]);
-      await follow();
+      await follow("epoch_cutoff", 2);
 
       const proofs = (await call("GET", `/orders/${hash}/onchain-proofs`)).json;
       expect(proofs.items.map((i: any) => [i.txHash, i.method, i.signer, i.epoch])).toEqual([[closedByA.hash, "close_epoch", keeperA.accountId, epoch2.epoch]]);

@@ -15,15 +15,15 @@ describe("BE-055 on-chain proofs of keeper and solver orders", () => {
     return market;
   }
   let n = 0;
-  /** What the indexer stores for an event with the caller of its transaction. */
-  function call(m: Market, o: { event: string; data: Record<string, unknown>; signer: string | null; method?: string | null; ms?: number; tx?: string }) {
+  /** What the indexer stores for an event with the caller of its transaction: the `data` of the NEP-297 log, an array with one object (`array: false` is the bare object of older code). */
+  function call(m: Market, o: { event: string; data: Record<string, unknown>; signer: string | null; method?: string | null; ms?: number; tx?: string; array?: boolean }) {
     const id = ++n;
     m.db
       .prepare(
         `INSERT INTO events_raw (receipt_id, log_index, block_height, block_hash, block_timestamp_ns, tx_hash, signer_id, method_name, contract_id, standard, version, event, data_json, handled)
          VALUES (?, 0, ?, 'h', ?, ?, ?, ?, ?, 'x207', '0.0.1', ?, ?, 1)`,
       )
-      .run(`rc${id}`, 1000 + id, BigInt(o.ms ?? m.clock.now + id * 1000) * 1_000_000n, o.tx ?? `tx${id}`, o.signer, o.method ?? null, CONTRACT, o.event, JSON.stringify(o.data));
+      .run(`rc${id}`, 1000 + id, BigInt(o.ms ?? m.clock.now + id * 1000) * 1_000_000n, o.tx ?? `tx${id}`, o.signer, o.method ?? null, CONTRACT, o.event, JSON.stringify(o.array === false ? o.data : [o.data]));
   }
   const keeperOrder = { kind: "keeper" as const, proof: { method: "close_epoch", amount_per_tx: "1000000" }, milestones: [{ amount: "5000000", due_at: Math.floor(NOW / 1000) + 86_400 }] };
 
@@ -76,5 +76,13 @@ describe("BE-055 on-chain proofs of keeper and solver orders", () => {
     expect(res.status).toBe(409);
     expect(res.json.error.code).toBe("order_not_proof_kind");
     expect((await m.get(`/orders/${"0".repeat(64)}/onchain-proofs`)).json.error.code).toBe("order_not_found");
+  });
+
+  it("TC-BE-055-05 the data of an event is an array on a real chain (found by the near-sandbox run): epoch and solver are read from both shapes", async () => {
+    const m = await start();
+    const hash = await openOrder(m, orderDoc("andi", "budi", { kind: "solver", proof: { method: "submit_clearing", amount_per_tx: "2000000" }, milestones: [{ amount: "6000000", due_at: Math.floor(NOW / 1000) + 86_400 }] }));
+    call(m, { event: "clearing_submitted", data: { epoch: 7, solver: acct("budi") }, signer: null, tx: "array-shape" });
+    call(m, { event: "clearing_submitted", data: { epoch: 8, solver: acct("budi") }, signer: null, tx: "bare-shape", array: false });
+    expect((await m.get(`/orders/${hash}/onchain-proofs`)).json.items.map((i: any) => [i.txHash, i.signer, i.epoch])).toEqual([["array-shape", acct("budi"), 7], ["bare-shape", acct("budi"), 8]]);
   });
 });

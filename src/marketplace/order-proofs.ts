@@ -10,6 +10,7 @@
 import { ApiError } from "../api/errors.js";
 import { rows } from "../api/format.js";
 import type { Route } from "../api/router.js";
+import { eventField } from "./event-data.js";
 import { findOrder, syncOrders } from "./orders.js";
 import { nowSeconds } from "./common.js";
 
@@ -43,8 +44,8 @@ export const orderProofRoutes: Route[] = [
       const created = rows<{ ms: bigint }>(db, "SELECT created_at_ms AS ms FROM orders WHERE id = ?", o.id)[0]?.ms ?? 0n;
       const calls = rows<CallRow>(
         db,
-        `SELECT tx_hash, event, block_height, block_timestamp_ns, method_name, json_extract(data_json, '$.epoch') AS epoch,
-                COALESCE(signer_id, CASE event WHEN 'clearing_submitted' THEN json_extract(data_json, '$.solver') END) AS signer
+        `SELECT tx_hash, event, block_height, block_timestamp_ns, method_name, ${eventField('epoch')} AS epoch,
+                COALESCE(signer_id, CASE event WHEN 'clearing_submitted' THEN ${eventField('solver')} END) AS signer
            FROM events_raw
           WHERE contract_id = ? AND tx_hash IS NOT NULL AND event IN ('epoch_cutoff','epoch_finalized','clearing_submitted') AND block_timestamp_ns >= ?
           ORDER BY block_height, receipt_id, log_index`,
