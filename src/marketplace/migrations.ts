@@ -246,6 +246,27 @@ ALTER TABLE deliveries_new RENAME TO deliveries;
 ALTER TABLE delivery_notices ADD COLUMN side TEXT NOT NULL DEFAULT 'offer';
 `;
 
+// Results of random checks of a job (SV-018, BE-053): a verifier that is an active member says, with its voucher key, that a job of a provider gave the expected result or not.
+const V1108_SPOT_CHECKS = `
+CREATE TABLE spot_checks (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  circle_id      TEXT    NOT NULL,
+  subject        TEXT    NOT NULL,
+  verifier       TEXT    NOT NULL,
+  job_hash       TEXT    NOT NULL,
+  passed         INTEGER NOT NULL CHECK (passed IN (0,1)),
+  expected_hash  TEXT,
+  got_hash       TEXT,
+  at_s           INTEGER NOT NULL,
+  notice_hash    TEXT    NOT NULL,
+  signature      TEXT    NOT NULL,
+  recorded_at_ms INTEGER NOT NULL,
+  UNIQUE (circle_id, notice_hash),
+  UNIQUE (circle_id, subject, job_hash)
+);
+CREATE INDEX idx_spot_checks_subject ON spot_checks (circle_id, subject);
+`;
+
 export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1101, name: "m11_intents", sql: V1101_INTENTS },
   { version: 1102, name: "m11_listings", sql: V1102_LISTINGS },
@@ -254,4 +275,5 @@ export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1105, name: "m11_referrals", sql: V1105_REFERRALS },
   { version: 1106, name: "m11_deliveries", sql: V1106_DELIVERIES },
   { version: 1107, name: "m11_delivery_sides", sql: V1107_DELIVERY_SIDES },
+  { version: 1108, name: "m11_spot_checks", sql: V1108_SPOT_CHECKS },
 ];

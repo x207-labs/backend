@@ -5,6 +5,7 @@ import { openEpochResolver } from "./epoch.js";
 import type { Route } from "../api/router.js";
 import { assetClassCheck, assetClassRoutes } from "./asset-classes.js";
 import { scopeCheck, type ScopeOptions } from "./listing-scope.js";
+import { reputationRoutes } from "./reputation.js";
 import { resourceCheck, resourceRoutes } from "./resource-listing.js";
 import { bundleRoutes } from "./bundles.js";
 import { deliveryRoutes } from "./delivery.js";
@@ -18,5 +19,5 @@ import { MARKETPLACE_MIGRATIONS } from "./migrations.js";
 /** Terapkan tabel M11 lalu kembalikan route marketplace; dipasang lewat `extraRoutes` server. */
 export function marketplaceRoutes(db: Database.Database, options: { maxRounds?: number; chainView?: ViewFunction; maxReferrals?: number; confirmClasses?: readonly string[]; disputeWindowSeconds?: number } & ScopeOptions = {}): Route[] {
   migrate(db, MARKETPLACE_MIGRATIONS);
-  return [...intentRoutes, ...listingRoutes([assetClassCheck, scopeCheck(options), resourceCheck]), ...assetClassRoutes, ...offerRoutes(options), ...bundleRoutes(openEpochResolver(options.chainView), options.confirmClasses === undefined ? {} : { confirmClasses: options.confirmClasses }), ...deliveryRoutes(options.disputeWindowSeconds === undefined ? {} : { disputeWindowSeconds: options.disputeWindowSeconds }), ...referralRoutes(options.maxReferrals === undefined ? {} : { maxPending: options.maxReferrals }), ...statsRoutes, ...resourceRoutes];
+  return [...intentRoutes, ...listingRoutes([assetClassCheck, scopeCheck(options), resourceCheck]), ...assetClassRoutes, ...offerRoutes(options), ...bundleRoutes(openEpochResolver(options.chainView), options.confirmClasses === undefined ? {} : { confirmClasses: options.confirmClasses }), ...deliveryRoutes(options.disputeWindowSeconds === undefined ? {} : { disputeWindowSeconds: options.disputeWindowSeconds }), ...referralRoutes(options.maxReferrals === undefined ? {} : { maxPending: options.maxReferrals }), ...statsRoutes, ...resourceRoutes, ...reputationRoutes];
 }
