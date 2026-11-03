@@ -157,4 +157,41 @@ describe("BE-034 run", () => {
     await runResidualBatch(batch, { mode: "mock", verifier: VERIFIER, view: okView, signed: partial, deliver });
     expect(delivered).toBe(0);
   });
+
+  it("TC-BE-034-13 dry plans withdraw_intents_balance after the payments and before any claim, for the whole amount of the batch", async () => {
+    const result = await runResidualBatch(batch, { mode: "dry", verifier: VERIFIER, view: okView, signed: allSigned });
+    expect(result).toMatchObject({ status: "dry_run_ok", withdrawal: { status: "planned", method: "withdraw_intents_balance", expected: "60000000" } });
+  });
+
+  it("TC-BE-034-14 mock withdraws what the circle kept (transfers minus refunds of the debtors that were paid), once, after the deliveries", async () => {
+    const order: string[] = [];
+    const result = await runResidualBatch(batch, {
+      mode: "mock", verifier: VERIFIER, view: okView, signed: allSigned,
+      deliver: async (n) => (order.push(`deliver:${n.debtor}`), n.debtor === "scraper.near" ? "5000000" : "0"),
+      readStatus: async (d) => (d === "gpu.near" ? "due" : "paid"),
+      withdraw: async () => (order.push("withdraw"), "..."),
+    });
+    // cleaner 5 + scraper 40 - 5 refunded = 40; gpu is still due and is not counted
+    expect(order).toEqual(["deliver:cleaner.near", "deliver:gpu.near", "deliver:scraper.near", "withdraw"]);
+    expect(result).toMatchObject({ status: "mock_run", withdrawal: { status: "done", amount: "..." } });
+    const planned = await runResidualBatch(batch, {
+      mode: "mock", verifier: VERIFIER, view: okView, signed: allSigned, deliver: async () => "0", readStatus: async (d) => (d === "gpu.near" ? "due" : "paid"),
+    });
+    expect(planned).toMatchObject({ withdrawal: { status: "planned", expected: "45000000" } });
+  });
+
+  it("TC-BE-034-15 mock: nothing paid means nothing to withdraw; a failing withdrawal is reported and does not hide the outcomes", async () => {
+    let withdrawn = 0;
+    const none = await runResidualBatch(batch, {
+      mode: "mock", verifier: VERIFIER, view: okView, signed: allSigned, deliver: async () => { throw new Error("ERR_UNDERPAYMENT"); }, withdraw: async () => (withdrawn += 1, "0"),
+    });
+    expect(none).toMatchObject({ status: "mock_run" });
+    expect((none as { withdrawal?: unknown }).withdrawal).toBeUndefined();
+    expect(withdrawn).toBe(0);
+    const failing = await runResidualBatch(batch, {
+      mode: "mock", verifier: VERIFIER, view: okView, signed: allSigned, deliver: async () => "0", readStatus: async () => "paid", withdraw: async () => { throw new Error("ERR_WITHDRAW_IN_FLIGHT"); },
+    });
+    expect(failing).toMatchObject({ status: "mock_run", withdrawal: { status: "failed", error: "ERR_WITHDRAW_IN_FLIGHT" } });
+    expect((failing as { outcomes: unknown[] }).outcomes).toHaveLength(3);
+  });
 });

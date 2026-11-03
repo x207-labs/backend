@@ -20,11 +20,12 @@ payload has `signer_id`, `verifying_contract`, `deadline`, base64 `nonce`; a non
 
 ## Not verified or not built, so BE-034 stays partial
 1. The circle has `mt_on_transfer` since interface 0.0.9 (spec 18, contracts `35dfca5`, sandbox test `tests/be034_mt_on_transfer.rs` against a
-   mock multi-token). **Open question for the spec:** a payment that arrives as the Intents multi-token stays in the circle's balance at
-   Intents; the circle books it in the epoch pool (D6) as if the USDT were in its own NEP-141 account, but `claim` to `near` pays with
-   `ft_transfer` from that NEP-141 balance. Until the circle withdraws the multi-token to its own NEP-141 balance (a call to Intents that
-   no method of the circle makes), the pool is booked and not backed in the NEP-141 account. The sandbox test cannot show this, because the mock
-   holds no balance.
+   mock multi-token). The USDT of such a payment stays a multi-token balance at Intents until someone calls `withdraw_intents_balance`
+   (permissionless, spec 18, contracts `2c63ef5`), which brings the booked amount to the NEP-141 account that `claim` pays from; until then
+   the pool is booked and not backed in that account (view `intents_balance` says how much), and a `claim` that finds the balance short fails
+   through the normal path and is repeated. The worker plans this call after the payments and before any claim: `dry` reports it as `planned`
+   with the amount of the batch, `mock` calls the injected `withdraw` after the deliveries for what the circle kept (transfers minus refunds of the
+   debtors that were paid). A run on a real circle is still to be done; the sandbox test uses a mock Intents that holds balances.
 2. The status `paid` is not atomic across debtors even then: each `mt_on_transfer` is its own receipt (CT-058).
 3. The NEP-413 wrapper of `MultiPayload` (`standard`, `payload`, `public_key`, `signature`) and the encoding of the nonce `deadline` were not
    checked against a live Verifier. The module reads only the signed `message`; the signer (agent or SDK) builds the nonce and signs.

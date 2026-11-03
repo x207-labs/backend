@@ -32,6 +32,7 @@ export interface PlanOptions {
 }
 
 export const DEFAULT_MAX_PER_CALL = 5;
+const WITHDRAW_METHOD = "withdraw_intents_balance" as const;
 
 const intentTokenId = (tokenId: string): string => (tokenId.startsWith("nep141:") ? tokenId : `nep141:${tokenId}`);
 
@@ -104,14 +105,23 @@ export function mtNotification(transfer: ResidualTransfer): MtNotification {
   };
 }
 
+/**
+ * The call that follows the payments and comes before any claim: `withdraw_intents_balance` on the circle (spec 18). It is permissionless and brings
+ * the booked USDT from the multi-token balance at Intents to the NEP-141 account of the circle, which is where `claim` pays from.
+ */
+export type Withdrawal =
+  | { status: "planned"; method: "withdraw_intents_balance"; expected: string }
+  | { status: "done"; method: "withdraw_intents_balance"; amount: string }
+  | { status: "failed"; method: "withdraw_intents_balance"; error: string };
+
 export type DebtorOutcome = { debtor: string; status: "paid" | "pending"; error?: string; refunded?: string };
 
 export type BatchResult =
   | { status: "rejected"; problems: Array<{ debtor: string; reason: string }> }
   | { status: "simulation_failed"; message: string }
   | { status: "invariant_violated"; violation: unknown }
-  | { status: "dry_run_ok"; debtors: string[]; simulation: unknown; notifications: MtNotification[] }
-  | { status: "mock_run"; debtors: string[]; notifications: MtNotification[]; outcomes: DebtorOutcome[] }
+  | { status: "dry_run_ok"; debtors: string[]; simulation: unknown; notifications: MtNotification[]; withdrawal: Withdrawal }
+  | { status: "mock_run"; debtors: string[]; notifications: MtNotification[]; outcomes: DebtorOutcome[]; withdrawal?: Withdrawal }
   | { status: "executed"; debtors: string[]; txHash: string; outcomes: DebtorOutcome[] };
 
 export interface RunOptions {
@@ -127,6 +137,8 @@ export interface RunOptions {
    * Throws when the circle refuses it. Without it `mock` stops at `dry_run_ok` like `dry`.
    */
   deliver?: (notification: MtNotification) => Promise<string>;
+  /** `mock` only: calls `withdraw_intents_balance` on the circle once the notifications are delivered and returns the amount that left Intents. */
+  withdraw?: () => Promise<string>;
   /** Position of the debtor in the epoch right now, read from the circle or the read model. */
   readStatus?: (debtor: string) => Promise<string>;
   /** Reconciliation tries and the wait between them. */
@@ -177,9 +189,20 @@ export async function runResidualBatch(batch: readonly ResidualTransfer[], optio
     for (const outcome of outcomes) {
       if (outcome.error === undefined && options.readStatus !== undefined && (await options.readStatus(outcome.debtor)) === "paid") outcome.status = "paid";
     }
-    return { status: "mock_run", debtors, notifications, outcomes };
+    // what the circle kept is what it can withdraw: the transfer minus the refund, for the debtors that were paid
+    const kept = outcomes.reduce((sum, o, i) => (o.status === "paid" ? sum + BigInt(batch[i]!.amount) - BigInt(o.refunded ?? "0") : sum), 0n);
+    if (kept === 0n) return { status: "mock_run", debtors, notifications, outcomes };
+    if (options.withdraw === undefined) return { status: "mock_run", debtors, notifications, outcomes, withdrawal: { status: "planned", method: WITHDRAW_METHOD, expected: kept.toString() } };
+    try {
+      return { status: "mock_run", debtors, notifications, outcomes, withdrawal: { status: "done", method: WITHDRAW_METHOD, amount: await options.withdraw() } };
+    } catch (error) {
+      return { status: "mock_run", debtors, notifications, outcomes, withdrawal: { status: "failed", method: WITHDRAW_METHOD, error: (error as Error).message } };
+    }
   }
-  if (options.mode !== "live") return { status: "dry_run_ok", debtors, simulation: simulation.result, notifications };
+  if (options.mode !== "live") {
+    const expected = batch.reduce((sum, t) => sum + BigInt(t.amount), 0n).toString();
+    return { status: "dry_run_ok", debtors, simulation: simulation.result, notifications, withdrawal: { status: "planned", method: WITHDRAW_METHOD, expected } };
+  }
   if (options.execute === undefined) throw new SettlementError("live_mode_disabled", "live mode needs an execute function and a human confirmation");
 
   const txHash = await options.execute(signed);
