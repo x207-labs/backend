@@ -70,6 +70,11 @@ export class BrokerStore {
     return (this.db.prepare("SELECT n FROM calls WHERE grant_id = ? AND epoch = ?").get(grantId, epoch) as { n: number } | undefined)?.n ?? 0;
   }
 
+  /** Calls that were billed, per epoch, oldest first (BE-070). */
+  callsByEpoch(grantId: number): Array<{ epoch: number; calls: number }> {
+    return (this.db.prepare("SELECT epoch, n FROM calls WHERE grant_id = ? AND n > 0 ORDER BY epoch").all(grantId) as Array<{ epoch: number; n: number }>).map((r) => ({ epoch: r.epoch, calls: r.n }));
+  }
+
   countCall(grantId: number, epoch: number): void {
     this.db.prepare("INSERT INTO calls (grant_id, epoch, n) VALUES (?, ?, 1) ON CONFLICT (grant_id, epoch) DO UPDATE SET n = n + 1").run(grantId, epoch);
   }

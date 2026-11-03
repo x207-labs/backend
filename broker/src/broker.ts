@@ -2,11 +2,11 @@ import { createViewAccessKeyFn } from "@x207/core";
 import { X207ExtraSource } from "@x207/scheme";
 import type { Server } from "node:http";
 import { NearBrokerChain, type BrokerChain } from "./chain.js";
-import type { BrokerConfig } from "./config.js";
+import { ConfigError, type BrokerConfig } from "./config.js";
 import { Dispatcher } from "./dispatcher.js";
 import { FileAudit, type AuditLog } from "./audit.js";
 import { ClassCAdapter } from "./proxy/class-c.js";
-import { ProviderRegistry } from "./proxy/providers.js";
+import { hostedForbidden, ProviderRegistry } from "./proxy/providers.js";
 import { ClassBAdapter } from "./keys/class-b.js";
 import { Revoker } from "./revoker.js";
 import { createBrokerHandler, serve } from "./server.js";
@@ -63,6 +63,9 @@ export async function startBroker(options: StartOptions): Promise<RunningBroker>
   const classB = new ClassBAdapter({ chain, store, viewAccessKey: createViewAccessKeyFn({ rpcUrls: [config.rpcUrl], finality: "optimistic" }), now });
   const classCProviders = config.providers ?? [];
   const audit = options.audit ?? (config.auditPath ? new FileAudit(config.auditPath) : undefined);
+  // BE-070 (ADR-48): the hosted broker is for the demo; a real secret is not put in it, so it does not even start with one
+  const real = hostedForbidden(config.mode ?? "self-hosted", classCProviders);
+  if (real.length > 0) throw new ConfigError(`BROKER_MODE hosted hanya untuk penyedia tiruan (mock: true); penyedia nyata: ${real.join(", ")}`);
   const providers = new ProviderRegistry(classCProviders, options.env ?? process.env, audit);
   const classC = new ClassCAdapter({ baseUrl: "", store });
   const dispatcher = new Dispatcher({ chain, adapters: { B: classB, ...(classCProviders.length > 0 ? { C: classC } : {}) } });
@@ -83,7 +86,7 @@ export async function startBroker(options: StartOptions): Promise<RunningBroker>
   const handler = createBrokerHandler({
     provider: { manager: provider, contractId: config.contractId, voucherKeyOf, now, limits: config.accessLimits },
     dispatcher, classB, facilitatorUrl: config.facilitatorUrl, circleId: config.circleId, brokerAccount: config.brokerAccount, extra,
-    ...(classCProviders.length > 0 ? { proxy: { classC, providers, chain, store, ...(audit ? { audit } : {}) } } : {}),
+    ...(classCProviders.length > 0 ? { proxy: { classC, providers, chain, store, mode: config.mode ?? "self-hosted", ...(audit ? { audit } : {}) } } : {}),
     ...(options.fetch ? { fetch: options.fetch } : {}),
   });
   const { server, url } = await serve(handler, config.port);

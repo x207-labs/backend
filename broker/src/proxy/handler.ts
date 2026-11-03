@@ -6,7 +6,7 @@ import { guardVoucher } from "../in-flight.js";
 import { DispatchError, type Dispatcher } from "../dispatcher.js";
 import type { BrokerStore } from "../store.js";
 import type { ClassCAdapter } from "./class-c.js";
-import { inScope, parseProxyScope, type ProviderRegistry } from "./providers.js";
+import { inScope, parseProxyScope, SecretNotConfiguredError, type ProviderRegistry } from "./providers.js";
 
 export interface ProxyOptions {
   dispatcher: Dispatcher;
@@ -24,8 +24,11 @@ export interface ProxyOptions {
   audit?: AuditLog;
   /** Timeout of the call to the provider. */
   timeoutMs?: number;
+  /** `hosted` serves only providers marked `mock` (BE-070, ADR-48); default `self-hosted`. */
+  mode?: "self-hosted" | "hosted";
 }
 
+export const USAGE_PATH = /^\/grants\/(0|[1-9]\d*)\/usage$/;
 const PROXY_PATH = /^\/grants\/(0|[1-9]\d*)\/proxy(\/.*)?$/;
 const json = (status: number, body: unknown): Response => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 /** Hop-by-hop and payment headers do not go to the provider; the secret header is set by the broker only. */
@@ -35,6 +38,27 @@ const STRIP = new Set([
   "x-http-method-override", "x-method-override", "x-http-method", "x-original-url", "x-rewrite-url",
 ]);
 const stripped = (name: string): boolean => STRIP.has(name) || name.startsWith("x-forwarded-");
+
+/** `GET /grants/{id}/usage` (BE-070): the calls that were billed, per epoch, and what they cost. A buyer compares it with the count it keeps. */
+export function createUsageHandler(options: Pick<ProxyOptions, "dispatcher" | "classC" | "store">): (request: Request) => Promise<Response> {
+  return async (request) => {
+    const m = USAGE_PATH.exec(new URL(request.url).pathname);
+    if (m === null || request.method !== "GET") return json(404, { error: "not_found" });
+    const grantId = Number(m[1]);
+    let grant: AccessGrant;
+    try {
+      grant = await options.dispatcher.open(grantId);
+    } catch (error) {
+      if (error instanceof DispatchError) return json(error.status, { error: error.code, message: error.message });
+      return json(502, { error: "chain_unavailable", message: (error as Error).message });
+    }
+    if (grant.class !== "C") return json(501, { error: "class_not_supported" });
+    const perEpoch = options.store.callsByEpoch(grantId);
+    const calls = perEpoch.reduce((n, e) => n + e.calls, 0);
+    const charge = options.classC.meter(grant, { quantity: 1 });
+    return json(200, { grantId, unit: "call", unitPrice: charge.amount, calls, billed: (BigInt(charge.amount) * BigInt(calls)).toString(), epochs: perEpoch, decimals: 6 });
+  };
+}
 
 /** `true` when this request is for the class C proxy; the answer is in `handle`. */
 export function matchProxy(url: URL): { grantId: number; path: string } | null {
@@ -61,6 +85,11 @@ export function createProxyHandler(options: ProxyOptions): (request: Request, ta
 
     const provider = options.providers.get(grant.asset_type);
     if (provider === undefined) return json(501, { error: "class_not_supported", message: `no provider for ${grant.asset_type}` });
+    // a real secret is served only by the broker of its owner: the hosted broker is for the demo with a mock provider
+    if ((options.mode ?? "self-hosted") === "hosted" && provider.mock !== true) {
+      options.audit?.record({ kind: "proxy_refused", grantId, assetType: grant.asset_type, method: request.method, path, status: 501, code: "secret_hosted_forbidden" });
+      return json(501, { error: "secret_hosted_forbidden", message: "a hosted broker serves mock providers only; a real key stays on the broker that its owner runs" });
+    }
     let scope;
     try {
       scope = parseProxyScope(grant.limits.scope);
@@ -100,6 +129,7 @@ export function createProxyHandler(options: ProxyOptions): (request: Request, ta
       try {
         auth = options.providers.authHeader(provider);
       } catch (error) {
+        if (error instanceof SecretNotConfiguredError) return json(502, { error: "secret_not_configured", message: (error as Error).message });
         return json(502, { error: "delivery_failed", message: (error as Error).message });
       }
       const headers = new Headers();
@@ -130,9 +160,14 @@ export function createProxyHandler(options: ProxyOptions): (request: Request, ta
         secretVersion: options.providers.version(grant.asset_type),
       });
       // a provider that failed is passed on as it is; the middleware does not settle a status of 400 or more
-      if (upstream.status >= 400 || (upstream.status >= 300 && upstream.status < 400)) {
+      // a redirect is not passed on (it could lead to another host) and is not billed: the middleware settles any status below 400, so it is turned into a 502 here
+      if (upstream.status >= 300 && upstream.status < 400) {
         release();
-        return new Response(upstream.status >= 300 && upstream.status < 400 ? null : text, { status: upstream.status, headers: { "content-type": upstream.headers.get("content-type") ?? "application/octet-stream" } });
+        return json(502, { error: "provider_redirect", message: `the provider answered ${upstream.status}; redirects are not followed and not billed` });
+      }
+      if (upstream.status >= 400) {
+        release();
+        return new Response(text, { status: upstream.status, headers: { "content-type": upstream.headers.get("content-type") ?? "application/octet-stream" } });
       }
       if (quota === undefined) options.store.countCall(grantId, epoch);
       return new Response(text, { status: upstream.status, headers: { "content-type": upstream.headers.get("content-type") ?? "application/octet-stream" } });

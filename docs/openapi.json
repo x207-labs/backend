@@ -15296,7 +15296,107 @@
               }
             },
             "x-error-codes": [
-              "grant_scope_denied"
+              "grant_scope_denied",
+              "payer_not_grantee"
+            ]
+          },
+          "429": {
+            "description": "Too many requests; see the header `Retry-After` (BE-066).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrokerError"
+                }
+              }
+            },
+            "x-error-codes": [
+              "rate_limited"
+            ]
+          },
+          "501": {
+            "description": "Not available.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrokerError"
+                }
+              }
+            },
+            "x-error-codes": [
+              "class_not_supported",
+              "secret_hosted_forbidden"
+            ]
+          },
+          "502": {
+            "description": "A service behind the API failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrokerError"
+                }
+              }
+            },
+            "x-error-codes": [
+              "provider_unreachable",
+              "provider_redirect",
+              "secret_not_configured",
+              "delivery_failed"
+            ]
+          }
+        },
+        "servers": [
+          {
+            "url": "{broker}",
+            "variables": {
+              "broker": {
+                "default": "http://127.0.0.1:8090"
+              }
+            }
+          }
+        ],
+        "x-broker": true
+      }
+    },
+    "/grants/{grantId}/usage": {
+      "get": {
+        "operationId": "broker_get_grants_grantId_usage",
+        "summary": "Calls billed through a class C grant, per epoch, and what they cost (BE-070); the buyer compares it with its own count",
+        "tags": [
+          "broker"
+        ],
+        "parameters": [
+          {
+            "name": "grantId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrokerError"
+                }
+              }
+            },
+            "x-error-codes": [
+              "grant_not_found"
             ]
           },
           "429": {

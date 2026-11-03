@@ -34,6 +34,9 @@ per epoch, `unit` is `call`.
 
 ### Several providers, rotation, audit log (BK-011)
 - Several providers are served at once: one entry per asset type in `BROKER_PROVIDERS`, each with its own secret variable.
+- **Secrets and `hosted` (BE-070, ADR-48).** A real key stays on the broker that its owner runs. `BROKER_MODE=hosted` is for the demo: an entry of `BROKER_PROVIDERS` must carry `"mock": true` (a local server with a made-up secret), otherwise the broker does not start (`ConfigError`), and a call through a provider that is not a mock answers `501 secret_hosted_forbidden` before anything is paid or sent. An empty secret variable is `502 secret_not_configured` (the message names the variable, never a value).
+- **The bill per call.** A call is billed (the voucher is settled) only when the provider answered below 300; a status of 400 or more, an unreachable provider, and a redirect (`502 provider_redirect`: the broker never follows or passes on a redirect, because it could lead to another host) are not billed and give the quota slot back. `GET /grants/{id}/usage` returns `{unit: "call", unitPrice, calls, billed, epochs: [{epoch, calls}]}`: the number of calls that were settled and their cost, which a buyer compares with its own count (SD-068); the count and the bill are the same number.
+- A key of an AI provider (#61) is shared only through the official sub-key feature of the provider; that adapter waits for the confirmation of the owner (ADR-48 point 4) and is not built.
 - Rotation: `providers.rotate(assetType, newSecretEnv)` (or SIGHUP with `BROKER_SECRETS_FILE`) points the provider at the new secret. Grants name an
   asset type, not a secret, so no grant is cut and the quota keeps counting. A rotation to an empty variable is refused and the old secret stays.
 - Audit log (`BROKER_AUDIT_PATH`, JSON lines): calls, refusals and rotations with grant, asset type, method, path, status and the version of the secret.

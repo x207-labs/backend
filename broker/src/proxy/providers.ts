@@ -1,5 +1,8 @@
 import type { AuditLog } from "../audit.js";
 
+/** The variable of the secret of a provider is empty (BE-070): the call answers `502 secret_not_configured`, naming the variable and never a value. */
+export class SecretNotConfiguredError extends Error {}
+
 /** A provider whose API the broker calls with the secret of the grantor. */
 export interface ProviderConfig {
   assetType: string;
@@ -10,6 +13,8 @@ export interface ProviderConfig {
   prefix?: string;
   /** Name of the environment variable that holds the secret. The secret itself never appears in a config object. */
   secretEnv: string;
+  /** `true` for a provider of the demo (a local server with a made-up secret). The only kind that the `hosted` mode serves (BE-070, ADR-48): a real key lives only on the machine of its owner. */
+  mock?: boolean;
 }
 
 /** Class C scope in `limits.scope`: the paths and methods the lessee may call. */
@@ -88,7 +93,7 @@ export class ProviderRegistry {
   /** `[header name, header value]` for the call to the provider; throws without naming the value when the variable is empty. */
   authHeader(provider: ProviderConfig): [string, string] {
     const secret = this.#env[provider.secretEnv];
-    if (secret === undefined || secret === "") throw new Error(`secret variable ${provider.secretEnv} is not set`);
+    if (secret === undefined || secret === "") throw new SecretNotConfiguredError(`secret variable ${provider.secretEnv} is not set`);
     return [provider.header ?? "authorization", `${provider.prefix ?? "Bearer "}${secret}`];
   }
 
@@ -121,13 +126,18 @@ export class ProviderRegistry {
   }
 }
 
+/** The asset types of the providers that a `hosted` broker may not serve (BE-070, ADR-48): every provider that is not marked `mock`. Empty for `self-hosted`. */
+export function hostedForbidden(mode: "self-hosted" | "hosted", providers: readonly ProviderConfig[]): string[] {
+  return mode === "hosted" ? providers.filter((p) => p.mock !== true).map((p) => p.assetType) : [];
+}
+
 /** Reads `BROKER_PROVIDERS`, a JSON list of `{asset_type, base_url, secret_env, header?, prefix?}`. */
 export function providersFromEnv(env: Record<string, string | undefined>): ProviderConfig[] {
   const raw = env.BROKER_PROVIDERS;
   if (raw === undefined || raw.trim() === "") return [];
-  const parsed = JSON.parse(raw) as Array<{ asset_type?: string; base_url?: string; secret_env?: string; header?: string; prefix?: string }>;
+  const parsed = JSON.parse(raw) as Array<{ asset_type?: string; base_url?: string; secret_env?: string; header?: string; prefix?: string; mock?: boolean }>;
   return parsed.map((p) => {
     if (!p.asset_type || !p.base_url || !p.secret_env) throw new Error("BROKER_PROVIDERS entries need asset_type, base_url and secret_env");
-    return { assetType: p.asset_type, baseUrl: p.base_url, secretEnv: p.secret_env, ...(p.header ? { header: p.header } : {}), ...(p.prefix === undefined ? {} : { prefix: p.prefix }) };
+    return { assetType: p.asset_type, baseUrl: p.base_url, secretEnv: p.secret_env, ...(p.header ? { header: p.header } : {}), ...(p.prefix === undefined ? {} : { prefix: p.prefix }), ...(p.mock === true ? { mock: true } : {}) };
   });
 }
