@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { AwsStsAdapter, DiscordAdapter, GithubAdapter, ProviderAccessManager, RETRY_BASE_MS, STS_MIN_SECONDS, signPost, type FetchLike } from "../src/provider/index.js";
 import { BrokerStore } from "../src/store.js";
 import { NOW } from "./helpers.js";
@@ -187,7 +187,7 @@ describe("BE-059 AWS STS adapter with a permission boundary (mock HTTP)", () => 
 
 /** The `.env` of the project root, read without printing anything. Only these names are looked at. */
 function testEnv(): Record<string, string> {
-  const names = ["GITHUB_TEST_TOKEN", "GITHUB_TEST_ORG", "GITHUB_TEST_GRANTEE", "GITHUB_TEST_REPO", "DISCORD_TEST_BOT_TOKEN", "DISCORD_TEST_GUILD_ID", "DISCORD_TEST_ROLE_ID", "DISCORD_TEST_USER_ID"];
+  const names = ["GITHUB_TEST_TOKEN", "GITHUB_TEST_ORG", "GITHUB_TEST_GRANTEE", "DISCORD_TEST_BOT_TOKEN", "DISCORD_TEST_GUILD_ID", "DISCORD_TEST_GRANTEE_ID", "DISCORD_TEST_ROLE_ID"];
   const out: Record<string, string> = {};
   let file = "";
   try {
@@ -203,33 +203,40 @@ function testEnv(): Record<string, string> {
   return out;
 }
 const env = testEnv();
+const hasAll = (...names: string[]): boolean => names.every((n) => Boolean(env[n]));
 
-describe("BE-059 real accounts of the owner (skipped without the variables of .env; the values are never printed)", () => {
-  it.skipIf(!env.GITHUB_TEST_TOKEN || !env.GITHUB_TEST_ORG)("TC-BE-059-09 GitHub: a user is looked up for real, and a grant and revoke run on the test repository when GITHUB_TEST_GRANTEE and GITHUB_TEST_REPO are set", async () => {
+// Rules of the real tests: access is given only to the grantee named in the environment (never to another account, so no invitation reaches a stranger), it is always taken back
+// at the end, also when a test fails, a test is skipped when any variable it needs is empty, and no value is printed.
+describe("BE-059 real accounts of the owner (skipped unless every variable is set; the values are never printed)", () => {
+  const github = { handle: null as string | null, adapter: null as GithubAdapter | null };
+  const discord = { handle: null as string | null, adapter: null as DiscordAdapter | null };
+  afterAll(async () => {
+    if (github.adapter && github.handle) await github.adapter.revoke(github.handle).catch(() => undefined);
+    if (discord.adapter && discord.handle) await discord.adapter.revoke(discord.handle).catch(() => undefined);
+  });
+
+  it.skipIf(!hasAll("GITHUB_TEST_TOKEN", "GITHUB_TEST_ORG", "GITHUB_TEST_GRANTEE"))("TC-BE-059-09 GitHub: the grantee of the owner is looked up and invited to the test organization, then removed", async () => {
     const adapter = new GithubAdapter({ token: env.GITHUB_TEST_TOKEN!, allowedOwners: [env.GITHUB_TEST_ORG!] });
-    expect(await adapter.verifyGranteeRef("octocat")).toEqual({ ok: true });
+    github.adapter = adapter;
+    expect(await adapter.verifyGranteeRef(env.GITHUB_TEST_GRANTEE!)).toEqual({ ok: true });
     expect(await adapter.verifyGranteeRef("x207-no-such-user-0123456789-zz")).toMatchObject({ ok: false });
-    if (!env.GITHUB_TEST_GRANTEE || !env.GITHUB_TEST_REPO) return;
-    const g = await adapter.grant({ grantId: 9001, granteeRef: env.GITHUB_TEST_GRANTEE, resource: `${env.GITHUB_TEST_ORG}/${env.GITHUB_TEST_REPO}`, permission: "pull", expiresAtMs: Date.now() + DAY });
-    try {
-      expect(["active", "absent"]).toContain(await adapter.status(g.handle));
-    } finally {
-      await adapter.revoke(g.handle);
-    }
+    const g = await adapter.grant({ grantId: 9001, granteeRef: env.GITHUB_TEST_GRANTEE!, resource: `org:${env.GITHUB_TEST_ORG}`, permission: null, expiresAtMs: Date.now() + DAY });
+    github.handle = g.handle;
+    expect(["active", "absent"]).toContain(await adapter.status(g.handle));
+    await adapter.revoke(g.handle);
+    github.handle = null;
     expect(await adapter.status(g.handle)).toBe("absent");
   });
 
-  it.skipIf(!env.DISCORD_TEST_BOT_TOKEN || !env.DISCORD_TEST_GUILD_ID)("TC-BE-059-10 Discord: the bot reaches the server of the test; a role is given and taken back when DISCORD_TEST_ROLE_ID and DISCORD_TEST_USER_ID are set", async () => {
-    const adapter = new DiscordAdapter({ botToken: env.DISCORD_TEST_BOT_TOKEN!, guildId: env.DISCORD_TEST_GUILD_ID! });
-    expect(await adapter.verifyGranteeRef("100000000000000001")).toMatchObject({ ok: false });
-    if (!env.DISCORD_TEST_ROLE_ID || !env.DISCORD_TEST_USER_ID) return;
-    expect(await adapter.verifyGranteeRef(env.DISCORD_TEST_USER_ID)).toEqual({ ok: true });
-    const g = await adapter.grant({ grantId: 9002, granteeRef: env.DISCORD_TEST_USER_ID, resource: env.DISCORD_TEST_ROLE_ID, permission: null, expiresAtMs: Date.now() + DAY });
-    try {
-      expect(await adapter.status(g.handle)).toBe("active");
-    } finally {
-      await adapter.revoke(g.handle);
-    }
+  it.skipIf(!hasAll("DISCORD_TEST_BOT_TOKEN", "DISCORD_TEST_GUILD_ID", "DISCORD_TEST_GRANTEE_ID", "DISCORD_TEST_ROLE_ID"))("TC-BE-059-10 Discord: the role of the owner is given to the grantee of the owner and taken back", async () => {
+    const adapter = new DiscordAdapter({ botToken: env.DISCORD_TEST_BOT_TOKEN!, guildId: env.DISCORD_TEST_GUILD_ID!, allowedRoleIds: [env.DISCORD_TEST_ROLE_ID!] });
+    discord.adapter = adapter;
+    expect(await adapter.verifyGranteeRef(env.DISCORD_TEST_GRANTEE_ID!)).toEqual({ ok: true });
+    const g = await adapter.grant({ grantId: 9002, granteeRef: env.DISCORD_TEST_GRANTEE_ID!, resource: env.DISCORD_TEST_ROLE_ID!, permission: null, expiresAtMs: Date.now() + DAY });
+    discord.handle = g.handle;
+    expect(await adapter.status(g.handle)).toBe("active");
+    await adapter.revoke(g.handle);
+    discord.handle = null;
     expect(await adapter.status(g.handle)).toBe("absent");
   });
 });
