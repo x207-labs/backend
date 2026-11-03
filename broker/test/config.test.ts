@@ -11,6 +11,14 @@ describe("broker config", () => {
     expect(readConfig(env)).toMatchObject({ circleId: "agents-main", port: 8090, dbPath: "./broker.db", pollSeconds: 15, leaseAccount: "l.near" });
   });
 
+  it("BE-066 fix: the limits of the access routes have defaults; API_LIMITS=off (or BROKER_LIMITS=off) turns the rates off and keeps the body cap; a wrong value is named", () => {
+    expect(readConfig(env).accessLimits).toEqual({ ipPerMinute: 120, grantPerMinute: 60, maxBodyBytes: 16384 });
+    expect(readConfig({ ...env, API_LIMITS: "off" }).accessLimits).toEqual({ ipPerMinute: 0, grantPerMinute: 0, maxBodyBytes: 16384 });
+    expect(readConfig({ ...env, BROKER_LIMITS: "off", BROKER_MAX_BODY_BYTES: "2048" }).accessLimits).toEqual({ ipPerMinute: 0, grantPerMinute: 0, maxBodyBytes: 2048 });
+    expect(readConfig({ ...env, BROKER_LIMITS: "on", API_LIMITS: "off" }).accessLimits.ipPerMinute).toBe(120); // the variable of the broker wins
+    expect(() => readConfig({ ...env, API_LIMITS: "maybe" })).toThrow(/LIMITS/);
+  });
+
   it("a missing or malformed variable is named, and a key never appears in the message", () => {
     expect(() => readConfig({ ...env, BROKER_ACCOUNT_ID: "" })).toThrow(/BROKER_ACCOUNT_ID/);
     let message = "";

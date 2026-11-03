@@ -55,9 +55,10 @@ All limits live in the memory of one process. **With two instances behind a bala
 | `API_TRUST_PROXY` | off | `1` takes the last hop of `X-Forwarded-For` as the caller; only behind a proxy you run, or anyone can pick the address that is counted |
 | `API_MAX_OPEN_ORDERS` | 50 | Orders `proposed` or `open` that one account is a party to (409 `open_limit_reached`) |
 | `API_MAX_OPEN_INVOICES` | 50 | Invoices `requested` or `approved` that one account issued |
+| `API_LIMITS` | on | **`off` turns off every rate limit and every cap on open objects at once** (for tests that send many requests, e.g. the e2e of the umbrella); it overrides the variables above; the size of a body (`API_MAX_BODY_BYTES`) and of a page stay. `on` or empty: as set. Any other value is an error at start |
 | `API_MAX_OPEN_PURCHASES` | 50 | Purchases that are not final (`paid_held`, `cipher_posted`, `key_released`, `disputed`) of one buyer |
 
-The broker has its own: `BROKER_ACCESS_RATE_PER_MINUTE_IP` (120), `BROKER_ACCESS_RATE_PER_MINUTE_GRANT` (60) and `BROKER_MAX_BODY_BYTES` (16384) for the routes `…/grants/{id}/access…`; the address of the peer is put in the header `x-x207-peer` by the server of the broker, which overwrites the one a caller sends.
+The broker reads `API_LIMITS=off` too (or `BROKER_LIMITS=off`, which wins); it has its own: `BROKER_ACCESS_RATE_PER_MINUTE_IP` (120), `BROKER_ACCESS_RATE_PER_MINUTE_GRANT` (60) and `BROKER_MAX_BODY_BYTES` (16384) for the routes `…/grants/{id}/access…`; the address of the peer is put in the header `x-x207-peer` by the server of the broker, which overwrites the one a caller sends.
 
 Not covered: a caller with many addresses (a botnet) gets a quota per address; the reads of the chain that a route asks of the RPC (claims, `get_policy`) are bounded by the write limits only; the open caps count what the book holds, not what a signature could still create.
 

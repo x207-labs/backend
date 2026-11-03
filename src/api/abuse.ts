@@ -41,8 +41,21 @@ function intFrom(env: NodeJS.ProcessEnv, name: string, fallback: number, min = 0
   return Number(raw);
 }
 
+/** `API_LIMITS=off` turns off every rate limit and every cap on open objects at once (for tests that send many requests, e.g. the e2e of the umbrella); the size of a body and of a page stay. Empty or `on`: as set. */
+export function limitsOff(env: NodeJS.ProcessEnv): boolean {
+  const raw = env.API_LIMITS ?? "";
+  if (raw !== "" && raw !== "on" && raw !== "off") throw new Error(`API_LIMITS must be off or on, got "${raw}"`);
+  return raw === "off";
+}
+
 export function abuseFromEnv(env: NodeJS.ProcessEnv = process.env): { limits: AbuseLimits; open: OpenLimits } {
   const d = DEFAULT_LIMITS;
+  if (limitsOff(env)) {
+    return {
+      limits: { ipPerMinute: 0, writeIpPerMinute: 0, writeAccountPerMinute: 0, maxBodyBytes: intFrom(env, "API_MAX_BODY_BYTES", d.maxBodyBytes, 1024), maxPageLimit: Math.min(200, intFrom(env, "API_MAX_PAGE_LIMIT", d.maxPageLimit, 1)), trustProxy: env.API_TRUST_PROXY === "1" },
+      open: { orders: 0, invoices: 0, purchases: 0 },
+    };
+  }
   return {
     limits: {
       ipPerMinute: intFrom(env, "API_RATE_LIMIT_PER_MINUTE", d.ipPerMinute),

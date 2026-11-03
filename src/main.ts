@@ -11,6 +11,7 @@ import { RpcBlockSource, rpcChainReader } from "./indexer/rpc-source.js";
 import { settlementConfigFromEnv } from "./settlement/config.js";
 import { nearAccountExists } from "./settlement/deposit/quote.js";
 import { startJobMonitor } from "./settlement/deposit/monitor.js";
+import { abuseFromEnv } from "./api/abuse.js";
 import { jsonRpcClaimRpc } from "./marketplace/order-claims.js";
 import { rpcViewFunction } from "./settlement/intents.js";
 import { OneClickClient } from "./settlement/one-click.js";
@@ -107,7 +108,7 @@ export async function startApp(env: NodeJS.ProcessEnv = process.env, log: (line:
 
   const client = new OneClickClient({ config: settlement });
   if (!env.X207_CODE_SEEN_KEY) log("peringatan: X207_CODE_SEEN_KEY kosong, kode yang dijual dua kali tidak dideteksi (code_duplicate mati)");
-  const server = createApiServer({ db, ...apiOptionsFromEnv(env), settlement: { client, accountExists: nearAccountExists(primary) }, daoView: rpcViewFunction(primary), extraRoutes: marketplaceRoutes(db, { chainView: rpcViewFunction(primary), claimRpc: jsonRpcClaimRpc(primary), ...(env.X207_CODE_SEEN_KEY ? { codeSeenKey: env.X207_CODE_SEEN_KEY } : {}), daoRegistry: env.X207_DAO_REGISTRY_PATH ? daoRegistryFromFile(env.X207_DAO_REGISTRY_PATH) : [] }) });
+  const server = createApiServer({ db, ...apiOptionsFromEnv(env), settlement: { client, accountExists: nearAccountExists(primary) }, daoView: rpcViewFunction(primary), extraRoutes: marketplaceRoutes(db, { chainView: rpcViewFunction(primary), claimRpc: jsonRpcClaimRpc(primary), openLimits: abuseFromEnv(env).open, ...(env.X207_CODE_SEEN_KEY ? { codeSeenKey: env.X207_CODE_SEEN_KEY } : {}), daoRegistry: env.X207_DAO_REGISTRY_PATH ? daoRegistryFromFile(env.X207_DAO_REGISTRY_PATH) : [] }) });
   await new Promise<void>((ready) => server.listen(config.port, config.host, ready));
   const stopMonitor = startJobMonitor({ db, client }, config.jobPollMs);
 

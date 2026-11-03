@@ -111,6 +111,22 @@ describe("BE-066 limits against abuse of the write routes", () => {
     expect(counter.wait("k", 1, 60_000)).toBe(0);
   });
 
+  it("TC-BE-066-12 API_LIMITS=off turns off every rate limit and every cap on open objects, and keeps the size of a body and of a page; a wrong value is an error", () => {
+    const off = abuseFromEnv({ API_LIMITS: "off", API_RATE_LIMIT_PER_MINUTE: "5", API_MAX_OPEN_ORDERS: "1", API_MAX_BODY_BYTES: "4096" });
+    expect(off.limits).toMatchObject({ ipPerMinute: 0, writeIpPerMinute: 0, writeAccountPerMinute: 0, maxBodyBytes: 4096, maxPageLimit: 200 });
+    expect(off.open).toEqual({ orders: 0, invoices: 0, purchases: 0 });
+    expect(abuseFromEnv({ API_LIMITS: "on" }).limits).toEqual(DEFAULT_LIMITS);
+    expect(() => abuseFromEnv({ API_LIMITS: "no" })).toThrow(/API_LIMITS/);
+  });
+
+  it("TC-BE-066-13 with the limits off a flood of writes and many open orders pass; the server of apiOptionsFromEnv has no rate limit", async () => {
+    const { apiOptionsFromEnv } = await import("../../src/api/server.js");
+    const env = { API_LIMITS: "off" };
+    const m = await start(["andi", "budi"], apiOptionsFromEnv(env), { openLimits: abuseFromEnv(env).open });
+    for (let i = 0; i < 15; i++) expect((await call(m, "POST", "/intents", {})).status, `write ${i}`).toBe(400); // not 429
+    for (let i = 0; i < 4; i++) await openOrder(m, orderDoc("andi", "budi", { nonce: `f${i}` }));
+  });
+
   it("TC-BE-066-09 behind a proxy you run, the last hop of X-Forwarded-For is the caller; without it the header is ignored", async () => {
     const m = await start(["andi"], { abuse: { writeIpPerMinute: 1, trustProxy: true } });
     const post = (ip: string) => fetch(`${m.srv.url}/x207/circles/agents-main/intents`, { method: "POST", headers: { "content-type": "application/json", "x-forwarded-for": `1.1.1.1, ${ip}` }, body: "{}" }).then((r) => r.status);

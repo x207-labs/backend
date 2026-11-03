@@ -49,6 +49,9 @@ export function readConfig(env: Record<string, string | undefined>): BrokerConfi
     if (raw === "hosted") return "hosted";
     throw new ConfigError("BROKER_MODE harus self-hosted atau hosted");
   };
+  const limitsRaw = env.BROKER_LIMITS ?? env.API_LIMITS ?? "";
+  if (limitsRaw !== "" && limitsRaw !== "on" && limitsRaw !== "off") throw new ConfigError("BROKER_LIMITS (atau API_LIMITS) harus off atau on");
+  const off = limitsRaw === "off";
   return {
     readApiUrl: need("X207_READ_API_URL"),
     circleId: env.X207_CIRCLE_ID || "agents-main",
@@ -65,6 +68,7 @@ export function readConfig(env: Record<string, string | undefined>): BrokerConfi
     providers: providersFromEnv(env),
     auditPath: env.BROKER_AUDIT_PATH ?? "",
     mode: mode(),
-    accessLimits: { ipPerMinute: int("BROKER_ACCESS_RATE_PER_MINUTE_IP", 120), grantPerMinute: int("BROKER_ACCESS_RATE_PER_MINUTE_GRANT", 60), maxBodyBytes: Math.max(1024, int("BROKER_MAX_BODY_BYTES", 16 * 1024)) },
+    // API_LIMITS=off (the same variable as the backend) or BROKER_LIMITS=off turns the rate limits off; the size of a body stays
+    accessLimits: { ipPerMinute: off ? 0 : int("BROKER_ACCESS_RATE_PER_MINUTE_IP", 120), grantPerMinute: off ? 0 : int("BROKER_ACCESS_RATE_PER_MINUTE_GRANT", 60), maxBodyBytes: Math.max(1024, int("BROKER_MAX_BODY_BYTES", 16 * 1024)) },
   };
 }
