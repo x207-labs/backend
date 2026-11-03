@@ -403,7 +403,7 @@ describe("BE-056 migration to the new hash scheme", () => {
     const purchase = (status: string) =>
       db.prepare(`INSERT INTO purchases (circle_id, listing_hash, buyer, seller, content_hash, license_doc, license_id, exclusive, voucher_json, voucher_signature, status, created_at_ms) VALUES ('c', 'l1', 'b.near', 'a.near', ?, ?, 'personal', 0, '{}', 's', ?, 1)`).run("c".repeat(64), "d".repeat(64), status);
     for (const st of ["paid_held", "cipher_posted", "key_released", "disputed", "confirmed", "refuted", "cancelled"]) purchase(st);
-    expect(migrate(db, MARKETPLACE_MIGRATIONS)).toEqual([1112]);
+    expect(migrate(db, MARKETPLACE_MIGRATIONS).filter((v) => v <= 1112)).toEqual([1112]);
     const statuses = (db.prepare("SELECT status FROM purchases ORDER BY id").all() as Array<{ status: string }>).map((r) => r.status);
     expect(statuses).toEqual(["cancelled", "cancelled", "cancelled", "cancelled", "confirmed", "refuted", "cancelled"]);
     expect((db.prepare("SELECT dispute_reason FROM purchases WHERE id = 1").get() as { dispute_reason: string }).dispute_reason).toBe("hash_scheme_changed");

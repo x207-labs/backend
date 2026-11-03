@@ -11,6 +11,7 @@ import { RpcBlockSource, rpcChainReader } from "./indexer/rpc-source.js";
 import { settlementConfigFromEnv } from "./settlement/config.js";
 import { nearAccountExists } from "./settlement/deposit/quote.js";
 import { startJobMonitor } from "./settlement/deposit/monitor.js";
+import { jsonRpcClaimRpc } from "./marketplace/order-claims.js";
 import { rpcViewFunction } from "./settlement/intents.js";
 import { OneClickClient } from "./settlement/one-click.js";
 
@@ -105,7 +106,7 @@ export async function startApp(env: NodeJS.ProcessEnv = process.env, log: (line:
   await indexer.bootstrap();
 
   const client = new OneClickClient({ config: settlement });
-  const server = createApiServer({ db, ...apiOptionsFromEnv(env), settlement: { client, accountExists: nearAccountExists(primary) }, daoView: rpcViewFunction(primary), extraRoutes: marketplaceRoutes(db, { chainView: rpcViewFunction(primary), daoRegistry: env.X207_DAO_REGISTRY_PATH ? daoRegistryFromFile(env.X207_DAO_REGISTRY_PATH) : [] }) });
+  const server = createApiServer({ db, ...apiOptionsFromEnv(env), settlement: { client, accountExists: nearAccountExists(primary) }, daoView: rpcViewFunction(primary), extraRoutes: marketplaceRoutes(db, { chainView: rpcViewFunction(primary), claimRpc: jsonRpcClaimRpc(primary), daoRegistry: env.X207_DAO_REGISTRY_PATH ? daoRegistryFromFile(env.X207_DAO_REGISTRY_PATH) : [] }) });
   await new Promise<void>((ready) => server.listen(config.port, config.host, ready));
   const stopMonitor = startJobMonitor({ db, client }, config.jobPollMs);
 

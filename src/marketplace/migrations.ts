@@ -441,6 +441,32 @@ UPDATE listings SET status = 'cancelled', closed_at_ms = CAST(strftime('%s','now
   WHERE status = 'open' AND json_valid(detail) AND json_extract(detail, '$.kind') = 'license' AND json_extract(detail, '$.license_doc') IS NOT NULL;
 `;
 
+// BE-055 fix (SD-072): a delegate order keeps its mandate; the seller claims each vote (a call to the DAO, not an event of the circle) and the backend checks the transaction through RPC.
+const V1113_DELEGATE_CLAIMS = `
+ALTER TABLE orders ADD COLUMN mandate_json TEXT;
+CREATE TABLE order_claims (
+  circle_id     TEXT    NOT NULL,
+  order_hash    TEXT    NOT NULL,
+  proposal_id   INTEGER NOT NULL,
+  tx_hash       TEXT    NOT NULL,
+  signer        TEXT    NOT NULL,
+  receiver      TEXT    NOT NULL,
+  action        TEXT    NOT NULL,
+  proposal_kind TEXT    NOT NULL,
+  notice_json   TEXT    NOT NULL,
+  signature     TEXT    NOT NULL,
+  created_at_ms INTEGER NOT NULL,
+  PRIMARY KEY (circle_id, order_hash, proposal_id),
+  UNIQUE (circle_id, tx_hash)
+);
+CREATE TABLE order_proposal_kinds (
+  dao         TEXT    NOT NULL,
+  proposal_id INTEGER NOT NULL,
+  kind        TEXT    NOT NULL,
+  PRIMARY KEY (dao, proposal_id)
+);
+`;
+
 export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1101, name: "m11_intents", sql: V1101_INTENTS },
   { version: 1102, name: "m11_listings", sql: V1102_LISTINGS },
@@ -454,4 +480,5 @@ export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1110, name: "m11_orders", sql: V1110_ORDERS },
   { version: 1111, name: "m11_purchases", sql: V1111_PURCHASES },
   { version: 1112, name: "m11_hash_scheme", sql: V1112_HASH_SCHEME },
+  { version: 1113, name: "m11_delegate_claims", sql: V1113_DELEGATE_CLAIMS },
 ];

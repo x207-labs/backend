@@ -41,6 +41,22 @@ export const orderProofRoutes: Route[] = [
       const o = findOrder(db, circle.circle_id, params.hash as string);
       const doc = JSON.parse(o.order_json) as { proof: { method: string; amount_per_tx: string } | null };
       if (o.pattern !== "proof" || doc.proof === null) throw new ApiError(409, "order_not_proof_kind", `pesanan ${o.kind} tidak dibayar per bukti on-chain`, { kind: o.kind });
+      if (o.kind === "delegate") {
+        const claims = rows<{ tx_hash: string; signer: string; receiver: string; proposal_id: bigint; action: string; proposal_kind: string; created_at_ms: bigint }>(
+          db, "SELECT tx_hash, signer, receiver, proposal_id, action, proposal_kind, created_at_ms FROM order_claims WHERE circle_id = ? AND order_hash = ? ORDER BY created_at_ms, proposal_id", circle.circle_id, o.order_hash,
+        );
+        return {
+          status: 200,
+          body: {
+            orderHash: o.order_hash, kind: o.kind, method: doc.proof.method, seller: o.seller, amountPerTx: doc.proof.amount_per_tx, budget: o.budget,
+            maxProofs: Number(BigInt(o.budget) / BigInt(doc.proof.amount_per_tx)), unit: "credit", decimals: 6,
+            items: claims.map((c) => ({
+              txHash: c.tx_hash, method: doc.proof!.method, signer: c.signer, receiver: c.receiver, proposalId: Number(c.proposal_id), action: c.action, proposalKind: c.proposal_kind,
+              at: new Date(Number(c.created_at_ms)).toISOString().replace(/\.\d{3}Z$/, "Z"),
+            })),
+          },
+        };
+      }
       const created = rows<{ ms: bigint }>(db, "SELECT created_at_ms AS ms FROM orders WHERE id = ?", o.id)[0]?.ms ?? 0n;
       const calls = rows<CallRow>(
         db,

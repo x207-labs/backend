@@ -6,7 +6,7 @@
 // `loadtest`: the target must be proven (file or DNS TXT with the order hash) through `target-check`, behind the guard of ssrf.ts, before the seller can deliver.
 import { resolveTxt } from "node:dns/promises";
 import type Database from "better-sqlite3";
-import { OrderError, ORDER_PATTERN, normalizeOrder, orderBudget, orderHash, serializeOrder, type OrderDocument } from "@x207/core";
+import { OrderError, ORDER_PATTERN, mandateHash, normalizeMandate, normalizeOrder, orderBudget, orderHash, serializeMandate, serializeOrder, type DelegateMandate, type NormalizedOrder, type OrderDocument } from "@x207/core";
 import { ApiError, invalidRequest, type ApiErrorCode } from "../api/errors.js";
 import { row, rows } from "../api/format.js";
 import { decodeCursor, encodeCursor, parseLimit } from "../api/pagination.js";
@@ -61,7 +61,7 @@ export const milestoneNoticeHash = (n: MilestoneNotice): string => sha256Hex(ser
 
 // ---- errors -------------------------------------------------------------------------------------------------------------------------------------------------
 /** `OrderError` of the SDK as an `ApiError`; the spec names two of them without the `order_` prefix. */
-function asApiError(error: unknown): never {
+export function asApiError(error: unknown): never {
   if (error instanceof OrderError) {
     const code = error.code === "order_sample_required" ? "sample_required" : error.code === "order_target_required" ? "target_required" : error.code;
     throw new ApiError(400, code as ApiErrorCode, error.message, {});
@@ -86,6 +86,7 @@ export interface OrderRow {
   target_checked_via: string | null;
   epoch0: bigint;
   status: string;
+  mandate_json: string | null;
 }
 interface MilestoneRow {
   idx: bigint;
@@ -150,6 +151,7 @@ export function orderView(db: Database.Database, circleId: string, o: OrderRow) 
     targetVerified: o.kind === "loadtest" ? o.target_verified === 1n : null,
     targetCheckedVia: o.target_checked_via,
     signedBy: rows<{ account: string }>(db, "SELECT account FROM order_signatures WHERE circle_id = ? AND order_hash = ? ORDER BY account", circleId, o.order_hash).map((r) => r.account),
+    ...(o.mandate_json === null ? {} : { mandate: JSON.parse(o.mandate_json) as DelegateMandate }),
     budget: o.budget,
     unit: "credit",
     decimals: 6,
@@ -226,16 +228,26 @@ export function orderRoutes(resolveOpenEpoch: OpenEpochResolver, options: OrderO
       handler: async ({ db, circle, body, now }) => {
         syncOrders(db, circle.circle_id, nowSeconds(now()));
         if (body === null || typeof body !== "object") throw invalidRequest("body harus objek");
-        const { order, signatures } = body as { order?: unknown; signatures?: unknown };
+        const { order, signatures, mandate } = body as { order?: unknown; signatures?: unknown; mandate?: unknown };
         if (order === null || typeof order !== "object") throw invalidRequest("order wajib objek");
         if (!Array.isArray(signatures) || signatures.length === 0) throw invalidRequest("signatures wajib array berisi {account, signature}");
-        let doc: Required<OrderDocument>;
+        let doc: NormalizedOrder;
+        let mandateJson: string | null = null;
         let hash: string;
         let json: string;
         try {
           doc = normalizeOrder(order as OrderDocument);
           json = serializeOrder(doc);
           hash = orderHash(doc);
+          if (doc.kind === "delegate") {
+            if (mandate === null || typeof mandate !== "object") throw new OrderError("order_mandate_required", "pesanan delegate wajib membawa dokumen mandate {circle, dao, kinds, rules_hash}");
+            const m = normalizeMandate(mandate as DelegateMandate);
+            if (mandateHash(m) !== doc.mandate_hash) throw new OrderError("order_bad_mandate", "sha256 dari mandate tidak sama dengan order.mandate_hash");
+            if (m.circle !== circle.contract_id) throw new OrderError("order_bad_mandate", "mandate.circle harus akun kontrak lingkaran");
+            mandateJson = serializeMandate(m);
+          } else if (mandate !== undefined && mandate !== null) {
+            throw new OrderError("order_mandate_forbidden", "mandate hanya untuk pesanan delegate");
+          }
         } catch (error) {
           return asApiError(error);
         }
@@ -258,9 +270,9 @@ export function orderRoutes(resolveOpenEpoch: OpenEpochResolver, options: OrderO
           if (!existing) {
             const pattern = ORDER_PATTERN[doc.kind];
             db.prepare(
-              `INSERT INTO orders (circle_id, order_hash, kind, pattern, buyer, seller, order_json, budget, needs_bond, target, epoch0, status, created_at_ms)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'proposed', ?)`,
-            ).run(circle.circle_id, hash, doc.kind, pattern, doc.buyer, doc.seller, json, orderBudget(doc), BigInt(orderBudget(doc)) >= threshold ? 1 : 0, doc.target, open ?? 0, now());
+              `INSERT INTO orders (circle_id, order_hash, kind, pattern, buyer, seller, order_json, budget, needs_bond, target, epoch0, status, created_at_ms, mandate_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'proposed', ?, ?)`,
+            ).run(circle.circle_id, hash, doc.kind, pattern, doc.buyer, doc.seller, json, orderBudget(doc), BigInt(orderBudget(doc)) >= threshold ? 1 : 0, doc.target, open ?? 0, now(), mandateJson);
             doc.milestones.forEach((m, i) => {
               db.prepare("INSERT INTO order_milestones (circle_id, order_hash, idx, amount, due_at) VALUES (?, ?, ?, ?, ?)").run(circle.circle_id, hash, i + 1, m.amount, m.due_at);
             });
