@@ -57,6 +57,19 @@ describe("BE-014 read API daftar epoch", () => {
     expect(ISO_NS("2026-11-09T12:30:00Z")).toBeGreaterThan(0n);
   });
 
+  it("TC-BE-067-01 an open epoch shows the live edge count and total from its obligations (the contract's get_epoch shows them), null while it has none; a closed epoch keeps what the event wrote", async () => {
+    const empty = (await (await fetch(`${srv.url}${BASE}/epochs`)).json()).items.find((e: any) => e.epoch === 43);
+    expect([empty.edgeCount, empty.totalObligation]).toEqual([null, null]);
+    const ins = db.prepare("INSERT INTO obligations (circle_id, epoch, debtor, creditor, seq, cumulative_amount, registration_mode, registered_block, receipt_id) VALUES ('agents-main', 43, ?, ?, 1, ?, 'cumulative', 1, ?)");
+    ins.run("a.near", "b.near", 10_000_000, "r1");
+    ins.run("b.near", "c.near", 5_000_000, "r2");
+    const items = (await (await fetch(`${srv.url}${BASE}/epochs`)).json()).items;
+    const open = items.find((e: any) => e.epoch === 43);
+    expect([open.edgeCount, open.totalObligation]).toEqual([2, "15000000"]);
+    const closed = items.find((e: any) => e.epoch === 42);
+    expect([closed.edgeCount, closed.totalObligation]).toEqual([7, "190000000"]);
+  });
+
   it("TC-BE-014-13 paginasi epoch 2/2", async () => {
     const first = await (await fetch(srv.url + `${BASE}/epochs?limit=2`)).json();
     expect(first.items.map((e: { epoch: number }) => e.epoch)).toEqual([43, 42]);

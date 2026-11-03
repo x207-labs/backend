@@ -41,10 +41,16 @@ export const epochRoutes: Route[] = [
       const nowNs = BigInt(now()) * 1_000_000n;
       const found = rows<EpochRow>(
         db,
-        `SELECT epoch, phase, cutoff_at_ns, closed_at_ns, proposal_deadline_ns, committed_at_ns,
-                payment_deadline_ns, finalized_at_ns, edge_count, total_obligation, cleared_total
-         FROM epochs WHERE circle_id = ? AND (? IS NULL OR epoch < ?)
-         ORDER BY epoch DESC LIMIT ?`,
+        // an open epoch has no edge count or total in the row (they are written by `epoch_cutoff`): the contract shows the live ones in `get_epoch`, so they are counted from the obligations (BE-067)
+        `SELECT e.epoch, e.phase, e.cutoff_at_ns, e.closed_at_ns, e.proposal_deadline_ns, e.committed_at_ns,
+                e.payment_deadline_ns, e.finalized_at_ns,
+                CASE WHEN e.edge_count IS NULL AND e.phase = 'open' AND EXISTS (SELECT 1 FROM obligations o WHERE o.circle_id = e.circle_id AND o.epoch = e.epoch)
+                     THEN (SELECT COUNT(*) FROM obligations o WHERE o.circle_id = e.circle_id AND o.epoch = e.epoch) ELSE e.edge_count END AS edge_count,
+                CASE WHEN e.total_obligation IS NULL AND e.phase = 'open' AND EXISTS (SELECT 1 FROM obligations o WHERE o.circle_id = e.circle_id AND o.epoch = e.epoch)
+                     THEN (SELECT SUM(o.cumulative_amount) FROM obligations o WHERE o.circle_id = e.circle_id AND o.epoch = e.epoch) ELSE e.total_obligation END AS total_obligation,
+                e.cleared_total
+         FROM epochs e WHERE e.circle_id = ? AND (? IS NULL OR e.epoch < ?)
+         ORDER BY e.epoch DESC LIMIT ?`,
         circle.circle_id,
         before,
         before,
