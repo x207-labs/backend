@@ -267,6 +267,49 @@ CREATE TABLE spot_checks (
 CREATE INDEX idx_spot_checks_subject ON spot_checks (circle_id, subject);
 `;
 
+// Invoices and installments (BE-051, ADR-44). The installment row keeps the voucher it waits for (`v_epoch`, `v_seq`, `v_cumulative`): the original one, or the catch-up voucher after a shift.
+const V1109_INVOICES = `
+CREATE TABLE invoices (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  circle_id         TEXT    NOT NULL,
+  invoice_hash      TEXT    NOT NULL,
+  issuer            TEXT    NOT NULL,
+  debtor            TEXT    NOT NULL,
+  document_json     TEXT    NOT NULL,
+  amount            TEXT    NOT NULL,
+  installment_count INTEGER NOT NULL,
+  first_epoch       INTEGER NOT NULL,
+  needs_bond        INTEGER NOT NULL,
+  status            TEXT    NOT NULL DEFAULT 'requested' CHECK (status IN ('requested','approved','registered','rejected','expired','missed')),
+  reject_reason     TEXT,
+  request_signature TEXT    NOT NULL,
+  created_at_ms     INTEGER NOT NULL,
+  decided_at_ms     INTEGER,
+  UNIQUE (circle_id, invoice_hash)
+);
+CREATE INDEX idx_invoices_issuer ON invoices (circle_id, issuer);
+CREATE INDEX idx_invoices_debtor ON invoices (circle_id, debtor);
+CREATE TABLE invoice_installments (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  circle_id     TEXT    NOT NULL,
+  invoice_hash  TEXT    NOT NULL,
+  idx           INTEGER NOT NULL,
+  epoch         INTEGER NOT NULL,
+  amount        TEXT    NOT NULL,
+  status        TEXT    NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled','registered','shifted','missed')),
+  reason        TEXT    CHECK (reason IN ('headroom','blocked_by_debtor')),
+  shifted       INTEGER NOT NULL DEFAULT 0,
+  v_epoch       INTEGER,
+  v_seq         INTEGER,
+  v_cumulative  TEXT,
+  voucher_json  TEXT,
+  signature     TEXT,
+  catch_up_json TEXT,
+  catch_up_signature TEXT,
+  UNIQUE (circle_id, invoice_hash, idx)
+);
+`;
+
 export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1101, name: "m11_intents", sql: V1101_INTENTS },
   { version: 1102, name: "m11_listings", sql: V1102_LISTINGS },
@@ -276,4 +319,5 @@ export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1106, name: "m11_deliveries", sql: V1106_DELIVERIES },
   { version: 1107, name: "m11_delivery_sides", sql: V1107_DELIVERY_SIDES },
   { version: 1108, name: "m11_spot_checks", sql: V1108_SPOT_CHECKS },
+  { version: 1109, name: "m11_invoices", sql: V1109_INVOICES },
 ];

@@ -16,6 +16,7 @@ import { parseLimit } from "../api/pagination.js";
 import type { Route } from "../api/router.js";
 import { activeMemberKey } from "./auth.js";
 import { nowSeconds } from "./common.js";
+import { invoiceRecordOf } from "./invoices.js";
 
 /** Counterparties needed before the confidence is one half. */
 export const CONFIDENCE_HALF = 5;
@@ -175,13 +176,16 @@ export function reputationOf(db: Database.Database, circleId: string, account: s
   const completed = perf.filter((p) => p.outcome === "completed");
   const disputes = perf.filter((p) => p.outcome === "dispute" && hasPaidSomebody(db, circleId, p.receiver));
   const abandoned = perf.filter((p) => p.outcome === "abandoned");
-  const cw = distinct(completed.map((p) => p.receiver));
+  // BE-051: an invoice that the debtor accepted counts for it once per issuer: all installments registered is a completed deal, a missed one (also `blocked_by_debtor`) is a failure
+  const inv = invoiceRecordOf(db, circleId, account);
+  const cw = distinct([...completed.map((p) => p.receiver), ...inv.registered]);
+  const mw = distinct(inv.missed);
   const dw = distinct(disputes.map((p) => p.receiver));
   const aw = distinct(abandoned.map((p) => p.receiver));
   const checks = rows<{ passed: bigint; verifier: string }>(db, "SELECT passed, verifier FROM spot_checks WHERE circle_id = ? AND subject = ?", circleId, account);
   const passedChecks = checks.filter((c) => c.passed === 1n).length;
   const failedChecks = checks.length - passedChecks;
-  const rate = cw + dw + aw > 0 ? cw / (cw + dw + aw) : null;
+  const rate = cw + dw + aw + mw > 0 ? cw / (cw + dw + aw + mw) : null;
   const confidence = cw / (cw + CONFIDENCE_HALF);
   const checkFactor = (passedChecks + 1) / (passedChecks + 3 * failedChecks + 1);
   const score = cw === 0 || rate === null ? 0 : Math.round(1000 * rate * confidence * checkFactor);
@@ -192,11 +196,12 @@ export function reputationOf(db: Database.Database, circleId: string, account: s
     completed: { transactions: completed.length, counterparties: cw },
     disputes: { transactions: disputes.length, counterparties: dw },
     abandoned: { transactions: abandoned.length, counterparties: aw },
+    invoices: { registered: inv.registered.length, missed: inv.missed.length, blockedByDebtor: inv.blockedByDebtor, missedIssuers: mw },
     completionRate: rate === null ? null : Math.round(rate * 1000) / 1000,
     responseSeconds: { median: response, samples: completed.filter((p) => p.responseSeconds !== null).length },
     spotChecks: { passed: passedChecks, failed: failedChecks, verifiers: distinct(checks.map((c) => c.verifier)) },
     basis: "paid deals only; one count per counterparty",
-    formula: `score = round(1000 * completed/(completed+disputes+abandoned) * completed/(completed+${CONFIDENCE_HALF}) * (checksPassed+1)/(checksPassed+3*checksFailed+1)), counts are distinct counterparties`,
+    formula: `score = round(1000 * completed/(completed+disputes+abandoned+missedInvoices) * completed/(completed+${CONFIDENCE_HALF}) * (checksPassed+1)/(checksPassed+3*checksFailed+1)), counts are distinct counterparties`,
   };
 }
 
