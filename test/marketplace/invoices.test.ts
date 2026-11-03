@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { catchUpVoucher, invoiceHash } from "@x207/core";
+import { catchUpVoucher, invoiceHash, verifyVoucher } from "@x207/core";
 import { acct, openEpoch, startMarket, type Market } from "./helpers.js";
 import { approvalBody, chainVoucher, closeEpoch, doc, noticeFor, planOf, requestBody, signedNotice, signedVoucher } from "./invoice-helpers.js";
 
@@ -24,9 +24,9 @@ describe("BE-051 invoice book and installments", () => {
     expect(res.json.invoice_hash).toBe(hashOf("andi", "budi"));
     expect(res.json).toMatchObject({ status: "requested", needsBond: false, unit: "credit", decimals: 6 });
     expect(res.json.installments).toEqual([
-      { index: 1, epoch: 43, amount: "20000000", status: "scheduled", reason: null, voucherEpoch: null, shifted: false },
-      { index: 2, epoch: 44, amount: "20000000", status: "scheduled", reason: null, voucherEpoch: null, shifted: false },
-      { index: 3, epoch: 45, amount: "20000000", status: "scheduled", reason: null, voucherEpoch: null, shifted: false },
+      { index: 1, epoch: 43, amount: "20000000", status: "scheduled", reason: null, voucherEpoch: null, shifted: false, voucher: null, signature: null },
+      { index: 2, epoch: 44, amount: "20000000", status: "scheduled", reason: null, voucherEpoch: null, shifted: false, voucher: null, signature: null },
+      { index: 3, epoch: 45, amount: "20000000", status: "scheduled", reason: null, voucherEpoch: null, shifted: false, voucher: null, signature: null },
     ]);
     const dup = await create(m, "andi", "budi", 2);
     expect(dup.status).toBe(409);
@@ -208,5 +208,30 @@ describe("BE-051 invoice book and installments", () => {
     expect(shifted.json.installments[2]).toMatchObject({ status: "shifted", voucherEpoch: 46 });
     // the honest debtor is not punished in the reputation: only the blocked invoice counts against it, and nothing for (a)
     expect((await m.get(`/reputation/${acct("budi")}`)).json.invoices.blockedByDebtor).toBe(1);
+  });
+
+  it("TC-BE-051-11 an approved invoice gives the voucher and the signature of each installment, so the issuer can register them; after a shift it is the catch-up voucher", async () => {
+    const m = await start();
+    const d = doc("andi", "budi");
+    await create(m, "andi", "budi", 2);
+    const h = hashOf("andi", "budi");
+    const good = approvalBody(m, d, "budi", 43, 2);
+    await m.post(`/invoices/${h}/approve`, good);
+    let view = (await m.get(`/invoices/${h}`)).json;
+    expect(view.installments.map((i: any) => [i.voucher, i.signature])).toEqual(good.vouchers.map((v) => [v.voucher, v.signature]));
+    expect(view.installments[0].voucher).toMatchObject({ payer: acct("budi"), payee: acct("andi"), epoch: 43, seq: 1, cumulativeAmount: "30000000" });
+    // the voucher from the book verifies with the key of the debtor
+    const first = view.installments[0];
+    expect(verifyVoucher({ ...first.voucher, signature: first.signature }, m.keys.budi!.publicKey)).toBe(true);
+    closeEpoch(m, 43);
+    const plan = planOf(d, 43, 2);
+    const catchUp = signedVoucher(m, catchUpVoucher(plan, 1, { seq: 0, cumulativeAmount: "0" }, false), "budi");
+    await m.post(`/invoices/${h}/installments/1/catch-up`, catchUp);
+    view = (await m.get(`/invoices/${h}`)).json;
+    expect(view.installments[0]).toMatchObject({ shifted: true, voucher: catchUp.voucher, signature: catchUp.signature });
+    expect(view.installments[1].voucher).toEqual(good.vouchers[1]!.voucher);
+    // a request that nobody approved has no voucher to give
+    await create(m, "andi", "citra", 1);
+    expect((await m.get(`/invoices/${hashOf("andi", "citra")}`)).json.installments[0]).toMatchObject({ voucher: null, signature: null });
   });
 });

@@ -93,7 +93,9 @@ interface InstallmentRow {
   v_seq: bigint | null;
   v_cumulative: string | null;
   voucher_json: string | null;
+  signature: string | null;
   catch_up_json: string | null;
+  catch_up_signature: string | null;
 }
 
 const installmentsOf = (db: Database.Database, circleId: string, hash: string): InstallmentRow[] =>
@@ -202,6 +204,9 @@ function invoiceView(db: Database.Database, circleId: string, inv: InvoiceRow) {
     installments: installmentsOf(db, circleId, inv.invoice_hash).map((it) => ({
       index: Number(it.idx), epoch: Number(it.epoch), amount: it.amount, status: it.status, reason: it.reason,
       voucherEpoch: it.v_epoch === null ? null : Number(it.v_epoch), shifted: it.shifted === 1n,
+      // the voucher that the issuer registers, signed by the debtor: the one of the plan, or the catch-up voucher after a shift. Anybody may register it, and it pays the issuer only what the debtor approved
+      voucher: JSON.parse((it.shifted === 1n ? it.catch_up_json : it.voucher_json) ?? "null") as UnsignedVoucher | null,
+      signature: it.shifted === 1n ? it.catch_up_signature : it.signature,
     })),
   };
 }

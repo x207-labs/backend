@@ -31,3 +31,6 @@ A shift keeps `epoch` of the installment (the plan of the SDK is computed from i
 - The bond (CT-094) is not checked here, only flagged.
 
 Notice format: canonical JSON, keys `circle, invoice_hash, actor, action, at, reason`; `action` is `requested` or `rejected`; `reason` is `null` except for an optional text with `rejected`; signed with `nep413SigningHash(json, sha256(json), circle)` and the voucher key of the actor (same scheme as `delivery-core.ts`, code in `notice.ts`).
+
+## Voucher for the issuer
+Each installment in `GET invoices/{hash}` has `voucher` (the unsigned voucher of the plan) and `signature`, once the invoice is approved (`null` before). After a shift they are the catch-up voucher. The issuer registers it with the contract; anybody may, because it pays the issuer only what the debtor approved.
