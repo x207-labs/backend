@@ -62,10 +62,24 @@ Levels: **High** (a proof or money can be forged by the other party), **Medium**
 | B5-F7 | Info | sdk | The mandate does not bind the direction of the vote | info | Main B |
 | B5-F8 | Info | backend | `before_order` uses the first-post time of the order | info | Main C |
 
+## Batch 4 (cross review of the backend by Main B: claims of a delegate order, proof of the grantee)
+| ID | Level | Repo | Summary | Status | Owner |
+| --- | --- | --- | --- | --- | --- |
+| B4-F1 | Medium | backend/broker | Pending GitHub invitation not cancelled after a restart of the broker (the id was in memory only) | fixed `23f66d1` (id in the handle; list lookup for old handles) | Main C |
+| B4-F2 | Medium | backend/broker | GitHub handle shared by two grants; a collaborator or org member from before the grant was removed at the end of the rent | fixed `23f66d1` (grant id and `preexisting` flag in the handle; the manager refuses a second live grant for the same login and resource) | Main C |
+| B4-F3 | Low | backend | A `tx.status` string counted as success | fixed `33ddaf2` | Main C |
+| B4-F4 | Low | backend | Two claims at the same time: 500 for the second | fixed `33ddaf2` (400 `already_claimed`) | Main C |
+| B4-F5 | Low | backend/broker | An SSH key type that cannot be proven was accepted as a reference | fixed `71fd270`; the page of the grantor is Main B | Main C, Main B |
+| B4-F6 | Low | backend/broker | The challenge was used up before the proof was checked; the gist was read without a token | fixed `71fd270`: used up only by a verdict, one proof at a time per grant, token on the gist request | Main C |
+| B4-F7 | Low | backend/broker | `proof: null` for adapters with no proof, warning only in the POST answer | fixed `71fd270`: `not_applicable`, `grantee_unproven` also on GET access; the page of the renter is Main B | Main C, Main B |
+| B4-F8 | Info | backend/broker | The voucher key for the gist signature comes from the read API, not the contract | info (one operator for the broker and the read API) | Main C |
+| B4-F9 | Info | backend | One on-chain vote pays one order of the circle; the status of the proposal is not read | info | Main C |
+| B4-F10 | Info | backend/broker | Two first requests at the same time on a provider with no challenge both call `grant` | info | Main C |
+
 ## Found by the near-sandbox test
 | ID | Level | Repo | Summary | Status | Owner |
 | --- | --- | --- | --- | --- | --- |
 | BE-055-S1 | Medium | backend | `events_raw.data_json` is an array with one object on a real chain, and the queries of the proofs (`epoch`, `solver`), of the installments (`voucher_registered`) and of the intent book (`intent_posted`) read `$.field`: on a real chain the epoch of a proof was null, no solver proof was ever found, the event of an installment was never matched and the on-chain data of an intent was empty. Found only by the run on near-sandbox (the unit tests stored a bare object). Solver (A2) asked to check the same reading | fixed `6a2a6ef`, `7220eeb`, `1caffb0` (`event-data.ts` reads both shapes); confirmed on near-sandbox in run 4 | Main C |
 
 ## Counts
-Fixed: BE-055-S1, B2-F1 to F12 (F6 in the backend and in the SDK), B3-F1 to F9. Open: B5-F1 to B5-F3, B5-F5. Fixed also: C-1, C-6 to C-10 (contracts 0.0.12, A2). By design: C-2, C-3. Info (documented): C-4, C-5, C-11, C-12. Limits written in the table: B3-F2 (buyer account from the API, confirmed by fingerprint), B3-F4 (CSP not tried with a real wallet), B3-F7 (text only), B3-F9 (warning only).
+Fixed: BE-055-S1, B2-F1 to F12 (F6 in the backend and in the SDK), B3-F1 to F9. Open: B5-F1 to B5-F3, B5-F5. Batch 4: B4-F1 to F7 fixed, B4-F8 to F10 info. Fixed also: C-1, C-6 to C-10 (contracts 0.0.12, A2). By design: C-2, C-3. Info (documented): C-4, C-5, C-11, C-12. Limits written in the table: B3-F2 (buyer account from the API, confirmed by fingerprint), B3-F4 (CSP not tried with a real wallet), B3-F7 (text only), B3-F9 (warning only).
