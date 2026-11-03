@@ -361,6 +361,12 @@ DROP TABLE escrows;
 ALTER TABLE escrows_new RENAME TO escrows;
 `;
 
+// BE-055: who signed the transaction and which method it called, as the block source knew them (empty when it did not). Read by the proofs of keeper and solver orders.
+const V8_EVENT_CALLER = `
+ALTER TABLE events_raw ADD COLUMN signer_id   TEXT;
+ALTER TABLE events_raw ADD COLUMN method_name TEXT;
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "d9_initial", sql: V1_D9_INITIAL },
   { version: 2, name: "d9_bundles", sql: V2_BUNDLES },
@@ -369,4 +375,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 5, name: "d9_intents", sql: V5_INTENTS },
   { version: 6, name: "d9_ft_escrows", sql: V6_FT_ESCROWS },
   { version: 7, name: "d9_mt_escrows", sql: V7_MT_ESCROWS },
+  { version: 8, name: "d9_event_caller", sql: V8_EVENT_CALLER },
 ];

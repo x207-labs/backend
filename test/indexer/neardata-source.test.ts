@@ -64,3 +64,19 @@ describe("ADR-34 NeardataBlockSource", () => {
     expect(source({}).src.endpoint).toBe("https://neardata.test");
   });
 });
+
+describe("BE-055 signer and method of the transaction", () => {
+  it("TC-BE-055-01 the signer and the first called method come from the receipt of the outcome, and are absent when the receipt does not show them", async () => {
+    const withAction = {
+      execution_outcome: { id: "r9", outcome: { executor_id: CONTRACT, logs: [LOG_A] }, block_hash: "bh" }, tx_hash: "tx9",
+      receipt: { receipt: { Action: { signer_id: "keeper.testnet", actions: [{ Transfer: {} }, { FunctionCall: { method_name: "close_epoch" } }] } } },
+    };
+    const block = { block: BLOCK.block, shards: [{ shard_id: 0, receipt_execution_outcomes: [withAction, outcome("r1", CONTRACT, [LOG_A])] }] };
+    const { src } = source({ "/v0/block/1001": () => Response.json(block) });
+    const got = await src.getBlock(1001);
+    expect(got?.logs).toEqual([
+      { receiptId: "r9", logIndex: 0, executorId: CONTRACT, txHash: "tx9", signerId: "keeper.testnet", methodName: "close_epoch", log: LOG_A },
+      { receiptId: "r1", logIndex: 0, executorId: CONTRACT, txHash: "tx1", log: LOG_A },
+    ]);
+  });
+});

@@ -5,6 +5,9 @@ export interface BlockLog {
   logIndex: number;
   executorId: string;
   txHash: string | null;
+  /** Account that signed the transaction and the first method it called, when the source knows them (BE-055). */
+  signerId?: string | null;
+  methodName?: string | null;
   log: string;
 }
 

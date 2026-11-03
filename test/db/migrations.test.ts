@@ -94,7 +94,7 @@ describe("BE-004 migrasi skema D9", () => {
     expect(() => migrate(db)).not.toThrow();
     expect(schemaSnapshot(db)).toEqual(before);
     const versions = db.prepare("SELECT version FROM schema_migrations").all();
-    expect(versions).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }, { version: 5 }, { version: 6 }, { version: 7 }]);
+    expect(versions).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }, { version: 5 }, { version: 6 }, { version: 7 }, { version: 8 }]);
   });
 
   it("TC-BE-004-03 kunci unik events_raw per (receipt_id, log_index)", () => {

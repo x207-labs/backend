@@ -11,6 +11,8 @@ export interface NeardataSourceOptions {
 interface NeardataOutcome {
   execution_outcome: { id: string; outcome: { executor_id: string; logs: string[] } };
   tx_hash: string | null;
+  /** The receipt as the streamer shows it; only the parts that name the signer and the method are read, and every one of them may be missing. */
+  receipt?: { receipt?: { Action?: { signer_id?: string; actions?: Array<{ FunctionCall?: { method_name?: string } }> } } };
 }
 
 interface NeardataBlock {
@@ -57,8 +59,11 @@ export class NeardataBlockSource implements BlockSource {
       for (const item of shard.receipt_execution_outcomes ?? []) {
         const { id, outcome } = item.execution_outcome;
         if (outcome.executor_id !== this.#contractId) continue;
+        const action = item.receipt?.receipt?.Action;
+        const signerId = action?.signer_id ?? null;
+        const methodName = action?.actions?.find((a) => a.FunctionCall !== undefined)?.FunctionCall?.method_name ?? null;
         outcome.logs.forEach((log, logIndex) => {
-          logs.push({ receiptId: id, logIndex, executorId: outcome.executor_id, txHash: item.tx_hash ?? null, log });
+          logs.push({ receiptId: id, logIndex, executorId: outcome.executor_id, txHash: item.tx_hash ?? null, ...(signerId === null ? {} : { signerId }), ...(methodName === null ? {} : { methodName }), log });
         });
       }
     }

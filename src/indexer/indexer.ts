@@ -36,6 +36,8 @@ interface EventRow {
   block_hash: string;
   block_timestamp_ns: bigint;
   tx_hash: string | null;
+  signer_id: string | null;
+  method_name: string | null;
   contract_id: string;
   standard: string;
   version: string;
@@ -50,8 +52,8 @@ const PARAM_FIELDS = [
 ] as const;
 
 const INSERT_EVENT = `INSERT OR IGNORE INTO events_raw (receipt_id, log_index, block_height, block_hash, block_timestamp_ns,
-  tx_hash, contract_id, standard, version, event, data_json, handled)
-  VALUES (@receipt_id, @log_index, @block_height, @block_hash, @block_timestamp_ns, @tx_hash, @contract_id, @standard,
+  tx_hash, signer_id, method_name, contract_id, standard, version, event, data_json, handled)
+  VALUES (@receipt_id, @log_index, @block_height, @block_hash, @block_timestamp_ns, @tx_hash, @signer_id, @method_name, @contract_id, @standard,
   @version, @event, @data_json, @handled)`;
 
 /**
@@ -253,6 +255,8 @@ function toRow(block: SourceBlock, log: BlockLog, contractId: string): EventRow 
     block_hash: block.hash,
     block_timestamp_ns: block.timestampNs,
     tx_hash: log.txHash,
+    signer_id: log.signerId ?? null,
+    method_name: log.methodName ?? null,
     contract_id: contractId,
     standard: "x207",
     version,

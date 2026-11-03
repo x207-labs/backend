@@ -4,6 +4,8 @@ import type { FailoverRpcClient } from "./rpc-client.js";
 export interface ChainTx {
   hash: string;
   signerId: string;
+  /** First method the transaction calls, when the chunk shows the actions. */
+  methodName?: string | null;
 }
 
 export interface ChainOutcome {
@@ -97,7 +99,7 @@ export class RpcBlockSource implements BlockSource {
       const at = await this.#chain.heightOfBlock(outcome.blockHash);
       const list = this.#found.get(at) ?? [];
       outcome.logs.forEach((log, logIndex) => {
-        list.push({ receiptId: outcome.receiptId, logIndex, executorId: outcome.executorId, txHash: tx.hash, log });
+        list.push({ receiptId: outcome.receiptId, logIndex, executorId: outcome.executorId, txHash: tx.hash, signerId: tx.signerId, methodName: tx.methodName ?? null, log });
       });
       this.#found.set(at, list);
     }
@@ -109,7 +111,7 @@ interface RpcBlockLike {
   chunks: { chunk_hash: string; height_included: number }[];
 }
 interface RpcChunkLike {
-  transactions: { hash: string; signer_id: string }[];
+  transactions: { hash: string; signer_id: string; actions?: Array<{ FunctionCall?: { method_name?: string } }> }[];
 }
 interface RpcTxLike {
   receipts_outcome?: { id: string; block_hash: string; outcome: { executor_id: string; logs: string[] } }[];
@@ -143,7 +145,7 @@ export function rpcChainReader(client: FailoverRpcClient): ChainReader {
     },
     async chunkTransactions(chunkHash) {
       const raw = (await client.use((p) => p.viewChunk(chunkHash))) as unknown as RpcChunkLike;
-      return raw.transactions.map((t) => ({ hash: t.hash, signerId: t.signer_id }));
+      return raw.transactions.map((t) => ({ hash: t.hash, signerId: t.signer_id, methodName: t.actions?.find((a) => a.FunctionCall !== undefined)?.FunctionCall?.method_name ?? null }));
     },
     async txOutcomes(tx) {
       const raw = (await client.use((p) =>

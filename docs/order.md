@@ -30,3 +30,10 @@ BE-056 reuses `guardedGet` with `code: "source_forbidden"`.
 ## Not done here
 - The bond of CT-094 is only flagged (`needsBond`). The arbiter for large orders is not built.
 - Reputation (BE-053) does not read orders yet.
+
+# On-chain proofs of keeper and solver (BE-055)
+`GET orders/{hash}/onchain-proofs` for `keeper` (`close_epoch`, `finalize_epoch`) and `solver` (`submit_clearing`) orders; other kinds answer `409 order_not_proof_kind`. Answer: `{orderHash, kind, method, seller, amountPerTx, budget, maxProofs, items: [{txHash, method, signer, blockHeight, epoch, at}]}`; the SDK reads `txHash`, `method`, `signer` (`payForProofs`).
+
+What counts: an event the indexer stored whose caller is the **seller of the order**, whose method is the one of the order, made **after the order**; one item per transaction. The method is `events_raw.method_name` when the block source knew it, else the one that emits the event (`epoch_cutoff` = `close_epoch`, `epoch_finalized` = `finalize_epoch`, `clearing_submitted` = `submit_clearing`). The caller is `events_raw.signer_id`, or the `solver` field of `clearing_submitted`.
+
+`signer_id` and `method_name` are new columns of `events_raw` (D9 migration 8). Neardata fills them from the receipt of the outcome (`Action.signer_id`, the first `FunctionCall`); the RPC source (sandbox, testnet) from the transaction (`signer_id`, and the method when the chunk shows the actions). **Limit:** if a source does not know the signer (no receipt in the answer), a `close_epoch` or `finalize_epoch` call has no proof, because the event itself does not name its caller. The backend does not know which proofs were paid; the SDK keeps `alreadyPaid`.
