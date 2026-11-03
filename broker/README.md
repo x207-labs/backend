@@ -39,3 +39,14 @@ per epoch, `unit` is `call`.
 - Audit log (`BROKER_AUDIT_PATH`, JSON lines): calls, refusals and rotations with grant, asset type, method, path, status and the version of the secret.
   It holds no secret, no header and no body. **It is not encrypted**: sealing it to an enclave key needs the TEE this build does not have, and the
   broker still runs without any TEE or attestation. The update of broker code announced through attestation is not built either.
+
+## P2: delegated access to a service (BE-057, ADR-47)
+`src/provider/` gives one interface, `ProviderAccessAdapter { grant, revoke, status, verifyGranteeRef }`, for every provider, and `ProviderAccessManager` on top of it. The grant on the contract says who may use what for how long (`limits.scope` is JSON `{provider, grantee_ref, resource?, permission?, daily_cap?}`); the adapter makes the provider say the same.
+- **`verifyGranteeRef` first.** A reference the provider does not know gets no access (`grantee_ref_unverified`), so a grant cannot be pointed at an account nobody checked (ADR-47: a grant that is sold on is cut at the reference).
+- **Native expiry.** An adapter whose provider has an expiry of its own (SSH `expiry-time=`, presigned URL, STS session) MUST set it to the paid end; the manager undoes a grant whose adapter did not (`native_expiry_required`). If the broker is down at the end of the day the provider still closes the access.
+- **`revoke_pending`.** A revoke that fails is kept and tried again at 30 s, 60 s, 120 s … up to one hour, until it works; `sweep()` (run in `tick()`) does both the clock and the retries. The access also closes when the contract revokes the grant or the lessee defaults (watcher events).
+- **Costly access.** `settleDay` asks the provider for the real cost of a day (`adapter.cost`), writes it down once per day for the bill, and closes the access (`cap_exceeded`) when a day passed `daily_cap` of the scope.
+- **Mode.** `BROKER_MODE=self-hosted` (default): the grantor runs the broker and the administrator token of a provider stays on that machine. `hosted`: demo only, and `register` refuses an adapter with `real = true` (`hosted_mode_real_provider`).
+- `MockProviderAdapter` is the generic mock (failures on demand, native expiry, cost per day).
+
+Not built: an HTTP route that hands a provider access to a lessee after a payment (the manager is called by code; the lease server of class B is untouched), and the `once` handover of the groups without an API (those use BE-047).

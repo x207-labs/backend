@@ -12,13 +12,16 @@ import { Revoker } from "./revoker.js";
 import { createBrokerHandler, serve } from "./server.js";
 import { BrokerStore } from "./store.js";
 import { activeGrantIdsOf } from "./grants-api.js";
-import { GrantWatcher } from "./watcher/index.js";
+import { ProviderAccessManager, type ProviderAccessAdapter } from "./provider/index.js";
+import { GrantWatcher, type WatchedEvent } from "./watcher/index.js";
 
 export interface RunningBroker {
   url: string;
   store: BrokerStore;
   revoker: Revoker;
   classB: ClassBAdapter;
+  /** P2 access to services of providers: grant, revoke with retry, daily bill of the real cost (BE-057). */
+  provider: ProviderAccessManager;
   /** The providers of class C; `providers.rotate(assetType)` switches a secret without cutting a grant. */
   providers: ProviderRegistry;
   /** One round: events from the read API, then the clock sweep. Resolves with what the sweep and the watcher closed. */
@@ -28,7 +31,9 @@ export interface RunningBroker {
 
 export interface StartOptions {
   /** `providers` (class C) and `auditPath` may be left out: no class C and no audit file. */
-  config: Omit<BrokerConfig, "providers" | "auditPath"> & Partial<Pick<BrokerConfig, "providers" | "auditPath">>;
+  config: Omit<BrokerConfig, "providers" | "auditPath" | "mode"> & Partial<Pick<BrokerConfig, "providers" | "auditPath" | "mode">>;
+  /** Adapters of P2 providers (BE-057); `hosted` mode refuses the real ones. */
+  providerAdapters?: readonly ProviderAccessAdapter[];
   /** Replaces the NEAR chain (tests). */
   chain?: BrokerChain;
   now?: () => number;
@@ -76,9 +81,24 @@ export async function startBroker(options: StartOptions): Promise<RunningBroker>
   });
   const { server, url } = await serve(handler, config.port);
 
+  const provider = new ProviderAccessManager({ store, now, mode: config.mode ?? "self-hosted", ...(options.log ? { log: options.log } : {}) });
+  for (const adapter of options.providerAdapters ?? []) provider.register(adapter);
+  const activeIds = activeGrantIdsOf({ readApiUrl: config.readApiUrl, circle: config.circleId, ...(options.fetch ? { fetch: options.fetch } : {}) });
+  /** The access at a provider closes with the grant: revoked on the contract, or its lessee defaulted. */
+  const closeProviderAccess = async (event: WatchedEvent): Promise<void> => {
+    const ids = event.event === "member_defaulted" ? await activeIds(String(event.data.account_id)) : event.event === "grant_revoked" ? [Number(event.data.grant_id)] : [];
+    for (const id of ids) {
+      const a = provider.access(id);
+      if (a !== undefined && a.status === "active") await provider.revokeAccess(id, event.event === "member_defaulted" ? "defaulted" : String(event.data.reason ?? "revoked"));
+    }
+  };
   const tick = async (): Promise<void> => {
-    await watcher.poll((event) => revoker.handle(event));
+    await watcher.poll(async (event) => {
+      await revoker.handle(event);
+      await closeProviderAccess(event);
+    });
     await revoker.sweep();
+    await provider.sweep();
   };
   let timer: NodeJS.Timeout | undefined;
   if (options.poll !== false) {
@@ -92,7 +112,7 @@ export async function startBroker(options: StartOptions): Promise<RunningBroker>
     loop();
   }
   return {
-    url, store, revoker, classB, providers, tick,
+    url, store, revoker, classB, provider, providers, tick,
     async stop() {
       if (timer) clearTimeout(timer);
       await closeServer(server);

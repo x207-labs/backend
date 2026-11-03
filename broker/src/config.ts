@@ -17,6 +17,8 @@ export interface BrokerConfig {
   pollSeconds: number;
   /** Class C providers (BK-008); empty = class C off. The secrets are read from the environment variables they name. */
   providers: ProviderConfig[];
+  /** `self-hosted` (default): the grantor runs this broker and the administrator tokens of the providers stay on its machine. `hosted`: demo only, mock providers only (BE-057, ADR-47). */
+  mode: "self-hosted" | "hosted";
   /** JSON lines audit log of the class C calls (BK-011); empty = no file. */
   auditPath: string;
 }
@@ -39,6 +41,12 @@ export function readConfig(env: Record<string, string | undefined>): BrokerConfi
     if (!/^\d+$/.test(raw)) throw new ConfigError(`${name} harus bilangan bulat >= 0`);
     return Number(raw);
   };
+  const mode = (): "self-hosted" | "hosted" => {
+    const raw = env.BROKER_MODE ?? "";
+    if (raw === "" || raw === "self-hosted") return "self-hosted";
+    if (raw === "hosted") return "hosted";
+    throw new ConfigError("BROKER_MODE harus self-hosted atau hosted");
+  };
   return {
     readApiUrl: need("X207_READ_API_URL"),
     circleId: env.X207_CIRCLE_ID || "agents-main",
@@ -54,5 +62,6 @@ export function readConfig(env: Record<string, string | undefined>): BrokerConfi
     pollSeconds: int("BROKER_POLL_SECONDS", 15),
     providers: providersFromEnv(env),
     auditPath: env.BROKER_AUDIT_PATH ?? "",
+    mode: mode(),
   };
 }

@@ -8,3 +8,4 @@ export * from "./server.js";
 export * from "./store.js";
 export * from "./watcher/index.js";
 export * from "./proof/zktls.js";
+export * from "./provider/index.js";
