@@ -62,7 +62,7 @@ describe("BE-055 on-chain proofs of keeper and solver orders", () => {
     for (let i = 1; i <= 6; i++) call(m, { event: "epoch_cutoff", data: { epoch: 50 + i }, signer: acct("budi"), tx: `k${i}` });
     const proofs: OnchainProof[] = (await m.get(`/orders/${hash}/onchain-proofs`)).json.items.map((i: any) => ({ txHash: i.txHash, method: i.method, signer: i.signer }));
     expect(proofs).toHaveLength(6);
-    const out = payForProofs({ order: doc, epoch: 42, state: { seq: 0, cumulativeAmount: "0" }, proofs: [...proofs, { txHash: "stranger", method: "close_epoch", signer: acct("citra") }], secretKey: m.keys.andi!.secretKey });
+    const out = payForProofs({ order: doc, epoch: 42, state: { seq: 0, cumulativeAmount: "0" }, proofs: [...proofs, { txHash: "stranger", method: "close_epoch", signer: acct("citra") }], alreadyPaid: [], alreadySpent: "0", secretKey: m.keys.andi!.secretKey });
     expect(out.paid).toEqual(["k1", "k2", "k3", "k4", "k5"]); // the budget of 5 is spent
     expect(out.refused).toEqual([{ txHash: "k6", reason: "over_budget" }, { txHash: "stranger", reason: "wrong_signer" }]);
     expect(out.vouchers.at(-1)).toMatchObject({ seq: 5, cumulativeAmount: "5000000" });

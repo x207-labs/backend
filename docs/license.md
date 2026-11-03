@@ -29,3 +29,9 @@ Recorded per `content_hash` from the live purchases (`paid_held`, `cipher_posted
 - The seller who changes one byte of an exclusive file is not detected (ADR-46 point 2).
 - `contains_pii` in a purchased file cannot be checked (the backend has no key).
 - The reputation of BE-053 does not read purchases yet.
+
+## Hash scheme of the SDK and the signed release (review BE-062 F1, F2, F11, F12)
+The SDK hashes every body with one scheme (leaf prefix `0x00`, node prefix `0x01`) and the signed `LicenseRelease` carries `content_size`, `cipher_size`, `key_commitment` (sha256 of the file key) and `purchase_id`. The backend follows:
+- `key_released` is refused (`400 invalid_request`) when `release.purchase_id` is not the id of this purchase, or the sizes or the commitment are missing or not valid; a release without the new fields does not verify either.
+- A dispute with a proof downloads the ciphertext and requires its **size to be `release.cipher_size`** (`400 proof_invalid`) before the hash is compared, so the 65-byte body of a Merkle node can never stand for a large ciphertext; `checkCheatProof` gets the purchase id and refuses a release of another purchase. A sealed key that opens to another key than the committed one is a valid proof (`key_mismatch`, status `disputed`).
+- Migration 1112: purchases that are not final (`paid_held`, `cipher_posted`, `key_released`, `disputed`) become `cancelled` (reason `hash_scheme_changed`) and open license listings become `cancelled`; their vouchers were held and never released, so nothing moves. `confirmed`, `refuted` and `cancelled` purchases stay. Sellers list again with the new hashes.

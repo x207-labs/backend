@@ -239,16 +239,18 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
    * file, so a file that does not match is refused without ever being loaded. Only a file that matches is read back for the proof, and `fn` gets it. At most `MAX_DOWNLOADS` run at once,
    * so the memory in use is bounded by that many files; the temporary file is always deleted. The deadline grows with the size allowed: 60 s plus one second per MiB, at most ten minutes.
    */
-  async function withCiphertext<T>(source: Source, cipherHash: string, fn: (ciphertext: Buffer) => T | Promise<T>): Promise<T> {
+  async function withCiphertext<T>(source: Source, cipherHash: string, cipherSize: number, fn: (ciphertext: Buffer) => T | Promise<T>): Promise<T> {
     await downloads.acquire();
     const path = join(tmpdir(), `x207-cipher-${randomBytes(8).toString("hex")}.tmp`);
     const fd = openSync(path, "w", 0o600);
     const hasher = new ContentHasher();
     const plain = createHash("sha256");
+    let received = 0;
     try {
       const res = await guardedGet(sourceUrl(source, gateways), {
         ...guard, maxBytes, timeoutMs: Math.min(60_000 + Math.ceil(maxBytes / MIB) * 1000, 600_000),
         onChunk: (c) => {
+          received += c.length;
           hasher.update(c);
           plain.update(c);
           writeSync(fd, c);
@@ -256,6 +258,8 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
       });
       if (!res.reachable || res.status !== 200) refuse("Ciphertext tidak bisa diunduh dari sumber", { kind: source.kind, status: res.reachable ? res.status : null });
       if (source.kind === "ipfs" && !Buffer.from(parseRawCid(source.ref).digest).equals(plain.digest())) throw new ApiError(400, "proof_invalid", "Byte dari gateway tidak cocok dengan CID", {});
+      // the size is signed in the release (review BE-062 F1): a body of another size is refused before the hash is even compared, so the 65-byte body of a Merkle node never counts
+      if (received !== cipherSize) throw new ApiError(400, "proof_invalid", `Sumber menyajikan ${received} byte, rilis menandatangani ${cipherSize}`, {});
       if (hasher.digest() !== cipherHash) throw new ApiError(400, "proof_invalid", "Sumber tidak lagi menyajikan ciphertext dengan cipher_hash yang dipasang", {});
       closeSync(fd);
       return await fn(readFileSync(path));
@@ -379,6 +383,10 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
           if (r.circle !== circle.contract_id || r.buyer !== p.buyer || r.cipher_hash !== p.cipher_hash || r.content_hash !== p.content_hash) {
             throw invalidRequest("rilis harus untuk lingkaran, pembeli, cipher_hash, dan content_hash pembelian ini");
           }
+          // the release names the purchase it serves (review BE-062 F12), its sizes (F1) and the commitment to the key (F11)
+          if (r.purchase_id !== p.id.toString()) throw invalidRequest("release.purchase_id harus id pembelian ini", { expected: p.id.toString(), got: r.purchase_id ?? null });
+          if (!Number.isSafeInteger(r.content_size) || !Number.isSafeInteger(r.cipher_size) || r.content_size < 0 || r.cipher_size < 1) throw invalidRequest("release.content_size dan release.cipher_size harus bilangan bulat (cipher_size > 0)");
+          if (typeof r.key_commitment !== "string" || !HASH.test(r.key_commitment)) throw invalidRequest("release.key_commitment harus 64 heksadesimal huruf kecil");
           if (r.license_hash !== p.license_doc && r.license_hash !== detail?.license_hash) throw invalidRequest("release.license_hash harus license_doc atau license_hash dari listing");
           if (!verifyRelease(r, signature, activeMemberKey(db, circle.circle_id, p.seller))) throw new ApiError(401, "invalid_signature", "Tanda tangan rilis tidak cocok dengan kunci penjual", { account: p.seller });
           db.transaction(() => {
@@ -457,8 +465,9 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
             if (JSON.stringify(pr.release) !== p.release_json || pr.signature !== p.release_signature) throw new ApiError(400, "proof_invalid", "proof harus memuat rilis yang dilepas penjual untuk pembelian ini", {});
             const source: Source = { kind: p.source_kind as "https" | "ipfs", ref: p.source_ref as string };
             const sellerKey = activeMemberKey(db, circle.circle_id, p.seller);
-            outcome = await withCiphertext(source, p.cipher_hash as string, (ciphertext) =>
-              checkCheatProof({ ciphertext, release: pr.release, signature: pr.signature, box_key: pr.box_key } as CheatProof, sellerKey).valid ? ("disputed" as const) : ("refuted" as const));
+            const purchaseId = p.id.toString();
+            outcome = await withCiphertext(source, p.cipher_hash as string, (JSON.parse(p.release_json as string) as LicenseRelease).cipher_size, (ciphertext) =>
+              checkCheatProof({ ciphertext, release: pr.release, signature: pr.signature, box_key: pr.box_key } as CheatProof, sellerKey, purchaseId).valid ? ("disputed" as const) : ("refuted" as const));
           } else if (proof !== null) {
             throw invalidRequest("proof hanya untuk content_mismatch");
           }

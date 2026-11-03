@@ -2,12 +2,15 @@ import { readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  contentHash, createRelease, deriveBoxKey, encryptContent, licenseDocumentHash, licenseResource, listingHash, makeCheatProof, signVoucher,
+  contentHash, createRelease, deriveBoxKey, sealKey, signRelease, encryptContent, licenseDocumentHash, licenseResource, listingHash, makeCheatProof, signVoucher,
   type LicenseDocument, type LicenseRelease, type UnsignedVoucher,
 } from "@x207/core";
 import { sha256Hex, signNoticeJson } from "../../src/marketplace/notice.js";
 import { MAX_DOWNLOADS, Semaphore } from "../../src/marketplace/purchases.js";
 import type { Transport } from "../../src/marketplace/ssrf.js";
+import Database from "better-sqlite3";
+import { migrate } from "../../src/db/migrate.js";
+import { MARKETPLACE_MIGRATIONS } from "../../src/marketplace/migrations.js";
 import { acct, CONTRACT, openEpoch, signedListing, startMarket, type Market } from "./helpers.js";
 
 const C = (n: number): string => (BigInt(n) * 1_000_000n).toString();
@@ -76,10 +79,10 @@ describe("BE-056 license handover: fair exchange with encryption", () => {
     const notice = { circle: CONTRACT, purchase_id: id, actor: acct("andi"), action: "cipher_posted", at: at(m), source: { kind: over.kind ?? "https", ref }, cipher_hash: contentHash(s.ciphertext) };
     return m.post(`/purchases/${id}`, { notice, signature: signNoticeJson(JSON.stringify(notice), CONTRACT, m.keys.andi!.secretKey) });
   };
-  const releaseKey = (m: Market, id: string, s: Awaited<ReturnType<typeof sell>>, buyer = "budi", over: Partial<{ ciphertext: Uint8Array; contentKey: Uint8Array; content_hash: string }> = {}) => {
+  const releaseKey = (m: Market, id: string, s: Awaited<ReturnType<typeof sell>>, buyer = "budi", over: Partial<{ ciphertext: Uint8Array; contentKey: Uint8Array; content_hash: string; content_size: number; purchase_id: string }> = {}) => {
     const r = createRelease({
       circle: CONTRACT, license_hash: s.docHash, buyer: acct(buyer), buyerPublicKey: m.keys[buyer]!.publicKey, content_hash: over.content_hash ?? s.doc.content_hash,
-      ciphertext: over.ciphertext ?? s.ciphertext, contentKey: over.contentKey ?? s.key, at: at(m), sellerSecretKey: m.keys.andi!.secretKey,
+      content_size: over.content_size ?? s.plain.length, purchase_id: over.purchase_id ?? id, ciphertext: over.ciphertext ?? s.ciphertext, contentKey: over.contentKey ?? s.key, at: at(m), sellerSecretKey: m.keys.andi!.secretKey,
     });
     return { ...r, post: () => m.post(`/purchases/${id}`, { notice: r.release, signature: r.signature }) };
   };
@@ -335,5 +338,75 @@ describe("BE-056 license handover: fair exchange with encryption", () => {
     expect(peak).toBe(2);
     await sem.acquire();
     await sem.acquire(); // both places are free again
+  });
+
+  it("TC-BE-056-13 the release must name this purchase and carry its sizes and the commitment to the key (review BE-062 F1, F11, F12)", async () => {
+    const m = await start();
+    const s = await sell(m);
+    const id = (await buy(m, s)).json.purchase_id as string;
+    await postCipher(m, id, s);
+    // a release made for another purchase of the same buyer and license (the replay of F12)
+    const other = await releaseKey(m, id, s, "budi", { purchase_id: "999" }).post();
+    expect(other.status).toBe(400);
+    expect(other.json.error.message).toContain("purchase_id");
+    // an old release, without the new fields, does not even verify
+    const r = releaseKey(m, id, s).release;
+    const { content_size: _a, cipher_size: _b, key_commitment: _c, purchase_id: _d, ...old } = r;
+    void [_a, _b, _c, _d];
+    expect((await m.post(`/purchases/${id}`, { notice: old, signature: "ed25519:" + "1".repeat(88) })).status).toBe(400);
+    expect((await releaseKey(m, id, s).post()).status).toBe(201);
+  });
+
+  it("TC-BE-056-14 a seller who seals another key than the one it committed to is proven cheating (key_mismatch), and a body of another size than the signed one is refused before it is read", async () => {
+    const m = await start();
+    const s = await sell(m);
+    const id = (await buy(m, s)).json.purchase_id as string;
+    await postCipher(m, id, s);
+    const honest = releaseKey(m, id, s).release;
+    const wrongKey = encryptContent(utf8("another file")).key;
+    const sealed = toHex(sealKey(wrongKey, m.keys.budi!.publicKey));
+    const forged = { ...honest, sealed_key: sealed };
+    const signature = signRelease(forged, m.keys.andi!.secretKey);
+    expect((await m.post(`/purchases/${id}`, { notice: forged, signature })).status).toBe(201);
+    const box = toHex(deriveBoxKey(Buffer.from(sealed, "hex"), m.keys.budi!.secretKey));
+    const proof = { release: forged, signature, box_key: box };
+    const res = await buyerNotice(m, id, "disputed", "budi", "content_mismatch", proof);
+    expect(res.json).toMatchObject({ status: "disputed", disputeReason: "content_mismatch" });
+    // size: a second purchase whose source serves one byte more than the release signed
+    const id2 = (await buy(m, s, "citra")).json.purchase_id as string;
+    await postCipher(m, id2, s);
+    const rel2 = releaseKey(m, id2, s, "citra");
+    await rel2.post();
+    files.set("store.example.com/d1.bin", Buffer.concat([Buffer.from(s.ciphertext), Buffer.from([0])]));
+    const proof2 = { release: rel2.release, signature: rel2.signature, box_key: toHex(deriveBoxKey(Buffer.from(rel2.release.sealed_key, "hex"), m.keys.citra!.secretKey)) };
+    const bad = await buyerNotice(m, id2, "disputed", "citra", "content_mismatch", proof2);
+    expect(bad.status).toBe(400);
+    expect(bad.json.error.code).toBe("proof_invalid");
+    expect(bad.json.error.message).toContain("byte");
+  });
+});
+
+describe("BE-056 migration to the new hash scheme", () => {
+  it("TC-BE-056-15 purchases that are not final and open license listings are cancelled, final ones stay; nothing is released", () => {
+    const db = new Database(":memory:");
+    migrate(db);
+    migrate(db, MARKETPLACE_MIGRATIONS.filter((v) => v.version < 1112));
+    const listing = (hash: string, detail: string, status = "open") =>
+      db.prepare(
+        `INSERT INTO listings (circle_id, listing_hash, account_id, offer_asset_type, offer_class, offer_quantity, offer_value, want_asset_type, want_class, want_quantity, want_value, terms, detail, expires_at, discount_bps, accept_payment, discoverable, nonce, signature, status, created_at_ms)
+         VALUES ('c', ?, 'a.near', 'data:dataset', 'B', 1, '1', 'x', 'A', 1, '1', '', ?, 9999999999, 0, 1, 1, ?, 's', ?, 1)`,
+      ).run(hash, detail, hash, status);
+    listing("l1", JSON.stringify({ kind: "license", license_doc: "d".repeat(64) }));
+    listing("l2", JSON.stringify({ kind: "license", license_doc: "d".repeat(64) }), "matched");
+    listing("l3", JSON.stringify({ kind: "ticket", event: "x" }));
+    listing("l4", "plain note");
+    const purchase = (status: string) =>
+      db.prepare(`INSERT INTO purchases (circle_id, listing_hash, buyer, seller, content_hash, license_doc, license_id, exclusive, voucher_json, voucher_signature, status, created_at_ms) VALUES ('c', 'l1', 'b.near', 'a.near', ?, ?, 'personal', 0, '{}', 's', ?, 1)`).run("c".repeat(64), "d".repeat(64), status);
+    for (const st of ["paid_held", "cipher_posted", "key_released", "disputed", "confirmed", "refuted", "cancelled"]) purchase(st);
+    expect(migrate(db, MARKETPLACE_MIGRATIONS)).toEqual([1112]);
+    const statuses = (db.prepare("SELECT status FROM purchases ORDER BY id").all() as Array<{ status: string }>).map((r) => r.status);
+    expect(statuses).toEqual(["cancelled", "cancelled", "cancelled", "cancelled", "confirmed", "refuted", "cancelled"]);
+    expect((db.prepare("SELECT dispute_reason FROM purchases WHERE id = 1").get() as { dispute_reason: string }).dispute_reason).toBe("hash_scheme_changed");
+    expect((db.prepare("SELECT listing_hash, status FROM listings ORDER BY id").all() as Array<{ listing_hash: string; status: string }>).map((r) => `${r.listing_hash}:${r.status}`)).toEqual(["l1:cancelled", "l2:matched", "l3:open", "l4:open"]);
   });
 });

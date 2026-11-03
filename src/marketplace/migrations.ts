@@ -431,6 +431,16 @@ CREATE TABLE takedowns (
 );
 `;
 
+// BE-056, hash scheme of the SDK (review BE-062 F1, F2, F11, F12): the hash of a content and of a ciphertext changed (one scheme with the leaf prefix, the sizes in the signed release),
+// so a purchase that is not final, and a license listing that is open, were made with hashes that the new SDK does not produce. The vouchers of those purchases were held and never released,
+// so they are cancelled (nothing moves); the sellers list again. Purchases that are `confirmed`, `refuted` or already `cancelled` stay as they are.
+const V1112_HASH_SCHEME = `
+UPDATE purchases SET status = 'cancelled', dispute_reason = COALESCE(dispute_reason, 'hash_scheme_changed'), closed_at_ms = CAST(strftime('%s','now') AS INTEGER) * 1000
+  WHERE status IN ('paid_held','cipher_posted','key_released','disputed');
+UPDATE listings SET status = 'cancelled', closed_at_ms = CAST(strftime('%s','now') AS INTEGER) * 1000
+  WHERE status = 'open' AND json_valid(detail) AND json_extract(detail, '$.kind') = 'license' AND json_extract(detail, '$.license_doc') IS NOT NULL;
+`;
+
 export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1101, name: "m11_intents", sql: V1101_INTENTS },
   { version: 1102, name: "m11_listings", sql: V1102_LISTINGS },
@@ -443,4 +453,5 @@ export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1109, name: "m11_invoices", sql: V1109_INVOICES },
   { version: 1110, name: "m11_orders", sql: V1110_ORDERS },
   { version: 1111, name: "m11_purchases", sql: V1111_PURCHASES },
+  { version: 1112, name: "m11_hash_scheme", sql: V1112_HASH_SCHEME },
 ];
