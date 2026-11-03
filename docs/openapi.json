@@ -5515,6 +5515,7 @@
             },
             "x-error-codes": [
               "already_exists",
+              "code_duplicate",
               "code_not_checked",
               "code_unknown",
               "code_used",

@@ -4,7 +4,7 @@
 // proven by the proof of cheating of the SDK (`checkCheatProof`), which the backend runs by itself: it downloads the ciphertext from the source the seller named, checks it against
 // `cipher_hash`, and checks the proof. A valid proof ends in `disputed` (not paid); a proof for a correct file ends in `refuted` (paid). Every download goes through the SSRF guard.
 // Also here: the exclusive license per `content_hash`, the takedown of a listing, the list of `license_id`, and the scan of the preview of a dataset for personal data.
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { closeSync, openSync, readFileSync, unlinkSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -83,6 +83,8 @@ export interface PurchaseOptions {
   codeDisputeWindowSeconds?: number;
   /** Value above which a code that cannot be checked needs a bond, smallest unit. Default 20 credit. */
   codeUnverifiableLimit?: string;
+  /** Secret of the operator for `code_seen` (env `X207_CODE_SEEN_KEY`): the backend keeps an HMAC of each code it checked, to refuse the same code in a second live listing. Empty: no detection. */
+  codeSeenKey?: string;
 }
 
 // ---- the license inside the detail of a listing -----------------------------------------------------------------------------------------------------------------------
@@ -390,12 +392,26 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
         if (cd.verifiable !== true) throw new ApiError(400, "code_not_verifiable", "Penerbit kode ini tidak punya cek; tidak ada yang dicek", { issuer: cd.issuer });
         const issuer = options.codeIssuers?.[String(cd.issuer)];
         if (issuer === undefined) throw new ApiError(400, "code_issuer_unknown", `penerbit ${String(cd.issuer)} tidak terdaftar di backend ini`, { issuer: cd.issuer });
+        // the same code in another listing that is open or sold: refused (only codes the issuer can check; the key of the operator makes the HMAC useless to somebody who steals the table)
+        const mac = options.codeSeenKey ? createHmac("sha256", options.codeSeenKey).update(`${String(cd.issuer)}\u0000${code}`).digest("hex") : null;
+        if (mac !== null) {
+          const other = row<{ listing_hash: string }>(
+            db,
+            `SELECT s.listing_hash FROM code_seen s JOIN listings l ON l.circle_id = s.circle_id AND l.listing_hash = s.listing_hash
+              WHERE s.circle_id = ? AND s.mac = ? AND s.listing_hash <> ?
+                AND ((l.status = 'open' AND l.expires_at > ?) OR EXISTS (SELECT 1 FROM purchases p WHERE p.circle_id = s.circle_id AND p.listing_hash = s.listing_hash AND p.status IN ${ACTIVE}))
+              LIMIT 1`,
+            circle.circle_id, mac, listing.listing_hash, nowS,
+          );
+          if (other !== undefined) throw new ApiError(409, "code_duplicate", "Kode yang sama sudah ada di listing lain yang terbuka atau sudah terjual", { otherListing: other.listing_hash });
+        }
         let verdict: "valid" | "used" | "unknown";
         try {
           verdict = await issuer.checkCode(code);
         } catch {
           throw new ApiError(503, "code_issuer_unavailable", "Penerbit tidak menjawab; belum ada keputusan, coba lagi", { issuer: cd.issuer });
         }
+        if (mac !== null) db.prepare("INSERT OR IGNORE INTO code_seen (circle_id, mac, listing_hash, seen_at_ms) VALUES (?, ?, ?, ?)").run(circle.circle_id, mac, listing.listing_hash, now());
         db.prepare("INSERT INTO code_checks (circle_id, listing_hash, verdict, checked_at_ms) VALUES (?, ?, ?, ?) ON CONFLICT (circle_id, listing_hash) DO UPDATE SET verdict = excluded.verdict, checked_at_ms = excluded.checked_at_ms").run(circle.circle_id, listing.listing_hash, verdict, now());
         if (verdict === "used") cancelCodeSale(db, circle.circle_id, listing.listing_hash, now());
         return { status: 200, body: { listingHash: listing.listing_hash, verdict, checkedAt: now(), validUntilMs: verdict === "valid" ? now() + checkTtlMs : null } };

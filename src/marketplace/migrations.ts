@@ -480,6 +480,18 @@ CREATE TABLE code_checks (
 );
 `;
 
+// BE-069 fix (ADR-48): codes that the backend has seen at the check, as an HMAC with a key of the operator (never the plain code, never a plain hash that could be tried against codes of low entropy).
+const V1115_CODE_SEEN = `
+CREATE TABLE code_seen (
+  circle_id    TEXT NOT NULL,
+  mac          TEXT NOT NULL,
+  listing_hash TEXT NOT NULL,
+  seen_at_ms   INTEGER NOT NULL,
+  PRIMARY KEY (circle_id, mac, listing_hash)
+);
+CREATE INDEX idx_code_seen_listing ON code_seen (circle_id, listing_hash);
+`;
+
 export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1101, name: "m11_intents", sql: V1101_INTENTS },
   { version: 1102, name: "m11_listings", sql: V1102_LISTINGS },
@@ -495,4 +507,5 @@ export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1112, name: "m11_hash_scheme", sql: V1112_HASH_SCHEME },
   { version: 1113, name: "m11_delegate_claims", sql: V1113_DELEGATE_CLAIMS },
   { version: 1114, name: "m11_codes", sql: V1114_CODES },
+  { version: 1115, name: "m11_code_seen", sql: V1115_CODE_SEEN },
 ];

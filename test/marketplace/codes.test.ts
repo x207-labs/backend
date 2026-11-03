@@ -228,6 +228,42 @@ describe("BE-069 one-time codes: the code book on the fair exchange of BE-056", 
     expect((await check(m, s)).json.verdict).toBe("valid");
   });
 
+  it("TC-BE-069-11 the same code in a second live listing is refused code_duplicate at the check (HMAC with the key of the operator); a closed first listing frees it; a sold one does not; no key, no detection; the table has no plain hash", async () => {
+    const m = await start({ codeSeenKey: "operator-secret" });
+    const a = await sell(m);
+    const b = await sell(m); // the same code, another salt, so another commitment
+    expect((await check(m, a)).json.verdict).toBe("valid");
+    const dup = await check(m, b);
+    expect([dup.status, dup.json.error.code, dup.json.error.details.otherListing]).toEqual([409, "code_duplicate", a.hash]);
+    expect(JSON.stringify(dup.json)).not.toContain(CODE);
+    expect(issuer.calls).toBeGreaterThan(0);
+    // what is stored is an HMAC: neither the code nor sha256 of it
+    const macs = (m.db.prepare("SELECT mac FROM code_seen").all() as Array<{ mac: string }>).map((r) => r.mac);
+    expect(macs).toHaveLength(1);
+    const { createHash } = await import("node:crypto");
+    expect(macs[0]).not.toBe(createHash("sha256").update(`acme\u0000${CODE}`).digest("hex"));
+    expect(macs[0]).not.toBe(createHash("sha256").update(CODE).digest("hex"));
+    // the first listing is cancelled: the code is free for the second
+    m.db.prepare("UPDATE listings SET status = 'cancelled' WHERE listing_hash = ?").run(a.hash);
+    expect((await check(m, b)).json.verdict).toBe("valid");
+    // sold: a purchase of b makes it unavailable to a third listing
+    const c = await sell(m);
+    const id = (await buy(m, b)).json.purchase_id as string;
+    expect(id).toBeDefined();
+    expect((await check(m, c)).json.error.code).toBe("code_duplicate");
+    // the same seller checking the same listing again is not a duplicate of itself
+    expect((await check(m, b)).json.verdict).toBe("valid");
+  });
+
+  it("TC-BE-069-12 without X207_CODE_SEEN_KEY nothing is detected; a code that cannot be checked is not looked at", async () => {
+    const m = await start();
+    const a = await sell(m);
+    const b = await sell(m);
+    expect((await check(m, a)).json.verdict).toBe("valid");
+    expect((await check(m, b)).json.verdict).toBe("valid");
+    expect((m.db.prepare("SELECT COUNT(*) AS n FROM code_seen").get() as { n: number }).n).toBe(0);
+  });
+
   it("TC-BE-069-10 a seller who encrypts another code than the commitment is caught by the proof of cheating of the fair exchange", async () => {
     const m = await start();
     const s = await sell(m);
