@@ -58,4 +58,17 @@ describe("BE-054 SSRF guard", () => {
     expect(result).toBe("403 target_forbidden");
     expect(calls).toBe(2);
   });
+
+  it("TC-BE-054-S6 the whole request has a deadline: a transport that trickles or never answers is cut, not waited for", async () => {
+    const started = Date.now();
+    const slow: Transport = () => new Promise(() => undefined); // never answers
+    const result = await guardedGet("https://slow.example.com/x", { resolver: resolve("8.8.8.8"), transport: slow, timeoutMs: 80 }).then(() => "ok", (e) => `${e.status} ${e.code}`);
+    expect(result).toBe("403 target_forbidden");
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  it("TC-BE-054-S7 the NAT64 range 64:ff9b:1::/48 is refused too", () => {
+    expect(isPublicIp("64:ff9b:1::808:808")).toBe(false);
+    expect(isPublicIp("64:ff9b::808:808")).toBe(true);
+  });
 });

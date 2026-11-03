@@ -65,7 +65,7 @@ export function isPublicIp(ip: string): boolean {
   if (first === 0x20 && second === 0x01 && b[2] === 0x0d && b[3] === 0xb8) return false; // 2001:db8::/32 documentation
   if (first === 0x20 && second === 0x01 && b[2] === 0x00 && b[3] === 0x00) return false; // 2001::/32 Teredo
   if (first === 0x20 && second === 0x02) return false; // 2002::/16 6to4
-  if (first === 0x00 && second === 0x64 && b[2] === 0xff && b[3] === 0x9b) return v4(embedded); // NAT64 carries an IPv4 address
+  if (first === 0x00 && second === 0x64 && b[2] === 0xff && b[3] === 0x9b) return !(b[4] === 0x00 && b[5] === 0x01) && v4(embedded); // NAT64 carries an IPv4 address
   return (first & 0xe0) === 0x20; // only 2000::/3 is global unicast today
 }
 
@@ -78,13 +78,21 @@ export interface Transport {
 
 /** The real transport: TLS to the address that was checked, with the name for SNI and certificate. The address is checked once more by the `lookup` hook of the socket. */
 export const httpsTransport = (resolver: Resolver, forbid: () => never): Transport => ({ host, address, path, timeoutMs, method = "GET", maxBytes = MAX_BODY_BYTES }) =>
-  new Promise((resolve, reject) => {
+  new Promise((resolveRaw, rejectRaw) => {
+    const resolve = (v: { status: number; body: Buffer; truncated: boolean }): void => done(resolveRaw)(v);
+    const reject = (e: unknown): void => done(rejectRaw)(e);
     const lookup: LookupFunction = (_name, opts, cb) => {
       // the address at the moment of connecting must be the checked one, and still public
       const family = isIP(address) === 6 ? 6 : 4;
       const answer = (): void => ((opts as { all?: boolean }).all ? (cb as unknown as (e: null, a: unknown) => void)(null, [{ address, family }]) : cb(null, address, family));
       if (!isPublicIp(address)) return cb(new Error("forbidden address"), "", 4);
       resolver(host).then((now) => (now.length > 0 && now.every(isPublicIp) ? answer() : cb(new Error("forbidden address"), "", 4)), (e: Error) => cb(e, "", 4));
+    };
+    // `timeout` of the request is only an idle limit of the socket; this is the limit of the whole request
+    const deadline = setTimeout(() => req.destroy(new Error("timeout")), timeoutMs);
+    const done = <T>(fn: (v: T) => void) => (v: T): void => {
+      clearTimeout(deadline);
+      fn(v);
     };
     const req = request({ host, port: 443, path, method, lookup, servername: host, timeout: timeoutMs, headers: { "user-agent": "x207-check/1", accept: "text/plain,*/*" } }, (res) => {
       const chunks: Buffer[] = [];
@@ -158,9 +166,19 @@ export async function guardedGet(rawUrl: string, options: GuardedOptions = {}): 
   if (bad !== undefined) forbid("Nama diresolve ke alamat yang bukan IP publik", { host });
   const transport = options.transport ?? httpsTransport(resolver, () => forbid("Alamat berubah menjadi bukan IP publik saat koneksi", { host }));
   let res: { status: number; body: Buffer; truncated: boolean };
+  const total = options.timeoutMs ?? FETCH_TIMEOUT_MS;
+  let timer: NodeJS.Timeout | undefined;
   try {
-    res = await transport({ host, address: addresses[0] as string, path: `${url.pathname}${url.search}`, timeoutMs: options.timeoutMs ?? FETCH_TIMEOUT_MS, method: options.method ?? "GET", maxBytes: options.maxBytes ?? MAX_BODY_BYTES });
+    res = await Promise.race([
+      transport({ host, address: addresses[0] as string, path: `${url.pathname}${url.search}`, timeoutMs: options.timeoutMs ?? FETCH_TIMEOUT_MS, method: options.method ?? "GET", maxBytes: options.maxBytes ?? MAX_BODY_BYTES }),
+      // the deadline of the whole request, whatever the transport does
+      new Promise<never>((_r, rej) => {
+        timer = setTimeout(() => rej(new Error("timeout")), total);
+      }),
+    ]);
+    clearTimeout(timer);
   } catch (error) {
+    clearTimeout(timer);
     if (error instanceof ApiError) throw error;
     if (error instanceof Error && error.message === "timeout") return forbid("Batas waktu 5 detik terlewati", { host });
     return { reachable: false, reason: "connect" };
