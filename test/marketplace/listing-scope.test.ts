@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { acct, CIRCLE, NOW_S, signedListing, startMarket, type Market } from "./helpers.js";
+import { buildAssetTemplate, type AssetInput } from "@x207/core";
+import { CATALOG } from "../../../scripts/lib/asset-catalog.mjs";
+import { ESCROW_ASSET_TYPES } from "../../src/marketplace/listing-scope.js";
+import { CIRCLE, NOW_S, signedListing, startMarket, type Market } from "./helpers.js";
 
 const C = (n: number): string => (BigInt(n) * 1_000_000n).toString();
 let nonce = 0;
-const scopeJson = (scope: object, extra: object = {}): string => JSON.stringify({ scope, ...extra });
+const PRICE = C(100);
 
 describe("BE-049 validation of a listing per kind of asset (catalogue #1 to #10)", () => {
   let market: Market | undefined;
@@ -14,114 +17,150 @@ describe("BE-049 validation of a listing per kind of asset (catalogue #1 to #10)
 
   async function start(options: Parameters<typeof startMarket>[4] = { rwaWhitelist: ["rwa.token.near"] }) {
     market = await startMarket(["andi", "budi"], [], undefined, options);
-    const m = market;
-    for (const t of ["nft:ticket", "nft:game-item", "nft:coupon", "nft:license", "nft:art", "ft:usdc", "lst:stnear", "rwa:bond", "mt:usdc", "mt:lp-share", "mt:intents-usdt"]) {
-      m.db.prepare("INSERT INTO asset_classes (circle_id, asset_type, class, block_height, receipt_id, log_index) VALUES (?, ?, 'A', 1, 'r', 0)").run(CIRCLE, t);
+    for (const e of CATALOG.filter((c: { cls: string }) => c.cls === "A")) {
+      market.db.prepare("INSERT INTO asset_classes (circle_id, asset_type, class, block_height, receipt_id, log_index) VALUES (?, ?, 'A', 1, 'r', 0)").run(CIRCLE, e.assetType);
     }
-    m.db.prepare("INSERT INTO asset_classes (circle_id, asset_type, class, block_height, receipt_id, log_index) VALUES (?, 'ft:rented', 'B', 1, 'r', 0)").run(CIRCLE);
-    return m;
+    market.db.prepare("INSERT INTO asset_classes (circle_id, asset_type, class, block_height, receipt_id, log_index) VALUES (?, 'saas:team-seat-a', 'B', 1, 'r', 0)").run(CIRCLE);
+    return market;
   }
 
-  const post = (m: Market, assetType: string, detail: string, over: { quantity?: number; assetClass?: string; expiresAt?: number } = {}) =>
+  const expiresAt = NOW_S + 3600;
+  const common = { unitPrice: PRICE, expiresAt };
+  /** The inputs of the SDK, one per kind, valid at `NOW_S`. */
+  const inputs: Record<string, AssetInput> = {
+    nft: { kind: "nft", name: "Art", nftContract: "art.near", tokenId: "42", ...common },
+    ticket: { kind: "ticket", event: { name: "Conf", startsAt: NOW_S + 7200, endsAt: NOW_S + 10_000 }, nftContract: "tix.near", tokenId: "A1", ...common },
+    "game-item": { kind: "game-item", game: { name: "Chain Quest", collection: "weapons" }, nftContract: "game.near", tokenId: "sword-7", ...common },
+    coupon: { kind: "coupon", description: "10 percent off", validUntil: NOW_S + 5000, nftContract: "cpn.near", tokenId: "c1", ...common },
+    license: { kind: "license", product: "Studio", termsHash: "ab".repeat(32), seats: 3, nftContract: "lic.near", tokenId: "seat-1", ...common },
+    ft: { kind: "ft", ftContract: "usdc.token.near", amount: "1000000", decimals: 6, symbol: "USDC", ...common },
+    rwa: { kind: "rwa", ftContract: "rwa.token.near", amount: "5000", decimals: 6, symbol: "BOND", whitelist: { circleContract: true, grantor: true }, ...common },
+    lst: { kind: "lst", ftContract: "meta-pool.near", amount: "340282366920938463463374607431768211455", decimals: 24, symbol: "stNEAR", rate: { nearPerToken: "1.07", source: "pool", asOf: NOW_S - 60 }, ...common },
+    "intents-balance": { kind: "intents-balance", mtContract: "intents.near", tokenId: "nep141:usdc.near", amount: "250", ...common },
+    "pool-share-ft": { kind: "pool-share", pool: "wNEAR-USDC", standard: "nep141", ftContract: "lp.near", amount: "99", decimals: 18, symbol: "LP", ...common },
+    "pool-share-mt": { kind: "pool-share", pool: "wNEAR-USDC", standard: "nep245", mtContract: "amm.near", tokenId: "pool-3", amount: "99", ...common },
+  };
+
+  const post = (m: Market, over: { assetType: string; detail: string; assetClass?: string; quantity?: number; expiresAt?: number }) =>
     m.post("/listings", signedListing(m, "andi", {
-      offer: { asset_type: assetType, asset_class: (over.assetClass ?? "A") as "A", quantity: over.quantity ?? 1, value: C(100) },
-      detail, ...(over.expiresAt !== undefined ? { expires_at: over.expiresAt } : {}), nonce: `n${++nonce}`,
+      offer: { asset_type: over.assetType, asset_class: (over.assetClass ?? "A") as "A", quantity: over.quantity ?? 1, value: PRICE },
+      detail: over.detail, expires_at: over.expiresAt ?? expiresAt, nonce: `n${++nonce}`,
     }));
-  const reason = (r: { status: number; json: any }) => [r.status, r.json.error?.code, r.json.error?.message as string];
+  /** The listing exactly as the SDK would build it from `input`. */
+  const fromTemplate = (m: Market, key: string, patch: (detail: Record<string, unknown>) => Record<string, unknown> = (d) => d, over: { expiresAt?: number } = {}) => {
+    const t = buildAssetTemplate(inputs[key]!, NOW_S);
+    return post(m, { assetType: t.assetType, detail: JSON.stringify(patch(JSON.parse(t.detail))), ...(over.expiresAt !== undefined ? { expiresAt: over.expiresAt } : { expiresAt: t.grantInput.limits.expires_at ? Number(BigInt(t.grantInput.limits.expires_at) / 1_000_000_000n) : expiresAt }) });
+  };
+  const message = (r: { status: number; json: any }) => [r.status, r.json.error?.code, r.json.error?.message as string];
 
-  it("TC-BE-049-01 each kind with the exact scope of its escrow is accepted", async () => {
+  it("TC-BE-049-00 the table of asset types is the registry D10: same names, same delivery methods", () => {
+    const escrow = CATALOG.filter((c: { delivery: string[] }) => c.delivery.some((d) => d.startsWith("escrow_") && ["escrow_nft", "escrow_ft", "escrow_mt"].includes(d)) && c.cls === "A");
+    expect(escrow.map((c: { assetType: string }) => c.assetType).sort()).toEqual(Object.keys(ESCROW_ASSET_TYPES).sort());
+    for (const c of escrow as Array<{ assetType: string; delivery: string[] }>) expect(ESCROW_ASSET_TYPES[c.assetType]!.delivery, c.assetType).toEqual(c.delivery);
+  });
+
+  it("TC-BE-049-01 the listing that the SDK builds for each of the ten kinds is accepted (nft, ticket, game item, coupon, license, ft, rwa, lst, Intents balance, pool share as ft and as mt)", async () => {
     const m = await start();
-    const valid = NOW_S + 50_000;
-    const cases: Array<[string, string]> = [
-      ["nft:art", scopeJson({ nft_contract: "art.near", token_id: "42" })],
-      ["nft:game-item", scopeJson({ nft_contract: "game.near", token_id: "sword-7" })],
-      ["nft:license", scopeJson({ nft_contract: "lic.near", token_id: "seat-1" })],
-      ["ft:usdc", scopeJson({ ft_contract: "usdc.token.near", amount: "1000000" })],
-      ["lst:stnear", scopeJson({ ft_contract: "meta-pool.near", amount: "340282366920938463463374607431768211455" })],
-      ["rwa:bond", scopeJson({ ft_contract: "rwa.token.near", amount: "5000" })],
-      ["mt:usdc", scopeJson({ mt_contract: "intents.near", token_id: "nep141:usdc.near", amount: "250" })],
-      ["mt:lp-share", scopeJson({ mt_contract: "amm.near", token_id: "pool-3", amount: "99" })],
-      ["nft:ticket", scopeJson({ nft_contract: "tix.near", token_id: "A12" }, { valid_until: valid })],
-      ["nft:coupon", scopeJson({ nft_contract: "cpn.near", token_id: "c1" }, { valid_until: valid })],
-    ];
-    for (const [type, detail] of cases) {
-      const r = await post(m, type, detail, { expiresAt: NOW_S + 3600 });
-      expect([type, r.status]).toEqual([type, 201]);
+    for (const key of Object.keys(inputs)) {
+      const r = await fromTemplate(m, key);
+      expect([key, r.status, r.json.error?.message]).toEqual([key, 201, undefined]);
     }
   });
 
-  it("TC-BE-049-02 the scope must be exactly what the escrow takes: missing, extra and badly formed fields are refused", async () => {
+  it("TC-BE-049-02 the scope must be exactly what the escrow takes: a key missing, of another shape, or badly formed is refused", async () => {
     const m = await start();
-    const bad: Array<[string, string, RegExp]> = [
-      ["nft:art", "not json", /JSON/],
-      ["nft:art", "[1]", /objek JSON/],
-      ["nft:art", JSON.stringify({ scope: { nft_contract: "art.near" } }), /tepat nft_contract, token_id/],
-      ["nft:art", JSON.stringify({ scope: { nft_contract: "art.near", token_id: "1", amount: "1" } }), /tepat nft_contract, token_id/],
-      ["nft:art", JSON.stringify({ scope: { nft_contract: "Bad Name", token_id: "1" } }), /account id/],
-      ["nft:art", JSON.stringify({ scope: { nft_contract: "art.near", token_id: "" } }), /token_id/],
-      ["nft:art", JSON.stringify({ scope: { nft_contract: "art.near", token_id: "1" }, price: 5 }), /tidak dikenal/],
-      ["ft:usdc", JSON.stringify({ scope: { ft_contract: "u.near", amount: "0" } }), /amount/],
-      ["ft:usdc", JSON.stringify({ scope: { ft_contract: "u.near", amount: 5 } }), /amount/],
-      ["ft:usdc", JSON.stringify({ scope: { ft_contract: "u.near", amount: "-1" } }), /amount/],
-      ["ft:usdc", JSON.stringify({ scope: { ft_contract: "u.near", amount: "340282366920938463463374607431768211456" } }), /u128/],
-      ["ft:usdc", JSON.stringify({ scope: { ft_contract: "u.near", amount: "1.5" } }), /amount/],
-      ["ft:usdc", JSON.stringify({ scope: { ft_contract: "u.near", amount: "5", nft_contract: "n.near" } }), /tepat ft_contract, amount/],
-      ["mt:usdc", JSON.stringify({ scope: { mt_contract: "m.near", token_id: "t" } }), /tepat mt_contract, token_id, amount/],
+    const cases: Array<[string, (d: Record<string, unknown>) => Record<string, unknown>, RegExp]> = [
+      ["nft", ({ token_id: _t, ...d }) => d, /tepat nft_contract, token_id/],
+      ["nft", (d) => ({ ...d, amount: "1" }), /tepat nft_contract, token_id/],
+      ["nft", (d) => ({ ...d, nft_contract: "Bad Name" }), /account id/],
+      ["nft", (d) => ({ ...d, token_id: "" }), /token_id/],
+      ["ft", (d) => ({ ...d, amount: "0" }), /amount/],
+      ["ft", (d) => ({ ...d, amount: 5 }), /amount/],
+      ["ft", (d) => ({ ...d, amount: "-1" }), /amount/],
+      ["ft", (d) => ({ ...d, amount: "1.5" }), /amount/],
+      ["ft", (d) => ({ ...d, amount: "340282366920938463463374607431768211456" }), /u128/],
+      ["ft", (d) => ({ ...d, nft_contract: "n.near" }), /tepat ft_contract, amount/],
+      ["intents-balance", ({ amount: _a, ...d }) => d, /tepat mt_contract, token_id, amount/],
+      ["intents-balance", (d) => ({ ...d, ft_contract: "f.near" }), /tepat mt_contract, token_id, amount/],
+      ["nft", (d) => ({ ...d, kind: "ft" }), /detail.kind/],
     ];
-    for (const [type, detail, pattern] of bad) {
-      const r = await post(m, type, detail);
-      expect([type, detail.slice(0, 40), r.status, r.json.error?.code]).toEqual([type, detail.slice(0, 40), 400, "scope_invalid"]);
-      expect(r.json.error.message, detail).toMatch(pattern);
+    for (const [key, patch, pattern] of cases) {
+      const r = await fromTemplate(m, key, patch);
+      expect([key, r.status, r.json.error?.code]).toEqual([key, 400, "scope_invalid"]);
+      expect(r.json.error.message, key).toMatch(pattern);
     }
+    // a detail that is not JSON, or not an object
+    for (const detail of ["not json", "[1]", "null"]) expect(message(await post(m, { assetType: "nft:nep171", detail }))[1]).toBe("scope_invalid");
   });
 
-  it("TC-BE-049-03 class A only, one lot, and the asset type must be in the registry with class A", async () => {
+  it("TC-BE-049-03 the display keys are not checked: whatever the SDK puts next to the scope does not matter", async () => {
     const m = await start();
-    const ok = scopeJson({ ft_contract: "u.near", amount: "5" });
-    expect(reason(await post(m, "ft:usdc", ok, { assetClass: "B" }))[1]).toBe("scope_invalid");
-    expect(reason(await post(m, "ft:usdc", ok, { quantity: 2 }))[2]).toContain("quantity harus 1");
-    expect(reason(await post(m, "ft:unknown", ok))[2]).toContain("belum terdaftar");
-    expect(reason(await post(m, "ft:rented", ok))[2]).toContain("kelas B");
+    const r = await fromTemplate(m, "ft", (d) => ({ ...d, decimals: 99, symbol: "ANY", display: "ten thousand", extra: { x: 1 } }));
+    expect(r.status).toBe(201);
   });
 
-  it("TC-BE-049-04 tickets and coupons carry a time of use; the listing may not outlive it", async () => {
+  it("TC-BE-049-04 class A only, one lot, and the type registered in D10 with class A", async () => {
     const m = await start();
-    const scope = { nft_contract: "tix.near", token_id: "A1" };
-    expect(reason(await post(m, "nft:ticket", scopeJson(scope)))[2]).toContain("valid_until");
-    expect(reason(await post(m, "nft:ticket", scopeJson(scope, { valid_until: NOW_S - 10 })))[2]).toContain("sudah lewat");
-    expect(reason(await post(m, "nft:coupon", scopeJson(scope, { valid_until: "soon" })))[2]).toContain("valid_until");
-    const late = await post(m, "nft:ticket", scopeJson(scope, { valid_until: NOW_S + 1000 }), { expiresAt: NOW_S + 2000 });
-    expect(reason(late)[2]).toContain("melewati valid_until");
-    // the listing that ends with the ticket is fine; an NFT that is not a ticket needs no valid_until, and a past one is refused when given
-    expect((await post(m, "nft:ticket", scopeJson(scope, { valid_until: NOW_S + 1000 }), { expiresAt: NOW_S + 1000 })).status).toBe(201);
-    expect((await post(m, "nft:art", scopeJson(scope))).status).toBe(201);
-    expect((await post(m, "nft:art", scopeJson(scope, { valid_until: NOW_S - 5 }))).status).toBe(400);
+    const detail = buildAssetTemplate(inputs.ft!, NOW_S).detail;
+    expect(message(await post(m, { assetType: "token:nep141", detail, assetClass: "B" }))[2]).toContain("harus A");
+    expect(message(await post(m, { assetType: "token:nep141", detail, quantity: 2 }))[2]).toContain("quantity harus 1");
+    m.db.prepare("DELETE FROM asset_classes WHERE asset_type = 'token:nep141'").run();
+    expect(message(await post(m, { assetType: "token:nep141", detail }))[2]).toContain("belum terdaftar");
+    m.db.prepare("INSERT INTO asset_classes (circle_id, asset_type, class, block_height, receipt_id, log_index) VALUES (?, 'token:nep141', 'B', 1, 'r', 0)").run(CIRCLE);
+    expect(message(await post(m, { assetType: "token:nep141", detail }))[2]).toContain("kelas B");
   });
 
-  it("TC-BE-049-05 a real-world-asset token must be whitelisted by the circle; with no whitelist every rwa: listing is refused", async () => {
+  it("TC-BE-049-05 a ticket ends with its event and a coupon with its validity; the listing may not outlive them", async () => {
+    const m = await start();
+    const eventEnds = (ends: number) => (d: Record<string, unknown>) => ({ ...d, event: { ...(d.event as object), ends_at: ends } });
+    expect(message(await fromTemplate(m, "ticket", eventEnds(NOW_S + 1000), { expiresAt: NOW_S + 2000 }))[2]).toContain("event.ends_at");
+    expect(message(await fromTemplate(m, "ticket", eventEnds(NOW_S - 5)))[2]).toContain("sudah lewat");
+    expect(message(await fromTemplate(m, "ticket", ({ event: _e, ...d }) => d))[2]).toContain("event.ends_at atau valid_until");
+    expect((await fromTemplate(m, "ticket", eventEnds(NOW_S + 1000), { expiresAt: NOW_S + 1000 })).status).toBe(201);
+    expect(message(await fromTemplate(m, "coupon", ({ valid_until: _v, ...d }) => d))[2]).toContain("valid_until");
+    expect(message(await fromTemplate(m, "coupon", (d) => ({ ...d, valid_until: "soon" })))[2]).toContain("valid_until");
+    expect(message(await fromTemplate(m, "coupon", (d) => ({ ...d, valid_until: NOW_S + 100 }), { expiresAt: NOW_S + 3000 }))[2]).toContain("tidak boleh melewati valid_until");
+    expect(message(await fromTemplate(m, "coupon", (d) => ({ ...d, valid_until: NOW_S - 1 })))[2]).toContain("sudah lewat");
+  });
+
+  it("TC-BE-049-06 a license keeps its terms hash and seats well formed", async () => {
+    const m = await start();
+    expect(message(await fromTemplate(m, "license", (d) => ({ ...d, terms_hash: "XYZ" })))[2]).toContain("terms_hash");
+    expect(message(await fromTemplate(m, "license", (d) => ({ ...d, seats: 0 })))[2]).toContain("seats");
+  });
+
+  it("TC-BE-049-07 a real-world-asset token must be whitelisted by the circle; with no whitelist every such listing is refused; other tokens need none", async () => {
     const m = await start({ rwaWhitelist: ["rwa.token.near"] });
-    expect((await post(m, "rwa:bond", scopeJson({ ft_contract: "rwa.token.near", amount: "10" }))).status).toBe(201);
-    const other = await post(m, "rwa:bond", scopeJson({ ft_contract: "scam.near", amount: "10" }));
-    expect([other.status, other.json.error.code, other.json.error.details.ftContract]).toEqual([400, "scope_invalid", "scam.near"]);
-    // an ordinary or liquid staking token needs no whitelist
-    expect((await post(m, "ft:usdc", scopeJson({ ft_contract: "scam.near", amount: "10" }))).status).toBe(201);
+    expect((await fromTemplate(m, "rwa")).status).toBe(201);
+    const scam = await fromTemplate(m, "rwa", (d) => ({ ...d, ft_contract: "scam.near" }));
+    expect([scam.status, scam.json.error.code, scam.json.error.details.ftContract]).toEqual([400, "scope_invalid", "scam.near"]);
+    expect((await fromTemplate(m, "ft", (d) => ({ ...d, ft_contract: "scam.near" }))).status).toBe(201);
+    expect((await fromTemplate(m, "lst", (d) => ({ ...d, ft_contract: "scam.near" }))).status).toBe(201);
     await market?.srv.close();
     const none = await start({});
-    expect((await post(none, "rwa:bond", scopeJson({ ft_contract: "rwa.token.near", amount: "10" }))).status).toBe(400);
+    expect((await fromTemplate(none, "rwa")).status).toBe(400);
   });
 
-  it("TC-BE-049-06 the USDT of the circle held at Intents is refused; another token held at Intents is accepted", async () => {
+  it("TC-BE-049-08 the USDT of the circle held at Intents is refused; another token held there is accepted", async () => {
     const m = await start({ intentsId: "intents.near", usdtTokenId: "usdt.token.near" });
-    const usdt = await post(m, "mt:intents-usdt", scopeJson({ mt_contract: "intents.near", token_id: "nep141:usdt.token.near", amount: "5" }));
+    const usdt = await fromTemplate(m, "intents-balance", (d) => ({ ...d, token_id: "nep141:usdt.token.near" }));
     expect([usdt.status, usdt.json.error.code, usdt.json.error.message]).toEqual([400, "scope_invalid", expect.stringContaining("bukan aset escrow")]);
-    expect((await post(m, "mt:usdc", scopeJson({ mt_contract: "intents.near", token_id: "nep141:usdc.near", amount: "5" }))).status).toBe(201);
-    expect((await post(m, "mt:usdc", scopeJson({ mt_contract: "other.near", token_id: "nep141:usdt.token.near", amount: "5" }))).status).toBe(201);
+    expect((await fromTemplate(m, "intents-balance")).status).toBe(201);
+    expect((await fromTemplate(m, "intents-balance", (d) => ({ ...d, mt_contract: "other.near", token_id: "nep141:usdt.token.near" }))).status).toBe(201);
   });
 
-  it("TC-BE-049-07 other asset types are not looked at: a listing without a typed prefix keeps working, a bad detail on it is not a scope error", async () => {
+  it("TC-BE-049-09 a pool share is told apart by its keys; a detail with both kinds of keys is refused", async () => {
     const m = await start();
-    expect((await post(m, "gpu-hours", "A100 80GB")).status).toBe(201);
-    expect((await post(m, "access:near-rpc", "not json at all")).status).toBe(201);
-    void acct;
+    expect((await fromTemplate(m, "pool-share-ft")).status).toBe(201);
+    expect((await fromTemplate(m, "pool-share-mt")).status).toBe(201);
+    const both = await fromTemplate(m, "pool-share-ft", (d) => ({ ...d, mt_contract: "m.near", token_id: "t" }));
+    expect(both.json.error.code).toBe("scope_invalid");
+    expect(message(await post(m, { assetType: "amm:lp-share", detail: JSON.stringify({ pool: "x" }) }))[2]).toContain("ft_contract atau mt_contract");
+  });
+
+  it("TC-BE-049-10 other asset types are not looked at, and a typed name from the old convention (nft:*) is an ordinary type again", async () => {
+    const m = await start();
+    expect((await post(m, { assetType: "compute:gpu-h100", detail: "A100 80GB", assetClass: "D" })).status).toBe(201);
+    expect((await post(m, { assetType: "nft:near.example", detail: "free text" })).status).toBe(201);
   });
 });

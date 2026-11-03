@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { CIRCLE, listing, startMarket, type Market } from "./helpers.js";
+import { listing, startMarket, type Market } from "./helpers.js";
 
 describe("BE-042 asset_type bebas dan kelas A/B/C/D", () => {
   let market: Market | undefined;
@@ -15,11 +15,8 @@ describe("BE-042 asset_type bebas dan kelas A/B/C/D", () => {
     const m = market;
     const { signListing } = await import("@x207/core");
     const cases: Array<[string, string]> = [["compute:gpu-h100", "D"], ["dataset.weather-2026", "C"], ["nft:near.example", "A"], ["access:github-seat", "B"]];
-    // since BE-049 an `nft:` listing names its escrow: the type is registered in D10 and `detail` carries the scope
-    m.db.prepare("INSERT INTO asset_classes (circle_id, asset_type, class, block_height, receipt_id, log_index) VALUES (?, 'nft:near.example', 'A', 1, 'r', 0)").run(CIRCLE);
     for (const [type, cls] of cases) {
-      const detail = type.startsWith("nft:") ? JSON.stringify({ scope: { nft_contract: "example.near", token_id: "1" } }) : undefined;
-      const l = listing("andi", { offer: { ...typed(type, cls), quantity: 1 }, nonce: `n-${cls}`, ...(detail ? { detail } : {}) });
+      const l = listing("andi", { offer: typed(type, cls), nonce: `n-${cls}` });
       const res = await m.post("/listings", { listing: l, signature: signListing(l, m.keys.andi!.secretKey) });
       expect(res.status, `${type}/${cls}`).toBe(201);
       expect(res.json.offer).toMatchObject({ assetType: type, assetClass: cls });
