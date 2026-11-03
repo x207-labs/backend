@@ -20,7 +20,7 @@ Checked and sound: no HTML sink in any page (`dangerouslySetInnerHTML`, `innerHT
 
 ## F1 (High): the voucher goes where and for what the API says
 `BuyForm.buy()` reads `api.listing(hash)` and builds the voucher from `listing.account` (payee) and `listing.offer.value` (amount), then signs it with the key of the buyer and sends it to the backend, which holds it and releases it to the payee when the purchase is confirmed. The listing comes with the signature of the seller, but nothing verifies it (the existing test even uses `signature: 'ed25519:x'`). A hostile API (or a backend that is hostile or hacked) makes the buyer pay any account any amount. The page does not show the payee or the price before the button signs. Same class as FE-1. Test `H1`: the voucher is signed to the attacker for 999 credit with a listing whose signature is not valid.
-Fix: before signing, `verifyListingSignature(listing, signature, keyOfSeller)` with the key of the seller read from the contract (`get_member`), and compare `listingHash(listing)` to the hash the user typed; show payee, price and the `license_doc` and ask for a click on that text (the line of the button can carry it: "Beli 5 credit dari seller.x207-circle.near"). The server-side check of the price already exists in the backend (it takes it from the stored listing), but the voucher is signed before.
+Fix: before signing, `verifyListingSignature(listing, signature, keyOfSeller)` with the key of the seller read from the contract (`get_member`), and compare `listingHash(listing)` to the hash the user typed; show payee, price and the `license_doc` and ask for a click on that text (the line of the button can carry it: "Buy 5 credit from seller.x207-circle.near"). The server-side check of the price already exists in the backend (it takes it from the stored listing), but the voucher is signed before.
 
 ## F2 (High): the key of the file goes to the key the API names
 `Serve.releaseKey()` takes `buyer.pubkeyVoucher` from `api.member(view.buyer)` and seals the content key to it (`createRelease`). A hostile API gives its own key: the sealed key opens for the attacker, who can get the ciphertext (the purchase view names its source), and not for the real buyer (who sees `sealed_key_unopenable`, which is not provable). The seller's content is leaked and the sale fails. Test `H2` (the consequence, with the SDK): a key sealed to the attacker's key cannot be opened by the buyer, and can by the attacker.
@@ -42,7 +42,7 @@ Fix: recompute the hash from the document in the view and refuse on a mismatch (
 `fetchCiphertext` runs in the browser of the buyer with `redirect: "follow"`. The seller chooses the address, so the seller sees the IP and the time of the buyer (a tracking pixel), and a redirect chain is followed. CORS stops the read of an internal address, not the request. Fix: show the host to the buyer before the download starts; for large files offer the download through a link opened by the user.
 
 ## F7 (Low): the check before the next day asks the broker
-`checkAccessBeforeNextDay` gets `paidUntil` and `status` from `api.rent` (the broker). The broker is the party that can cut the access early (ADR-47 threat: "pemberi mencabut lebih awal"); its answer that the access is alive is not evidence. Fix: the check also asks the provider (a call that needs the access: an authenticated read, an SSH banner) when the adapter allows it, or the lessee signs for one day at a time only after the delivery of the previous one (as `BuyerJob` does for chunks).
+`checkAccessBeforeNextDay` gets `paidUntil` and `status` from `api.rent` (the broker). The broker is the party that can cut the access early (ADR-47 threat: "the grantor revokes early"); its answer that the access is alive is not evidence. Fix: the check also asks the provider (a call that needs the access: an authenticated read, an SSH banner) when the adapter allows it, or the lessee signs for one day at a time only after the delivery of the previous one (as `BuyerJob` does for chunks).
 
 ## F8 (Low): key file
 `loadIdentity` (`identity.ts:51`) reads `<account>.agent.json` without checking that it is `0600` and owned by the user; `saveIdentity` makes the directory `0700` only when it creates it. A world-readable key file is used without a warning. The secret is in clear text in the file (documented). Fix: refuse a file with group or other bits (as `ssh` does), and `chmod` the directory.
@@ -86,7 +86,7 @@ describe('review batch 3', () => {
       return undefined
     }, false, createMockWallet(BUYER, BUYER))
     const section = await screen.findByRole('region', { name: 'Pembelian lisensi' })
-    await user.type(screen.getAllByLabelText(/Kunci voucher/)[0]!, KEY)
+    await user.type(screen.getAllByLabelText(/Voucher key/)[0]!, KEY)
     await user.type(within(section).getByLabelText('Hash listing lisensi'), 'a'.repeat(64))
     await user.click(within(section).getByRole('button', { name: /Beli/ }))
     await waitFor(() => expect(requests().some((r) => r.method === 'POST' && r.path.endsWith('/purchases'))).toBe(true))

@@ -1,100 +1,100 @@
-# Pemetaan kolom D9 ke field D1/D2/D4/D5/D7
+# Mapping of D9 columns to D1/D2/D4/D5/D7 fields
 
-Setiap kolom read model D9 (migrasi `src/db/migrations.ts`) terlacak ke field penyimpanan data di Model Data (D1 registry anggota, D2 ledger kewajiban, D3 registry voucher, D4 log kliring, D5 catatan settlement, D6 pool stake, D7 parameter) atau ditandai `teknis` (kunci, penunjuk blok, bukti receipt). Spec: Spec Skema D9 bagian 3. Diperiksa oleh `TC-BE-004-09`.
+Every column of the D9 read model (migration `src/db/migrations.ts`) is traced to a storage field in the Data Model (D1 member registry, D2 obligation ledger, D3 voucher registry, D4 clearing log, D5 settlement record, D6 stake pool, D7 parameters) or marked `teknis` (technical: keys, block pointers, receipt proofs). Spec: D9 Schema Spec section 3. Checked by `TC-BE-004-09`.
 
-Tabel infrastruktur `events_raw`, `indexer_cursor`, dan `settlement_jobs` bukan proyeksi D1–D7 dan tidak dipetakan di sini.
+The infrastructure tables `events_raw`, `indexer_cursor`, and `settlement_jobs` are not projections of D1–D7 and are not mapped here.
 
-| Tabel | Kolom | Field D | Catatan |
+| Table | Column | D field | Notes |
 | --- | --- | --- | --- |
-| circles | circle_id | teknis | Kunci lingkaran di path API |
-| circles | contract_id | teknis | Akun kontrak `x207-circle` |
+| circles | circle_id | teknis | Circle key in the API path |
+| circles | contract_id | teknis | `x207-circle` contract account |
 | circles | network | teknis | `x207:<circle_id>` |
-| members | circle_id | teknis | Kunci multi-lingkaran |
+| members | circle_id | teknis | Multi-circle key |
 | members | account_id | D1 `account_id` | |
 | members | pubkey_voucher | D1 `pubkey_voucher` | |
-| members | terms_hash | D1 `terms_hash` | Hash syarat yang disetujui saat `join` |
-| members | stake | D1 `stake` | Ditimpa dari event |
-| members | credit_limit | D1 `limit` | Dinamai `credit_limit` karena `LIMIT` kata kunci SQL |
-| members | outstanding_debt | D2 `outstanding_debt[account]` | Dari `epoch_committed`, `member_defaulted` |
+| members | terms_hash | D1 `terms_hash` | Hash of the terms accepted at `join` |
+| members | stake | D1 `stake` | Overwritten from events |
+| members | credit_limit | D1 `limit` | Named `credit_limit` because `LIMIT` is an SQL keyword |
+| members | outstanding_debt | D2 `outstanding_debt[account]` | From `epoch_committed`, `member_defaulted` |
 | members | status | D1 `status` | `pending`/`active`/`suspended`/`exited` (ADR-26) |
 | members | admitted | D1 `admitted` | `MemberView.admitted` (admission = dao) |
 | members | settled_history | D1 `settled_history` | |
 | members | joined_at_ns | D1 `joined_at` | |
 | members | exit_requested_epoch | D1 `exit_requested_epoch` | ADR-29 |
-| members | reactivate_epoch | D1 `status` | ADR-30 (P1): epoch status kembali `active` |
-| members | updated_block | teknis | Blok pembaruan terakhir |
-| member_limits | id | teknis | Urutan riwayat |
+| members | reactivate_epoch | D1 `status` | ADR-30 (P1): epoch at which status returns to `active` |
+| members | updated_block | teknis | Block of the last update |
+| member_limits | id | teknis | History order |
 | member_limits | circle_id | teknis | |
 | member_limits | account_id | D1 `account_id` | |
-| member_limits | epoch | D1 `limit` | Epoch perubahan limit; NULL di luar finalisasi |
+| member_limits | epoch | D1 `limit` | Epoch of the limit change; NULL outside finalization |
 | member_limits | old_limit | D1 `limit` | |
 | member_limits | new_limit | D1 `limit` | |
-| member_limits | status | D1 `status` | Status anggota saat perubahan |
-| member_limits | reason | D1 `limit` | Penyebab: `stake`/`finalize`/`default` |
+| member_limits | status | D1 `status` | Member status at the time of the change |
+| member_limits | reason | D1 `limit` | Cause: `stake`/`finalize`/`default` |
 | member_limits | block_height | teknis | |
 | member_limits | receipt_id | teknis | |
 | member_limits | log_index | teknis | |
 | epochs | circle_id | teknis | |
 | epochs | epoch | D4 `epoch` | |
 | epochs | phase | D4 `epoch` | `open`/`clearing`/`payment_window`/`finalized` |
-| epochs | cutoff_at_ns | D7 `epoch_length` | Batas epoch dari `next_cutoff_at` |
-| epochs | closed_at_ns | D4 `epoch` | Waktu `close_epoch` |
+| epochs | cutoff_at_ns | D7 `epoch_length` | Epoch cutoff from `next_cutoff_at` |
+| epochs | closed_at_ns | D4 `epoch` | Time of `close_epoch` |
 | epochs | proposal_deadline_ns | D7 `proposal_window` | `epoch_cutoff.proposal_deadline` (K-41) |
-| epochs | committed_at_ns | D4 `epoch` | Waktu `commit_epoch` |
+| epochs | committed_at_ns | D4 `epoch` | Time of `commit_epoch` |
 | epochs | payment_deadline_ns | D7 `payment_window` | commit + `payment_window` |
-| epochs | finalized_at_ns | D5 `status` | Waktu `epoch_finalized` |
-| epochs | edge_count | D2 `obligation` | Jumlah edge saat cutoff |
-| epochs | total_obligation | D2 `obligation` | Σ kewajiban saat cutoff |
-| epochs | cleared_total | D4 nilai terhapus | |
+| epochs | finalized_at_ns | D5 `status` | Time of `epoch_finalized` |
+| epochs | edge_count | D2 `obligation` | Number of edges at cutoff |
+| epochs | total_obligation | D2 `obligation` | Σ obligations at cutoff |
+| epochs | cleared_total | D4 cleared value | |
 | obligations | circle_id | teknis | |
 | obligations | epoch | D2 `obligation` | |
-| obligations | debtor | D2 `obligation` | Kunci `(debtor, creditor)` |
+| obligations | debtor | D2 `obligation` | Key `(debtor, creditor)` |
 | obligations | creditor | D2 `obligation` | |
-| obligations | seq | D3 `seq` | Voucher terdaftar terakhir |
-| obligations | cumulative_amount | D2 `obligation` | Kewajiban sebelum kliring (ADR-17) |
-| obligations | cleared | D4 nilai terhapus | NULL sampai `clearing_applied` |
+| obligations | seq | D3 `seq` | Last registered voucher |
+| obligations | cumulative_amount | D2 `obligation` | Obligation before clearing (ADR-17) |
+| obligations | cleared | D4 cleared value | NULL until `clearing_applied` |
 | obligations | registration_mode | D3 `seq` | `cumulative`/`per_request` |
 | obligations | registered_block | teknis | |
 | obligations | receipt_id | teknis | |
 | clearing_log | circle_id | teknis | |
 | clearing_log | epoch | D4 `epoch` | |
 | clearing_log | solver | D4 `solver` | |
-| clearing_log | cleared_total | D4 nilai terhapus | |
+| clearing_log | cleared_total | D4 cleared value | |
 | clearing_log | fee | D7 `fees` | `clearing_fee + solver_fee` |
-| clearing_log | edge_count | D4 proposal `edges` | Edge dengan `cleared > 0` |
+| clearing_log | edge_count | D4 proposal `edges` | Edges with `cleared > 0` |
 | clearing_log | block_height | teknis | |
-| clearing_log | applied_at_ns | D4 `epoch` | Waktu penerapan proposal |
-| clearing_log | tx_hash | teknis | Hash tx dari indexer |
+| clearing_log | applied_at_ns | D4 `epoch` | Time the proposal was applied |
+| clearing_log | tx_hash | teknis | Tx hash from the indexer |
 | clearing_log | receipt_id | teknis | |
 | settlements | circle_id | teknis | |
 | settlements | epoch | D5 `net_position[epoch]` | |
 | settlements | account_id | D5 `net_position[epoch][account]` | |
 | settlements | role | D5 `net_position` | `debtor`/`creditor`/`none` |
-| settlements | net | D5 `net_position` | Bertanda: negatif = net debtor |
+| settlements | net | D5 `net_position` | Signed: negative = net debtor |
 | settlements | amount | D5 `net_position` | `|net|` |
-| settlements | cleared | D4 nilai terhapus | Σ cleared pada edge masuk anggota |
+| settlements | cleared | D4 cleared value | Σ cleared on the member's incoming edges |
 | settlements | status | D5 `status` | `due`/`paid`/`defaulted`/`claimable`/`claimed` (ADR-26) |
-| settlements | due_at_ns | D7 `payment_window` | Batas bayar |
-| settlements | paid_amount | D5 `status` | Jumlah dibayar (`residual_paid`) |
+| settlements | due_at_ns | D7 `payment_window` | Payment deadline |
+| settlements | paid_amount | D5 `status` | Amount paid (`residual_paid`) |
 | settlements | stake_slashed | D6 stake | `member_defaulted.from_stake` |
-| settlements | reserve_used | D6 cadangan | `member_defaulted.from_reserve` |
+| settlements | reserve_used | D6 reserve | `member_defaulted.from_reserve` |
 | settlements | shortfall | D5 `status` | `member_defaulted.shortfall` |
-| settlements | haircut | D5 `status` | 0 selama limit ≤ stake |
+| settlements | haircut | D5 `status` | 0 while limit ≤ stake |
 | settlements | destination | D5 `status` | `ClaimDestination` `near`/`intents` |
-| settlements | tx_hash | teknis | Hash tx dari indexer (ADR-32 K-15) |
+| settlements | tx_hash | teknis | Tx hash from the indexer (ADR-32 K-15) |
 | settlements | updated_block | D5 `updated_at_block` | |
-| params | id | teknis | Urutan riwayat |
+| params | id | teknis | History order |
 | params | circle_id | teknis | |
-| params | field | D7 nama field | Termasuk `proposal_window`, `limit_cap`, `limit_decay` |
-| params | old_value | D7 nilai lama | NULL untuk baris awal |
-| params | new_value | D7 nilai baru | JSON |
+| params | field | D7 field name | Including `proposal_window`, `limit_cap`, `limit_decay` |
+| params | old_value | D7 old value | NULL for the initial row |
+| params | new_value | D7 new value | JSON |
 | params | effective_epoch | D7 `effective_epoch` | |
 | params | block_height | teknis | |
-| params | receipt_id | teknis | `init:<block>` untuk baris awal |
+| params | receipt_id | teknis | `init:<block>` for the initial row |
 | params | log_index | teknis | |
 
-## escrows (migrasi 4 dan 6, CT-075 dan CT-090)
-Satu baris per escrow kelas A, kunci `(circle_id, grant_id)`. `kind` `nft` mengisi `nft_contract` dan `token_id`; `kind` `ft` (event `ft_escrow_held`, interface 0.0.10) mengisi `ft_contract` dan `amount`; `kind` `mt` (event `mt_escrow_held`, CT-092, migrasi 7) mengisi `mt_contract`, `token_id` dan `amount`. `amount` berupa teks desimal dalam satuan token itu (bukan credit) karena token 18 desimal melewati 2^63; pemeriksaan batas 2^63 di ingest tidak berlaku untuk kedua event ini, handler memeriksa 1..2^128-1. `state` berpindah lewat `grant_activated` (delivered), `grant_revoked` (cancelled) dan `escrow_failed` (held atau stuck), sama untuk kedua jenis. Read API: `escrow` pada `GET …/grants` dan `…/grants/{id}` berisi `{kind:"nft", nftContract, tokenId, state}`, `{kind:"ft", ftContract, amount, state}` atau `{kind:"mt", mtContract, tokenId, amount, state}`.
+## escrows (migrations 4 and 6, CT-075 and CT-090)
+One row per class A escrow, key `(circle_id, grant_id)`. `kind` `nft` fills `nft_contract` and `token_id`; `kind` `ft` (event `ft_escrow_held`, interface 0.0.10) fills `ft_contract` and `amount`; `kind` `mt` (event `mt_escrow_held`, CT-092, migration 7) fills `mt_contract`, `token_id` and `amount`. `amount` is decimal text in the units of that token (not credit) because 18-decimal tokens pass 2^63; the 2^63 bound check at ingest does not apply to these two events, and the handler checks 1..2^128-1. `state` moves through `grant_activated` (delivered), `grant_revoked` (cancelled) and `escrow_failed` (held or stuck), the same for all kinds. Read API: `escrow` on `GET …/grants` and `…/grants/{id}` holds `{kind:"nft", nftContract, tokenId, state}`, `{kind:"ft", ftContract, amount, state}` or `{kind:"mt", mtContract, tokenId, amount, state}`.
 
-## intent_book dan intent_withdrawals (migrasi 5, BE-045)
-`intent_book`: hash intent per circle dengan `status` `posted` atau `removed`. `intent_withdrawals`: satu baris per `intents_withdrawn`.
+## intent_book and intent_withdrawals (migration 5, BE-045)
+`intent_book`: intent hash per circle with `status` `posted` or `removed`. `intent_withdrawals`: one row per `intents_withdrawn`.

@@ -1,14 +1,14 @@
 # x207 backend
 
-Modul M5 (Settlement Worker) dan M6 (Indexer) x207, fitur F1–F7, proses P8, basis data baca D9. Bagian dari repo payung [`x207-labs/x207`](https://github.com/x207-labs/x207). M5 inti untuk F4 (F1 opsional); M6 inti untuk F1–F7.
+Modules M5 (Settlement Worker) and M6 (Indexer) of x207, features F1–F7, process P8, read database D9. Part of the umbrella repo [`x207-labs/x207`](https://github.com/x207-labs/x207). M5 is core for F4 (F1 optional); M6 is core for F1–F7.
 
-| Folder | Isi |
+| Folder | Contents |
 | --- | --- |
-| `src/indexer/` | Indexer event NEP-297 kontrak `x207-circle` |
+| `src/indexer/` | NEP-297 event indexer for the `x207-circle` contract |
 | `src/api/` | Read API |
-| `src/report207/` | Laporan HTTP `207 Multi-Status` |
-| `src/settlement/` | Worker residual: `deposit`, `withdraw`, `claims` |
-| `src/db/` | Skema dan migrasi D9 (SQLite) |
+| `src/report207/` | HTTP `207 Multi-Status` report |
+| `src/settlement/` | Residual worker: `deposit`, `withdraw`, `claims` |
+| `src/db/` | D9 schema and migrations (SQLite) |
 
 ```bash
 npm install
@@ -22,7 +22,7 @@ npm run build
 npm test
 ```
 
-Node ≥22.22.2. Konfigurasi lewat `.env` (daftar nama di `.env.example`); `.env` tidak pernah di-commit.
+Node ≥22.22.2. Configuration goes through `.env` (variable names listed in `.env.example`); `.env` is never committed.
 
 ## CI
 `@x207/core` comes from `sdk` and is not published, so a lone checkout cannot run `npm ci`. CI runs at the umbrella
@@ -33,14 +33,14 @@ private repository of the organization). `intents-sdk` asks for `typescript@^5` 
 it with `typescript@7.0.2` and `npm ci` at the root passes. The old `package-lock.json` of this folder is only for
 local use outside the workspace.
 
-## Menjalankan
-Isi `.env` (`NEAR_RPC_PRIMARY_URL`, `X207_CONTRACT_ID`, `X207_START_BLOCK`, dan `X207_SETTLEMENT_MODE`; default `dry`), lalu:
+## Running
+Fill in `.env` (`NEAR_RPC_PRIMARY_URL`, `X207_CONTRACT_ID`, `X207_START_BLOCK`, and `X207_SETTLEMENT_MODE`; default `dry`), then:
 
 ```bash
 npm run build && npm start
 ```
 
-`src/main.ts` menjalankan indexer RPC, read API, endpoint settlement (deposit, withdraw, job) dan pemantau job dalam satu proses. Worker tidak memegang kunci.
+`src/main.ts` runs the RPC indexer, the read API, the settlement endpoints (deposit, withdraw, job) and the job monitor in one process. The worker holds no keys.
 
 ## Limits against abuse (BE-066)
 All limits live in the memory of one process. **With two instances behind a balancer each one counts for itself**, so the real ceiling is the number of instances times the value; a shared store (Redis) is not part of this version. Set them in `.env`; a value of 0 turns a rate limit off.

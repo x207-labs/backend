@@ -54,12 +54,18 @@ export function stringLiterals(src) {
   return out.map((o) => ({ line: line(o.at), text: o.text }));
 }
 
-export function walk(dir, files = []) {
+/** BE-076: the lines of a Markdown file as `{line, text}`; the info string of a code fence (```ini) is not prose. */
+export function markdownLines(src) {
+  return src.split("\n").map((text, i) => ({ line: i + 1, text: /^\s*```/.test(text) ? "" : text }));
+}
+
+/** Folders and files with `.ts` (or, with `ext`, another ending) under `dir`; `node_modules` and `dist` are skipped. */
+export function walk(dir, files = [], ext = ".ts") {
   for (const n of readdirSync(dir)) {
     if (n === "node_modules" || n === "dist") continue;
     const p = join(dir, n);
-    if (statSync(p).isDirectory()) walk(p, files);
-    else if (p.endsWith(".ts")) files.push(p);
+    if (statSync(p).isDirectory()) walk(p, files, ext);
+    else if (p.endsWith(ext)) files.push(p);
   }
   return files;
 }
@@ -68,7 +74,7 @@ if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
   let n = 0;
   const target = process.argv[2];
   for (const f of statSync(target).isDirectory() ? walk(target) : [target]) {
-    for (const s of stringLiterals(readFileSync(f, "utf8"))) if (WORDS.test(s.text)) { n++; console.log(`${f}:${s.line}\t${s.text.replace(/\n/g, "\\n").slice(0, 220)}`); }
+    for (const s of f.endsWith(".md") ? markdownLines(readFileSync(f, "utf8")) : stringLiterals(readFileSync(f, "utf8"))) if (WORDS.test(s.text)) { n++; console.log(`${f}:${s.line}\t${s.text.replace(/\n/g, "\\n").slice(0, 220)}`); }
   }
   console.error(n, "literals");
 }

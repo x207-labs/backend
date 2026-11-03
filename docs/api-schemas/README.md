@@ -1,12 +1,12 @@
-# Skema read API dan settlement worker
+# Read API and settlement worker schemas
 
-`index.json` memetakan tiap endpoint Spec API Backend 2.1 dan 2.2 ke skema JSON (draft-07) di folder ini dan ke contoh di `examples/`. Test `test/api/schemas.test.ts` (TC-BE-014-15) memvalidasi semua contoh dan respons live.
+`index.json` maps each endpoint of Spec API Backend 2.1 and 2.2 to a JSON schema (draft-07) in this folder and to an example in `examples/`. The test `test/api/schemas.test.ts` (TC-BE-014-15) validates all examples and live responses.
 
-Contoh `examples/` disalin dari Spec API Backend bagian 3–6. Penyimpangan dari contoh spec:
+The `examples/` files are copied from Spec API Backend sections 3–6. Deviations from the spec examples:
 
-- `member.json` dan `members-list.json` memuat `exitRequestedEpoch` (Tambahan ADR-29..31 di spec).
-- Spec tidak memberi contoh untuk `epochs-list`, `member-limits`, dan `params-history`. Bentuk item diturunkan dari kolom D9 (Spec Skema D9 3.4, 6.1, 6.7) dalam camelCase; `epochs-list` wajib memuat `epoch`, `phase`, `proposalDeadline` (K-41).
-- `proposals`, `intents`, `bundles` belum punya skema: format menunggu BE-023 dan SD-047.
-- Contoh intent/signedIntent bersifat sintetis; bentuk aslinya ditentukan SDK 1Click 0.1.26.
+- `member.json` and `members-list.json` include `exitRequestedEpoch` (Addendum ADR-29..31 in the spec).
+- The spec gives no examples for `epochs-list`, `member-limits`, and `params-history`. The item shape is derived from the D9 columns (Spec Skema D9 3.4, 6.1, 6.7) in camelCase; `epochs-list` must include `epoch`, `phase`, `proposalDeadline` (K-41).
+- `proposals`, `intents`, `bundles` do not have schemas yet: the format awaits BE-023 and SD-047.
+- The intent/signedIntent examples are synthetic; the real shape is determined by the 1Click SDK 0.1.26.
 
-Fase `cutoff` dan `commit` pada `phase` epoch diturunkan dari waktu saat dibaca (`cutoff_at`, `proposal_deadline`), sedangkan D9 hanya menyimpan empat fase.
+The `cutoff` and `commit` phases of the epoch `phase` are derived from the time of reading (`cutoff_at`, `proposal_deadline`), while D9 stores only four phases.

@@ -1,82 +1,82 @@
-# Prosedur uji jalur residual (BE-026)
+# Residual path test procedure (BE-026)
 
-`intents.testnet` tidak punya kode (Spike Test Results S3.1), jadi jalur residual tidak bisa diuji di testnet. Urutannya: tanpa jaringan, tanpa dana, lalu satu transaksi nominal kecil di mainnet setelah konfirmasi manusia. Dokumen ini hanya prosedur; tidak ada langkah yang dijalankan otomatis oleh test suite.
+`intents.testnet` has no code (Spike Test Results S3.1), so the residual path cannot be tested on testnet. The order is: no network, no funds, then one small nominal transaction on mainnet after human confirmation. This document is a procedure only; the test suite runs none of these steps automatically.
 
-Mode worker (`X207_SETTLEMENT_MODE`, lihat `src/settlement/config.ts`):
+Worker modes (`X207_SETTLEMENT_MODE`, see `src/settlement/config.ts`):
 
-| Mode | Jaringan | Dana | Dipakai untuk |
+| Mode | Network | Funds | Used for |
 | --- | --- | --- | --- |
-| `mock` | tidak | tidak | Tahap 1 |
-| `dry` (default) | 1Click nyata, `dry: true` dipaksa | tidak | Tahap 2 dan 3 |
-| `live` | 1Click nyata, `dry: false` diizinkan | ya | Tahap 4 saja |
+| `mock` | no | no | Stage 1 |
+| `dry` (default) | real 1Click, `dry: true` forced | no | Stages 2 and 3 |
+| `live` | real 1Click, `dry: false` allowed | yes | Stage 4 only |
 
-## Tahap 1 — mock (`FX-1C`)
+## Stage 1 — mock (`FX-1C`)
 
 ```bash
 npm test
 ```
 
-Lulus berarti pemetaan quote, error, dan ambang pencairan benar terhadap rekaman Ronde 3 (B1.x, B2.x). Syarat masuk tahap 2.
+A pass means the quote mapping, errors, and withdrawal threshold are correct against the Round 3 recordings (B1.x, B2.x). Prerequisite for stage 2.
 
-## Tahap 2 — `simulate_intents` (view, tanpa dana)
+## Stage 2 — `simulate_intents` (view, no funds)
 
-`simulate_intents` di `intents.near` adalah view; dipanggil lewat `simulateIntents(view, signed)` di `src/settlement/intents.ts` dengan `rpcViewFunction(NEAR_RPC_PRIMARY_URL)`.
+`simulate_intents` on `intents.near` is a view; it is called through `simulateIntents(view, signed)` in `src/settlement/intents.ts` with `rpcViewFunction(NEAR_RPC_PRIMARY_URL)`.
 
-1. Siapkan `signed`: daftar intent bertanda tangan. Untuk probe awal boleh `[]` (hasil S2.7: `intents_executed: []`, membuktikan view terjangkau).
-2. Untuk residual, intent `ft_withdraw` / transfer dibuat oleh `OneClickClient.generateIntent(...)` lalu ditandatangani kunci pemilik di wallet; worker tidak memegang kunci.
-3. Lulus bila `ok: true`. `ok: false` dengan `code: "simulation_failed"` berisi pesan error view; perbaiki intent, jangan lanjut.
+1. Prepare `signed`: a list of signed intents. For an initial probe it may be `[]` (result of S2.7: `intents_executed: []`, proving the view is reachable).
+2. For a residual, the `ft_withdraw` / transfer intent is built by `OneClickClient.generateIntent(...)` and then signed by the owner's key in a wallet; the worker does not hold the key.
+3. Pass when `ok: true`. `ok: false` with `code: "simulation_failed"` carries the view's error message; fix the intent, do not continue.
 
-## Tahap 3 — quote `dry: true`
+## Stage 3 — quote `dry: true`
 
-Env: `X207_SETTLEMENT_MODE=dry`, `ONECLICK_BASE_URL`, `ONECLICK_JWT` (opsional; tanpa JWT quote kena +25 bps, tetapi `dry` tetap 201).
+Env: `X207_SETTLEMENT_MODE=dry`, `ONECLICK_BASE_URL`, `ONECLICK_JWT` (optional; without a JWT the quote gets +25 bps, but `dry` still returns 201).
 
-Parameter yang sudah teruji di Ronde 3:
+Parameters already tested in Round 3:
 
-| Arah | `depositType` | `recipientType` | Hasil yang diharapkan |
+| Direction | `depositType` | `recipientType` | Expected result |
 | --- | --- | --- | --- |
-| Masuk (stake / `due`) | asal apa pun yang didukung | `INTENTS` | 201 + `depositAddress`; tujuan `nep141:usdt.tether-token.near` |
-| Keluar kreditor | `INTENTS` | `DESTINATION_CHAIN` | 201; `withdrawFee` `"2400"` ke USDC Base, `"900000"` ke USDT Tron |
+| Inbound (stake / `due`) | any supported origin | `INTENTS` | 201 + `depositAddress`; destination `nep141:usdt.tether-token.near` |
+| Outbound creditor | `INTENTS` | `DESTINATION_CHAIN` | 201; `withdrawFee` `"2400"` to USDC Base, `"900000"` to USDT Tron |
 
-Aturan wajib:
+Mandatory rules:
 
-- `refundTo` harus akun yang ada. Akun yang tidak ada menyebabkan internal error 1Click (R1.5). Cek dengan `view_account` dulu.
-- Header `User-Agent` wajib; tanpa itu 1Click menjawab `error code: 1010`.
-- Pencairan ke Base di bawah 0,25 USD (`"250000"`) ditolak worker (`below_withdraw_threshold`); meneruskan `amountOut` dari quote `dry` ke `evaluateWithdrawThreshold` menghasilkan estimasi kerugian yang sama dengan angka 1Click.
-- Tidak ada `generate-intent` / `submit-intent` pada tahap ini.
+- `refundTo` must be an existing account. A nonexistent account causes a 1Click internal error (R1.5). Check with `view_account` first.
+- The `User-Agent` header is required; without it 1Click answers `error code: 1010`.
+- A withdrawal to Base below 0.25 USD (`"250000"`) is rejected by the worker (`below_withdraw_threshold`); passing the `amountOut` from the `dry` quote to `evaluateWithdrawThreshold` yields the same estimated loss as the 1Click figure.
+- No `generate-intent` / `submit-intent` at this stage.
 
-Catat `amountIn`, `amountOut`, `withdrawFee`, `timeEstimate` tiap quote. Selisih besar dari tabel B2.1–B2.5 dicatat di Spike Test Results sebelum lanjut.
+Record `amountIn`, `amountOut`, `withdrawFee`, `timeEstimate` for each quote. A large difference from the B2.1–B2.5 table is noted in Spike Test Results before continuing.
 
-## Tahap 4 — satu residual nominal kecil di mainnet (konfirmasi manusia)
+## Stage 4 — one small nominal residual on mainnet (human confirmation)
 
-Hanya dijalankan setelah tahap 1–3 lulus dan pemilik menyetujui secara eksplisit, di chat, untuk transaksi ini (nominal, akun, arah). Persetujuan satu kali tidak berlaku untuk transaksi berikutnya.
+Run only after stages 1–3 pass and the owner explicitly approves, in chat, for this transaction (amount, account, direction). A one-time approval does not apply to later transactions.
 
-Batas keamanan:
+Safety limits:
 
-- Nominal: jalur keluar ke Base pakai di atas ambang (mis. 1 USDT, kerugian ~0,38%); jalur masuk pakai nominal terkecil yang dapat dilihat (mis. 1 USDT).
-- Akun: akun uji milik pemilik, bukan akun anggota lingkaran produksi.
-- Worker dijalankan dengan `X207_SETTLEMENT_MODE=live` hanya selama transaksi, lalu dikembalikan ke `dry`.
-- Penandatanganan oleh pemilik di wallet. Kunci tidak disimpan di `.env` worker.
+- Amount: for the outbound path to Base use an amount above the threshold (e.g. 1 USDT, loss ~0.38%); for the inbound path use the smallest observable amount (e.g. 1 USDT).
+- Account: a test account owned by the owner, not an account of a production circle member.
+- The worker runs with `X207_SETTLEMENT_MODE=live` only for the duration of the transaction, then is set back to `dry`.
+- Signing is done by the owner in a wallet. The key is not stored in the worker's `.env`.
 
-Langkah (keluar, kreditor):
+Steps (outbound, creditor):
 
-1. Quote `INTENTS` → `DESTINATION_CHAIN` dengan `dry: true`; tampilkan `withdrawFee` ke pemilik.
-2. Setelah pemilik setuju: quote `dry: false`, `generateIntent`, pemilik menandatangani, `submitIntent`.
-3. Pantau `status(depositAddress)` sampai status akhir (`SUCCESS`, `REFUNDED`, atau `FAILED`).
+1. Quote `INTENTS` → `DESTINATION_CHAIN` with `dry: true`; show `withdrawFee` to the owner.
+2. After the owner agrees: quote `dry: false`, `generateIntent`, the owner signs, `submitIntent`.
+3. Watch `status(depositAddress)` until a final status (`SUCCESS`, `REFUNDED`, or `FAILED`).
 
-Langkah (masuk, `due` atau stake): quote `recipientType: INTENTS`, pemilik mengirim ke `depositAddress`, tunggu saldo Intents, lalu `buildFtWithdraw` (tanpa `msg`) dan `buildFtTransferCall` dengan `stakeMsg` / `settleMsg` (ADR-19), semuanya ditandatangani pemilik.
+Steps (inbound, `due` or stake): quote `recipientType: INTENTS`, the owner sends to `depositAddress`, wait for the Intents balance, then `buildFtWithdraw` (without `msg`) and `buildFtTransferCall` with `stakeMsg` / `settleMsg` (ADR-19), all signed by the owner.
 
-## Bukti yang dicatat (di vault, bukan di repo)
+## Evidence to record (in the vault, not in the repo)
 
-Per tahap: tanggal UTC, mode, hasil (lulus atau gagal), `amountIn` / `amountOut` / `withdrawFee`, dan untuk tahap 4 tx hash serta status akhir 1Click. Jangan mencatat JWT, kunci, atau isi `.env`.
+Per stage: UTC date, mode, result (pass or fail), `amountIn` / `amountOut` / `withdrawFee`, and for stage 4 the tx hash and the final 1Click status. Do not record the JWT, keys, or the contents of `.env`.
 
-BE-026 selesai bila tahap 1–3 lulus dan tahap 4 sukses sekali. Dokumen ini adalah prosedurnya; eksekusi tahap 4 menunggu persetujuan pemilik dan belum dilakukan.
+BE-026 is complete when stages 1–3 pass and stage 4 succeeds once. This document is the procedure; execution of stage 4 awaits owner approval and has not been done.
 
-## Hasil yang sudah dijalankan (2026-11-02, Main A2)
-Tahap tanpa dana (1–3), memakai `X207_INTEGRATION=1 npx vitest run test/settlement` terhadap 1Click dan RPC mainnet nyata, selalu `dry: true`:
-- Quote deposit stake 50 USDC Base dan quote settle dari D9: 201, job `waiting_deposit` (TC-BE-027-12, TC-BE-032-01).
-- Quote withdraw 1 USDT ke USDC Base: 201, `withdrawFee` `"2400"` (TC-BE-030-13, TC-BE-032-02).
-- `simulate_intents` di `intents.near`: input kosong sukses, intent tidak sah dipetakan ke `simulation_failed` (TC-BE-032-03).
-- `refundTo` akun NEAR yang tidak ada ditolak sebelum 1Click (TC-BE-032-04); aset tidak didukung 422, alamat tidak sah dan jumlah terlalu kecil 502 (TC-BE-032-05); tidak ada request `dry: false` selama suite (TC-BE-032-06).
-- Temuan: RPC mainnet menjawab akun yang tidak ada dengan error tingkat atas `UNKNOWN_ACCOUNT`; `nearAccountExists` sudah menanganinya.
+## Results already run (2026-11-02, Main A2)
+Stages without funds (1–3), using `X207_INTEGRATION=1 npx vitest run test/settlement` against real 1Click and mainnet RPC, always `dry: true`:
+- Deposit quote for a 50 USDC Base stake and the settle quote from D9: 201, job `waiting_deposit` (TC-BE-027-12, TC-BE-032-01).
+- Withdraw quote of 1 USDT to USDC Base: 201, `withdrawFee` `"2400"` (TC-BE-030-13, TC-BE-032-02).
+- `simulate_intents` on `intents.near`: empty input succeeds, an invalid intent is mapped to `simulation_failed` (TC-BE-032-03).
+- `refundTo` of a nonexistent NEAR account is rejected before reaching 1Click (TC-BE-032-04); unsupported asset 422, invalid address and amount too small 502 (TC-BE-032-05); no `dry: false` request during the suite (TC-BE-032-06).
+- Finding: mainnet RPC answers a nonexistent account with the top-level error `UNKNOWN_ACCOUNT`; `nearAccountExists` already handles it.
 
-Belum dijalankan: tahap 4, satu transaksi residual nominal kecil di mainnet (deposit dari chain asal, `ft_withdraw` ke akun NEAR, `ft_transfer_call` ke kontrak, lalu pencairan ke USDC Base). Butuh dana, kunci pemilik, dan konfirmasi manusia; tidak dikerjakan oleh sesi kerja.
+Not yet run: stage 4, one small nominal residual transaction on mainnet (deposit from the origin chain, `ft_withdraw` to a NEAR account, `ft_transfer_call` to the contract, then withdrawal to USDC Base). It needs funds, the owner's key, and human confirmation; not done by worker sessions.
