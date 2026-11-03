@@ -26,7 +26,8 @@ export interface RunningBroker {
 }
 
 export interface StartOptions {
-  config: BrokerConfig;
+  /** `providers` (class C) and `auditPath` may be left out: no class C and no audit file. */
+  config: Omit<BrokerConfig, "providers" | "auditPath"> & Partial<Pick<BrokerConfig, "providers" | "auditPath">>;
   /** Replaces the NEAR chain (tests). */
   chain?: BrokerChain;
   now?: () => number;
@@ -54,10 +55,11 @@ export async function startBroker(options: StartOptions): Promise<RunningBroker>
     });
   const store = new BrokerStore(config.dbPath);
   const classB = new ClassBAdapter({ chain, store, viewAccessKey: createViewAccessKeyFn({ rpcUrls: [config.rpcUrl], finality: "optimistic" }), now });
-  const audit = options.audit ?? (config.auditPath === "" ? undefined : new FileAudit(config.auditPath));
-  const providers = new ProviderRegistry(config.providers, options.env ?? process.env, audit);
+  const classCProviders = config.providers ?? [];
+  const audit = options.audit ?? (config.auditPath ? new FileAudit(config.auditPath) : undefined);
+  const providers = new ProviderRegistry(classCProviders, options.env ?? process.env, audit);
   const classC = new ClassCAdapter({ baseUrl: "", store });
-  const dispatcher = new Dispatcher({ chain, adapters: { B: classB, ...(config.providers.length > 0 ? { C: classC } : {}) } });
+  const dispatcher = new Dispatcher({ chain, adapters: { B: classB, ...(classCProviders.length > 0 ? { C: classC } : {}) } });
   const revoker = new Revoker({ chain, store, classB, now, ...(options.log ? { log: options.log } : {}) });
   const watcher = new GrantWatcher({ readApiUrl: config.readApiUrl, circle: config.circleId, store, ...(options.fetch ? { fetch: options.fetch } : {}) });
   const extra = new X207ExtraSource({
@@ -65,7 +67,7 @@ export async function startBroker(options: StartOptions): Promise<RunningBroker>
   });
   const handler = createBrokerHandler({
     dispatcher, classB, facilitatorUrl: config.facilitatorUrl, circleId: config.circleId, brokerAccount: config.brokerAccount, extra,
-    ...(config.providers.length > 0 ? { proxy: { classC, providers, chain, store, ...(audit ? { audit } : {}) } } : {}),
+    ...(classCProviders.length > 0 ? { proxy: { classC, providers, chain, store, ...(audit ? { audit } : {}) } } : {}),
     ...(options.fetch ? { fetch: options.fetch } : {}),
   });
   const { server, url } = await serve(handler, config.port);
