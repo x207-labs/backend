@@ -3,3 +3,7 @@ export * from "./manager.js";
 export * from "./mock.js";
 export * from "./ssh.js";
 export * from "./s3-presigned.js";
+export * from "./http.js";
+export * from "./github.js";
+export * from "./discord.js";
+export * from "./aws-sts.js";
