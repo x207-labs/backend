@@ -167,6 +167,39 @@ describe("BE-055 fix: claims of the votes of a delegate order (SD-072)", () => {
     expect((await create(m)).res.status).toBe(201);
   });
 
+  it("TC-BE-055-20 only SuccessValue or SuccessReceiptId is success: a status string is not final (retry), anything else is tx_failed (B4-F3)", async () => {
+    const { m, c } = await start();
+    const { hash } = await create(m);
+    c.kinds.set(1, "Vote");
+    for (const status of ["Started", "NotStarted", "Unknown"]) {
+      c.vote(TX(18)); (c.txs.get(TX(18)) as { status: unknown }).status = status;
+      expect(reason(await claim(m, hash, TX(18))), status).toEqual([400, "claim_invalid", "tx_not_found"]);
+    }
+    for (const status of [undefined, null, {}, 5]) {
+      c.vote(TX(19)); (c.txs.get(TX(19)) as { status: unknown }).status = status;
+      expect(reason(await claim(m, hash, TX(19))), String(status)).toEqual([400, "claim_invalid", "tx_failed"]);
+    }
+    c.vote(TX(20)); (c.txs.get(TX(20)) as { status: unknown }).status = { SuccessReceiptId: "abc" };
+    expect((await claim(m, hash, TX(20))).status).toBe(201);
+  });
+
+  it("TC-BE-055-21 two claims for one proposal at the same time: one 201 and one 400 already_claimed, never a 500 (B4-F4)", async () => {
+    const c = chain();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const slow = { ...c.rpc, blockTimestampNs: async (b: string) => { await gate; return c.rpc.blockTimestampNs(b); } };
+    market = await startMarket(["andi", "budi"], [], c.view, { claimRpc: slow });
+    const m = market;
+    const { hash } = await create(m);
+    c.kinds.set(1, "Vote"); c.vote(TX(21), { id: 1 }); c.vote(TX(22), { id: 1 });
+    const both = Promise.all([claim(m, hash, TX(21)), claim(m, hash, TX(22))]);
+    await new Promise((r) => setTimeout(r, 100));
+    release();
+    const results = await both;
+    expect(results.map((r) => r.status).sort()).toEqual([201, 400]);
+    expect(results.find((r) => r.status === 400)!.json.error.details.reason).toBe("already_claimed");
+  });
+
   it("TC-BE-055-17 the kind of a proposal is read once per proposal", async () => {
     const { m, c } = await start();
     const { hash } = await create(m);

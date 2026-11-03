@@ -56,6 +56,8 @@ const invalid = (reason: ClaimReason, message: string, details: Record<string, u
 };
 
 const isFailure = (status: unknown): boolean => status !== null && typeof status === "object" && "Failure" in (status as object);
+/** Only a final success counts (B4-F3): `SuccessValue` or `SuccessReceiptId`. The strings `NotStarted`, `Started`, `Unknown` are a transaction that is not final yet. */
+const isSuccess = (status: unknown): boolean => status !== null && typeof status === "object" && ("SuccessValue" in (status as object) || "SuccessReceiptId" in (status as object));
 const snake = (name: string): string => name.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
 
 /** `kind` of a Sputnik proposal: a name (`"Vote"`) or an object with one key (`{"Transfer": {...}}`), as snake_case. */
@@ -117,7 +119,8 @@ export function orderClaimRoutes(chainView: ViewFunction | undefined, options: C
           receipts_outcome?: Array<{ outcome?: { status?: unknown } }>;
         } | null;
         if (tx === null || tx === undefined || typeof tx !== "object" || tx.transaction === undefined) return invalid("tx_not_found", "transaksi tidak dikenal oleh RPC", { tx_hash: txHash });
-        if (isFailure(tx.status) || (tx.receipts_outcome ?? []).some((r) => isFailure(r.outcome?.status)) || tx.status === undefined) invalid("tx_failed", "transaksi gagal", { tx_hash: txHash });
+        if (typeof tx.status === "string") return invalid("tx_not_found", "transaksi belum final di RPC; coba lagi nanti", { tx_hash: txHash, status: tx.status });
+        if (isFailure(tx.status) || (tx.receipts_outcome ?? []).some((r) => isFailure(r.outcome?.status)) || !isSuccess(tx.status)) invalid("tx_failed", "transaksi gagal", { tx_hash: txHash });
         // 2. signer and receiver
         if (tx.transaction.signer_id !== o.seller) invalid("wrong_signer", "transaksi tidak ditandatangani penjual", { signer: tx.transaction.signer_id ?? null });
         if (tx.transaction.receiver_id !== mandate.dao) invalid("wrong_receiver", "transaksi tidak ke DAO dalam mandat", { receiver: tx.transaction.receiver_id ?? null, dao: mandate.dao });
@@ -155,10 +158,16 @@ export function orderClaimRoutes(chainView: ViewFunction | undefined, options: C
         }
         if (!mandate.kinds.includes(kind)) invalid("kind_not_in_mandate", "jenis proposal di luar mandat", { proposal_id: proposalId, proposal_kind: kind, allowed: mandate.kinds });
 
-        db.prepare(
-          `INSERT INTO order_claims (circle_id, order_hash, proposal_id, tx_hash, signer, receiver, action, proposal_kind, notice_json, signature, created_at_ms)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        ).run(circle.circle_id, o.order_hash, proposalId, txHash, o.seller, mandate.dao, action, kind, json, signature, now());
+        // the checks above wait on the RPC; two claims for one proposal can pass them together, and then the key of the table decides (B4-F4)
+        try {
+          db.prepare(
+            `INSERT INTO order_claims (circle_id, order_hash, proposal_id, tx_hash, signer, receiver, action, proposal_kind, notice_json, signature, created_at_ms)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ).run(circle.circle_id, o.order_hash, proposalId, txHash, o.seller, mandate.dao, action, kind, json, signature, now());
+        } catch (error) {
+          if ((error as { code?: string }).code?.startsWith("SQLITE_CONSTRAINT")) return invalid("already_claimed", "proposal atau transaksi ini sudah diklaim", { proposal_id: proposalId, tx_hash: txHash });
+          throw error;
+        }
         return { status: 201, body: { orderHash: o.order_hash, txHash, method: order.proof.method, signer: o.seller, receiver: mandate.dao, proposalId, action, proposalKind: kind } };
       },
     },
