@@ -44,5 +44,10 @@ Levels: **High** (a proof or money can be forged by the other party), **Medium**
 | C-5 | Info | contracts | An empty list of official contracts means any contract; clearing it has no timelock | info | A2 |
 | C-094 | - | contracts | CT-094 (bonds, deals, arbiter): not reviewed yet, the code is not committed (list of checks in the report) | pending | Main C |
 
+## Found by the near-sandbox test
+| ID | Level | Repo | Summary | Status | Owner |
+| --- | --- | --- | --- | --- | --- |
+| BE-055-S1 | Medium | backend | `events_raw.data_json` is an array with one object on a real chain, and the queries of the proofs (`epoch`, `solver`), of the installments (`voucher_registered`) and of the intent book (`intent_posted`) read `$.field`: on a real chain the epoch of a proof was null, no solver proof was ever found, the event of an installment was never matched and the on-chain data of an intent was empty. Found only by the run on near-sandbox (the unit tests stored a bare object). Solver (A2) asked to check the same reading | fixed `6a2a6ef`, `7220eeb`, `1caffb0` (`event-data.ts` reads both shapes); confirmed on near-sandbox in run 4 | Main C |
+
 ## Counts
-Fixed: B2-F1 to F12 (F6 in the backend and in the SDK), B3-F1 to F9. Open: C-1. By design: C-2, C-3. Info: C-4, C-5. Pending: C-094. Limits written in the table: B3-F2 (buyer account from the API, confirmed by fingerprint), B3-F4 (CSP not tried with a real wallet), B3-F7 (text only), B3-F9 (warning only).
+Fixed: BE-055-S1, B2-F1 to F12 (F6 in the backend and in the SDK), B3-F1 to F9. Open: C-1. By design: C-2, C-3. Info: C-4, C-5. Pending: C-094. Limits written in the table: B3-F2 (buyer account from the API, confirmed by fingerprint), B3-F4 (CSP not tried with a real wallet), B3-F7 (text only), B3-F9 (warning only).
