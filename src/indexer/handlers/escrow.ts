@@ -22,7 +22,7 @@ const int = (data: Record<string, unknown>, field: string): number => {
 
 /** An amount of a NEP-141 token, up to 2^128 - 1 (a token with 18 decimals passes 2^63): kept as the decimal text. */
 function tokenAmount(value: string): string {
-  if (!/^[1-9]\d*$/.test(value) || BigInt(value) >= 1n << 128n) throw new IndexerHaltError(`event ft_escrow_held: amount bukan bilangan bulat 1..2^128-1: ${value}`);
+  if (!/^[1-9]\d*$/.test(value) || BigInt(value) >= 1n << 128n) throw new IndexerHaltError(`event escrow token: amount bukan bilangan bulat 1..2^128-1: ${value}`);
   return value;
 }
 
@@ -75,6 +75,16 @@ export const rawHandlers: Record<string, RawHandler> = {
          VALUES (?, ?, 'ft', ?, ?, 'held', ?, ?, ?)`,
       )
       .run(ctx.circleId, int(data, "grant_id"), str(data, "ft_contract"), tokenAmount(str(data, "amount")), ctx.block.height, ctx.receiptId, ctx.logIndex);
+  },
+
+  /** CT-092: the escrow holds an exact amount of one NEP-245 multi-token. The amount is in the units of that token, not credits. */
+  mt_escrow_held(ctx, data) {
+    ctx.db
+      .prepare(
+        `INSERT OR IGNORE INTO escrows (circle_id, grant_id, kind, mt_contract, token_id, amount, state, block_height, receipt_id, log_index)
+         VALUES (?, ?, 'mt', ?, ?, ?, 'held', ?, ?, ?)`,
+      )
+      .run(ctx.circleId, int(data, "grant_id"), str(data, "mt_contract"), str(data, "token_id"), tokenAmount(str(data, "amount")), ctx.block.height, ctx.receiptId, ctx.logIndex);
   },
 
   /**

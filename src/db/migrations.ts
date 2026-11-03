@@ -335,6 +335,32 @@ DROP TABLE escrows;
 ALTER TABLE escrows_new RENAME TO escrows;
 `;
 
+// interface 0.0.10 (CT-092): a class A escrow can hold an exact amount of one NEP-245 multi-token (`kind` mt: `mt_contract`, `token_id`, `amount`).
+const V7_MT_ESCROWS = `
+CREATE TABLE escrows_new (
+  circle_id    TEXT    NOT NULL REFERENCES circles (circle_id),
+  grant_id     INTEGER NOT NULL,
+  kind         TEXT    NOT NULL DEFAULT 'nft' CHECK (kind IN ('nft','ft','mt')),
+  nft_contract TEXT,
+  token_id     TEXT,
+  ft_contract  TEXT,
+  mt_contract  TEXT,
+  amount       TEXT,
+  state        TEXT    NOT NULL CHECK (state IN ('held','delivered','cancelled','stuck')),
+  block_height INTEGER NOT NULL,
+  receipt_id   TEXT    NOT NULL,
+  log_index    INTEGER NOT NULL,
+  PRIMARY KEY (circle_id, grant_id),
+  CHECK ((kind = 'nft' AND nft_contract IS NOT NULL AND token_id IS NOT NULL AND ft_contract IS NULL AND mt_contract IS NULL AND amount IS NULL)
+      OR (kind = 'ft' AND ft_contract IS NOT NULL AND amount IS NOT NULL AND nft_contract IS NULL AND token_id IS NULL AND mt_contract IS NULL)
+      OR (kind = 'mt' AND mt_contract IS NOT NULL AND token_id IS NOT NULL AND amount IS NOT NULL AND nft_contract IS NULL AND ft_contract IS NULL))
+);
+INSERT INTO escrows_new (circle_id, grant_id, kind, nft_contract, token_id, ft_contract, amount, state, block_height, receipt_id, log_index)
+  SELECT circle_id, grant_id, kind, nft_contract, token_id, ft_contract, amount, state, block_height, receipt_id, log_index FROM escrows;
+DROP TABLE escrows;
+ALTER TABLE escrows_new RENAME TO escrows;
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "d9_initial", sql: V1_D9_INITIAL },
   { version: 2, name: "d9_bundles", sql: V2_BUNDLES },
@@ -342,4 +368,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 4, name: "d9_escrows", sql: V4_ESCROWS },
   { version: 5, name: "d9_intents", sql: V5_INTENTS },
   { version: 6, name: "d9_ft_escrows", sql: V6_FT_ESCROWS },
+  { version: 7, name: "d9_mt_escrows", sql: V7_MT_ESCROWS },
 ];
