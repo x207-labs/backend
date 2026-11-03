@@ -8,4 +8,6 @@ export * from "./indexer/neardata-source.js";
 export * from "./indexer/errors.js";
 export * from "./indexer/indexer.js";
 export * from "./indexer/rebuild.js";
+export * from "./indexer/view-edges.js";
+export type { FetchClearedEdges } from "./indexer/clearing-edges.js";
 export * from "./indexer/rpc-source.js";

@@ -48,3 +48,8 @@ X207_SANDBOX=1 npx vitest run test/sandbox
 ```
 
 Only one near-sandbox at a time on this machine (`pgrep -fl near-sandbox` must be empty: the contract suite uses it). The file is outside `tsconfig.test.json` (it imports the SDK fixture from outside the root of this package); vitest compiles it.
+
+## One epoch of 300 edges (BE-077, interface 0.0.13)
+`test/sandbox/clearing-300.sandbox.test.ts` (run with `X207_SANDBOX=1 npx vitest run test/sandbox/clearing-300`, wasm of CT-099 built, one sandbox at a time, about 7 minutes): 60 members, each owes the next five one credit (300 edges, balanced), `close_epoch`, `submit_clearing` of all 300, `commit_epoch`. It checks that the logs of `commit_epoch` stay under 90 percent of 16 KiB, that `clearing_applied` has `edge_count` 300 and `edges_hash` equal to `edgesHash` of the SDK and no `edges`, that `obligations.cleared` of every pair equals `list_obligations`, that `settlements` equal `net_position` per member, that `epochs.total_due` and `total_claimable` are the sums, and that `rebuildReadModel` (no RPC) gives the same tables.
+
+The indexer needs `fetchClearedEdges` to read a summary `clearing_applied`: pass `viewClearedEdges(rpcUrl, contractId, epoch)` (exported from `dist/index.js`). A harness without it stops with `IndexerHaltError` as soon as the event comes. Use `startBlock` of at least 1: a fresh sandbox is only a few blocks high and a negative block id is a parse error of the RPC.
