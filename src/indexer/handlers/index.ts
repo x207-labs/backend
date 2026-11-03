@@ -1,6 +1,7 @@
 import type { HandlerMap } from "./context.js";
 import { bundleHandlers } from "./bundles.js";
 import { grantHandlers } from "./grants.js";
+import { intentHandlers } from "./intents.js";
 import { epochHandlers } from "./epochs.js";
 import { memberHandlers } from "./members.js";
 import { paramsHandlers } from "./params.js";
@@ -23,4 +24,5 @@ export const defaultHandlers: HandlerMap = {
   ...paramsHandlers,
   ...bundleHandlers,
   ...grantHandlers,
+  ...intentHandlers,
 };

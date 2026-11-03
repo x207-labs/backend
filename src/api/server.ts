@@ -6,6 +6,7 @@ import { matchRoute, type CircleRow, type Route, type RouteResult } from "./rout
 import { bundleRoutes } from "./routes/bundles.js";
 import { eventRoutes } from "./routes/events.js";
 import { grantRoutes } from "./routes/grants.js";
+import { intentRoutes } from "./routes/intents.js";
 import { epochRoutes } from "./routes/epochs.js";
 import { healthRoutes } from "./routes/health.js";
 import { limitRoutes } from "./routes/limits.js";
@@ -95,7 +96,7 @@ export function createApiServer(options: ApiServerOptions): Server {
   const { db } = options;
   const now = options.now ?? Date.now;
   const limit = options.rateLimitPerMinute ?? 0;
-  const routes: Route[] = [...healthRoutes, ...memberRoutes, ...limitRoutes, ...epochRoutes, ...obligationRoutes, ...settlementRoutes, ...paramRoutes, ...bundleRoutes, ...grantRoutes, ...eventRoutes, ...metricRoutes, ...reportRoutes, ...workerRoutes(options.settlement), ...(options.daoView ? proposalRoutes(options.daoView) : []), ...(options.extraRoutes ?? [])];
+  const routes: Route[] = [...healthRoutes, ...memberRoutes, ...limitRoutes, ...epochRoutes, ...obligationRoutes, ...settlementRoutes, ...paramRoutes, ...bundleRoutes, ...grantRoutes, ...intentRoutes, ...eventRoutes, ...metricRoutes, ...reportRoutes, ...workerRoutes(options.settlement), ...(options.daoView ? proposalRoutes(options.daoView) : []), ...(options.extraRoutes ?? [])];
   const hits = new Map<string, { windowStart: number; count: number }>();
 
   function checkRate(ip: string): void {

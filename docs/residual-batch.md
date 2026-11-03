@@ -44,3 +44,11 @@ What happens if the withdrawal is not done before a claim:
 - A withdrawal that Intents cannot finish books nothing and can be called again (`ERR_WITHDRAW_IN_FLIGHT` while one is open, `ERR_NOTHING_TO_WITHDRAW` when nothing is booked).
 - So a keeper that claims for members must call `withdraw_intents_balance` first whenever `intents_balance` is above 0. The sandbox test is `contracts/tests/be034_intents_withdraw.rs`; the real answer of `ft_withdraw` of `intents.near` is assumed from the reference contract and was not tried.
 
+
+## What the indexer knows about Intents (interface 0.0.9)
+The read model keeps the events `intent_posted`, `intent_removed` and `intents_withdrawn` (tables `intent_book` and `intent_withdrawals`, migration 5). Two routes read them, both per circle:
+
+- `GET /x207/circles/{circle}/intents/hashes?status=posted|removed&account=` lists the intent hashes members posted, newest first, with paging (`limit`, `cursor`). A removed intent is not deleted: it shows under `status=removed`, so it is gone from the default list. A hash can be posted again after it was removed. A removal of a hash the indexer never saw (posted before the indexer started) is ignored.
+- `GET /x207/circles/{circle}/intents/withdrawals` lists the withdrawals made by `withdraw_intents_balance`, newest first, with `totalWithdrawn` and `withdrawals` (the count).
+
+What the events do **not** give is the balance still booked at Intents. `residual_paid` is the same event whether the debtor paid by `ft_on_transfer` or by `mt_on_transfer`, so a replay cannot tell how much of the pool sits at Intents. The only source is the view `intents_balance` of the contract. Decision (coordinator): read it through the RPC view `intents_balance` when needed; no new event in 0.0.9. `intents_credited` can be weighed again for a later version.

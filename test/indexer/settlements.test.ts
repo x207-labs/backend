@@ -58,3 +58,20 @@ describe("BE-010 residual_paid, residual_claimed, residual_claim_failed", () => 
     });
   });
 });
+
+describe("BE-034 residual_paid through mt_on_transfer", () => {
+  it("TC-BE-034-20 the event is the same as through ft_on_transfer, so the indexer books it the same way", async () => {
+    const db = openDatabase(":memory:");
+    const base = fxLog42().slice(0, 8);
+    const viaFt = fxLog42().slice(0, 9);
+    const mtReceipt = { id: "r-mt-transfer", logs: [eventLog("residual_paid", { epoch: 42, account_id: acct("cleaner"), sender_id: acct("cleaner"), amount: "10000000", refunded: "0", settled_history: "10000000" })], txHash: "tx-mt" };
+    const ix = new Indexer({ db, source: new ArrayBlockSource([...base, block(1009, mtReceipt)]), circleId: CIRCLE, contractId: CONTRACT, startBlock: 1000 });
+    await ix.bootstrap();
+    await ix.drain();
+    const mt = db.prepare("SELECT status, paid_amount FROM settlements WHERE account_id = ?").safeIntegers(true).get(acct("cleaner"));
+    expect(mt).toEqual({ status: "paid", paid_amount: 10_000_000n });
+    expect(db.prepare("SELECT outstanding_debt, settled_history FROM members WHERE account_id = ?").safeIntegers(true).get(acct("cleaner"))).toEqual({ outstanding_debt: 0n, settled_history: 10_000_000n });
+    expect(viaFt).toHaveLength(9);
+    db.close();
+  });
+});

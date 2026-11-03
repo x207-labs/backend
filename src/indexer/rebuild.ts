@@ -3,7 +3,7 @@ import { defaultHandlers, type HandlerMap } from "./handlers/index.js";
 import { dispatchEventRow, type EventRow } from "./indexer.js";
 
 /** Tabel read model yang dikosongkan saat rebuild; `circles`, `settlement_jobs`, `events_raw`, dan cursor tetap. */
-const READ_MODEL_TABLES = ["escrows", "grants", "asset_classes", "bundle_legs", "bundles", "member_limits", "settlements", "clearing_log", "obligations", "epochs", "members"] as const;
+const READ_MODEL_TABLES = ["intent_withdrawals", "intent_book", "escrows", "grants", "asset_classes", "bundle_legs", "bundles", "member_limits", "settlements", "clearing_log", "obligations", "epochs", "members"] as const;
 
 /**
  * Rebuild penuh tanpa RPC (Spec Skema D9 5.3): kosongkan read model, setel `handled = 0`, lalu putar ulang
