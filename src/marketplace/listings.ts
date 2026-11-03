@@ -69,7 +69,7 @@ export function findListing(db: Database.Database, circleId: string, hash: strin
 }
 
 /** Fungsi pemeriksa tambahan sebelum format listing divalidasi (mis. kelas aset, BE-042). */
-export type ListingCheck = (listing: Listing) => void;
+export type ListingCheck = (listing: Listing, context: { db: Database.Database; circleId: string; nowS: number }) => void;
 
 function parseListingBody(body: unknown): { listing: Listing; signature: string } {
   if (body === null || typeof body !== "object") throw invalidRequest("body harus objek");
@@ -94,7 +94,7 @@ export function listingRoutes(checks: readonly ListingCheck[] = []): Route[] {
       circleScoped: true,
       handler: ({ db, circle, body, now }) => {
         const { listing, signature } = parseListingBody(body);
-        for (const check of checks) check(listing);
+        for (const check of checks) check(listing, { db, circleId: circle.circle_id, nowS: nowSeconds(now()) });
         try {
           validateListing(listing);
         } catch (error) {

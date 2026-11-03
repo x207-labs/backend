@@ -18,7 +18,7 @@ export interface Market {
 }
 
 /** D9 dengan anggota `names` (kunci voucher nyata) dan route marketplace terpasang. */
-export async function startMarket(names: string[] = ["andi", "budi", "citra"], inactive: string[] = [], chainView?: ViewFunction, routeOptions: { maxReferrals?: number } = {}): Promise<Market> {
+export async function startMarket(names: string[] = ["andi", "budi", "citra"], inactive: string[] = [], chainView?: ViewFunction, routeOptions: { maxReferrals?: number; rwaWhitelist?: readonly string[]; intentsId?: string; usdtTokenId?: string } = {}): Promise<Market> {
   const db = new Database(":memory:");
   seedCircle(db);
   const keys: Market["keys"] = {};

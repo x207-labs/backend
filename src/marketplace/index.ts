@@ -4,6 +4,7 @@ import type { ViewFunction } from "../settlement/intents.js";
 import { openEpochResolver } from "./epoch.js";
 import type { Route } from "../api/router.js";
 import { assetClassCheck, assetClassRoutes } from "./asset-classes.js";
+import { scopeCheck, type ScopeOptions } from "./listing-scope.js";
 import { bundleRoutes } from "./bundles.js";
 import { deliveryRoutes } from "./delivery.js";
 import { intentRoutes } from "./intents.js";
@@ -14,7 +15,7 @@ import { referralRoutes } from "./referrals.js";
 import { MARKETPLACE_MIGRATIONS } from "./migrations.js";
 
 /** Terapkan tabel M11 lalu kembalikan route marketplace; dipasang lewat `extraRoutes` server. */
-export function marketplaceRoutes(db: Database.Database, options: { maxRounds?: number; chainView?: ViewFunction; maxReferrals?: number; confirmClasses?: readonly string[]; disputeWindowSeconds?: number } = {}): Route[] {
+export function marketplaceRoutes(db: Database.Database, options: { maxRounds?: number; chainView?: ViewFunction; maxReferrals?: number; confirmClasses?: readonly string[]; disputeWindowSeconds?: number } & ScopeOptions = {}): Route[] {
   migrate(db, MARKETPLACE_MIGRATIONS);
-  return [...intentRoutes, ...listingRoutes([assetClassCheck]), ...assetClassRoutes, ...offerRoutes(options), ...bundleRoutes(openEpochResolver(options.chainView), options.confirmClasses === undefined ? {} : { confirmClasses: options.confirmClasses }), ...deliveryRoutes(options.disputeWindowSeconds === undefined ? {} : { disputeWindowSeconds: options.disputeWindowSeconds }), ...referralRoutes(options.maxReferrals === undefined ? {} : { maxPending: options.maxReferrals }), ...statsRoutes];
+  return [...intentRoutes, ...listingRoutes([assetClassCheck, scopeCheck(options)]), ...assetClassRoutes, ...offerRoutes(options), ...bundleRoutes(openEpochResolver(options.chainView), options.confirmClasses === undefined ? {} : { confirmClasses: options.confirmClasses }), ...deliveryRoutes(options.disputeWindowSeconds === undefined ? {} : { disputeWindowSeconds: options.disputeWindowSeconds }), ...referralRoutes(options.maxReferrals === undefined ? {} : { maxPending: options.maxReferrals }), ...statsRoutes];
 }

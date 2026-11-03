@@ -25,6 +25,7 @@ export type ApiErrorCode =
   | "listing_not_open"
   | "asset_class_rejected"
   | "grant_not_found"
+  | "scope_invalid"
   | "delivery_not_found"
   | "delivery_state"
   | "not_a_party"
