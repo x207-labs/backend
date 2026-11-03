@@ -50,3 +50,7 @@ per epoch, `unit` is `call`.
 - `MockProviderAdapter` is the generic mock (failures on demand, native expiry, cost per day).
 
 Not built: an HTTP route that hands a provider access to a lessee after a payment (the manager is called by code; the lease server of class B is untouched), and the `once` handover of the groups without an API (those use BE-047).
+
+### Accounts-free adapters (BE-058)
+- **`SshAdapter`** (`provider: "ssh"`): `grantee_ref` is the OpenSSH public key of the lessee (type and blob checked, no newline or option can ride in it), `resource` is the forced command. The line written to `authorized_keys` is `restrict,command="<cmd>",expiry-time="YYYYMMDDHHMMSSZ" <key> x207-grant-<id>`: `restrict` turns off forwarding and the pty, the command is the only thing the key may run, and sshd refuses the key after `expiry-time` with the broker gone. `revoke` removes only the line of that grant. Self-hosted only (it writes the file of the machine).
+- **`S3PresignedAdapter`** (`provider: "s3-presigned"`): `resource` is the object key; the URL is signed locally with AWS Signature V4 (checked against the example of the AWS documentation), and S3 refuses it after `X-Amz-Expires` (the paid end, at most 7 days). **Limit:** a presigned URL cannot be taken back; `revoke` only forgets it, so the loss is at most the paid day.
