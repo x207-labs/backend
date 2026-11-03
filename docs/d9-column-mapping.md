@@ -48,6 +48,8 @@ The infrastructure tables `events_raw`, `indexer_cursor`, `settlement_jobs` and 
 | epochs | edge_count | D2 `obligation` | Number of edges at cutoff |
 | epochs | total_obligation | D2 `obligation` | Σ obligations at cutoff |
 | epochs | cleared_total | D4 cleared value | |
+| epochs | total_due | D2 `obligation` | Σ `amount` of the debtor positions; from `epoch_committed` (0.0.13), checked against the positions |
+| epochs | total_claimable | D2 `obligation` | Σ `amount` of the creditor positions; from `epoch_committed` (0.0.13), checked against the positions |
 | obligations | circle_id | teknis | |
 | obligations | epoch | D2 `obligation` | |
 | obligations | debtor | D2 `obligation` | Key `(debtor, creditor)` |

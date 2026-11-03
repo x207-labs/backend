@@ -460,6 +460,12 @@ CREATE TABLE clearing_edges (
 );
 `;
 
+// BE-077: the totals of `epoch_committed` of interface 0.0.13 (checked against the sum of the positions, kept per epoch).
+const V12_EPOCH_TOTALS = `
+ALTER TABLE epochs ADD COLUMN total_due INTEGER;
+ALTER TABLE epochs ADD COLUMN total_claimable INTEGER;
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "d9_initial", sql: V1_D9_INITIAL },
   { version: 2, name: "d9_bundles", sql: V2_BUNDLES },
@@ -472,4 +478,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 9, name: "d9_rules_0_0_12", sql: V9_RULES_0_0_12 },
   { version: 10, name: "d9_limit_reason_ruling", sql: V10_LIMIT_REASON_RULING },
   { version: 11, name: "d9_clearing_edges", sql: V11_CLEARING_EDGES },
+  { version: 12, name: "d9_epoch_totals", sql: V12_EPOCH_TOTALS },
 ];

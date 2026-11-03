@@ -2,19 +2,20 @@ import { existsSync, readFileSync } from "node:fs";
 import type Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDatabase } from "../../src/db/index.js";
-import { setClearingHashes, type ClearedEdge } from "../../src/indexer/clearing-hashes.js";
+import { edgesHash as sdkEdgesHash, positionsHash as sdkPositionsHash } from "@x207/core";
+import type { ClearedEdge } from "../../src/indexer/clearing-hashes.js";
 import { prefetchClearingEdges, storedClearingEdges } from "../../src/indexer/clearing-edges.js";
 import { epochHandlers } from "../../src/indexer/handlers/epochs.js";
 import type { HandlerContext } from "../../src/indexer/handlers/index.js";
 import { IndexerHaltError } from "../../src/indexer/errors.js";
 import { Indexer } from "../../src/indexer/indexer.js";
 import { rebuildReadModel } from "../../src/indexer/rebuild.js";
-import { stubHashes, edgesHash, positionsHash } from "../helpers/clearing-hashes.js";
+import { edgesHash, positionsHash } from "../helpers/clearing-hashes.js";
 import { acct, ArrayBlockSource, block, CONTRACT, eventLog, fxLog42, nsOf, positions } from "../helpers/fx-log42.js";
 
 // BE-077: interface 0.0.13. `clearing_applied` is a summary (edge_count, edges_hash) and the edges come from the view list_obligations; `epoch_committed` has all positions
 // and positions_hash. The hash functions are the SDK ones (SDK-080); here a stand-in with the same shape: sha256 of the canonical JSON, edges with cleared > 0 sorted by (debtor, creditor).
-const stub = stubHashes;
+const stub = { edgesHash: sdkEdgesHash, positionsHash: sdkPositionsHash as (list: unknown[]) => string };
 
 const CIRCLE = "agents-main";
 const EDGES: ClearedEdge[] = [
@@ -45,7 +46,6 @@ describe("BE-077 clearing_applied and epoch_committed of interface 0.0.13", () =
   const appliedBlock = (s = summary()) => block(1005, { logs: [eventLog("clearing_applied", s)] });
 
   beforeEach(async () => {
-    setClearingHashes(stub);
     db = openDatabase(":memory:");
     // up to the cutoff of epoch 42: the seven edges are in `obligations` with `cleared` empty (these events are in the form the parser knows)
     const ix = new Indexer({ db, source: new ArrayBlockSource(fxLog42().slice(0, 5)), circleId: CIRCLE, contractId: CONTRACT, startBlock: 1000 });
@@ -53,7 +53,6 @@ describe("BE-077 clearing_applied and epoch_committed of interface 0.0.13", () =
     await ix.drain();
   });
   afterEach(() => {
-    setClearingHashes(undefined);
     db.close();
   });
 
@@ -122,11 +121,15 @@ describe("BE-077 clearing_applied and epoch_committed of interface 0.0.13", () =
     expect(db.prepare("SELECT COUNT(*) AS n FROM settlements WHERE epoch = 42").get()).toEqual({ n: 6 });
     expect(one("SELECT role, net, amount, status FROM settlements WHERE account_id = ?", acct("scraper"))).toEqual({ role: "debtor", net: -35_000_000n, amount: 35_000_000n, status: "due" });
     expect(one("SELECT outstanding_debt FROM members WHERE account_id = ?", acct("scraper"))).toEqual({ outstanding_debt: 35_000_000n });
+    expect(one("SELECT total_due, total_claimable FROM epochs WHERE epoch = 42")).toEqual({ total_due: 45_000_000n, total_claimable: 45_000_000n });
   });
 
   it("TC-BE-077-06 epoch_committed with a wrong position_count or positions_hash halts and writes nothing", () => {
     expect(() => epochHandlers.epoch_committed!(ctxAt(1007), committed({ position_count: 7 }) as never)).toThrow(/position_count/);
     expect(() => epochHandlers.epoch_committed!(ctxAt(1007), committed({ positions_hash: "00" }) as never)).toThrow(/positions_hash/);
+    // totals that are not the sums of the positions
+    expect(() => epochHandlers.epoch_committed!(ctxAt(1007), committed({ total_due: "44000000" }) as never)).toThrow(/total_due/);
+    expect(() => epochHandlers.epoch_committed!(ctxAt(1007), committed({ total_claimable: "1" }) as never)).toThrow(/total_claimable/);
     const bent = (positions() as never as Array<Record<string, unknown>>).map((p, i) => (i === 0 ? { ...p, amount: "1" } : p));
     expect(() => epochHandlers.epoch_committed!(ctxAt(1007), committed({ positions: bent }) as never)).toThrow(IndexerHaltError);
     expect(db.prepare("SELECT COUNT(*) AS n FROM settlements").get()).toEqual({ n: 0 });
@@ -142,18 +145,63 @@ describe("BE-077 clearing_applied and epoch_committed of interface 0.0.13", () =
     epochHandlers.clearing_applied!(ctxAt(1005), summary() as never);
     expect(db.prepare("SELECT debtor, creditor, cleared FROM obligations ORDER BY debtor, creditor").all()).toEqual(before);
   });
+
+  it("TC-BE-077-09 through the Indexer and the SDK parser: the 0.0.13 events of scenario FX-LOG42 give the same read model as the 0.0.12 events (edges from list_obligations)", async () => {
+    const legacy = fxLog42();
+    const asSummary = (line: string): string => {
+      const envelope = JSON.parse(line.slice("EVENT_JSON:".length)) as { version: string; event: string; data: Array<Record<string, unknown>> };
+      if (envelope.event !== "clearing_applied" && envelope.event !== "epoch_committed") return line;
+      const d = envelope.data[0] as Record<string, unknown> & { edges?: ClearedEdge[]; positions?: Array<{ account_id: string }> };
+      const { chunk: _c, chunks: _cs, edges, positions: list, ...rest } = d;
+      envelope.version = "0.0.13";
+      envelope.data = [envelope.event === "clearing_applied"
+        ? { ...rest, edge_count: edges!.length, edges_hash: sdkEdgesHash(edges!) }
+        : { ...rest, position_count: list!.length, positions_hash: sdkPositionsHash(list as never), positions: list }];
+      return `EVENT_JSON:${JSON.stringify(envelope)}`;
+    };
+    const summarised = legacy.map((b) => ({ ...b, logs: b.logs.map((l) => ({ ...l, log: asSummary(l.log) })) }));
+    expect(summarised.flatMap((b) => b.logs).filter((l) => l.log.includes("edges_hash") || l.log.includes("positions_hash"))).toHaveLength(2);
+
+    const run = async (blocks: SourceBlock[], fetchClearedEdges?: (epoch: number) => Promise<ClearedEdge[]>): Promise<Database.Database> => {
+      const target = openDatabase(":memory:");
+      const ix = new Indexer({ db: target, source: new ArrayBlockSource(blocks), circleId: CIRCLE, contractId: CONTRACT, startBlock: 1000, ...(fetchClearedEdges ? { fetchClearedEdges } : {}), prefetch: noSleep });
+      await ix.bootstrap();
+      await ix.drain();
+      return target;
+    };
+    const views: number[] = [];
+    const a = await run(legacy);
+    const b = await run(summarised, async (epoch) => (views.push(epoch), EDGES));
+    try {
+      expect(views).toEqual([42]);
+      for (const table of ["obligations", "clearing_log", "settlements", "members", "member_limits"]) {
+        expect([table, b.prepare(`SELECT * FROM ${table} ORDER BY 1, 2, 3, 4`).all()]).toEqual([table, a.prepare(`SELECT * FROM ${table} ORDER BY 1, 2, 3, 4`).all()]);
+      }
+      const cols = "circle_id, epoch, phase, cutoff_at_ns, closed_at_ns, proposal_deadline_ns, committed_at_ns, payment_deadline_ns, finalized_at_ns, edge_count, total_obligation, cleared_total";
+      expect(b.prepare(`SELECT ${cols} FROM epochs ORDER BY epoch`).all()).toEqual(a.prepare(`SELECT ${cols} FROM epochs ORDER BY epoch`).all());
+      expect(b.prepare("SELECT total_due, total_claimable FROM epochs WHERE epoch = 42").get()).toEqual({ total_due: 45_000_000, total_claimable: 45_000_000 });
+      // a rebuild from events_raw and the kept edges needs no RPC and changes nothing
+      const before = b.prepare("SELECT debtor, creditor, cleared FROM obligations ORDER BY debtor, creditor").all();
+      rebuildReadModel(b, CIRCLE);
+      expect(b.prepare("SELECT debtor, creditor, cleared FROM obligations ORDER BY debtor, creditor").all()).toEqual(before);
+      expect(b.prepare("SELECT COUNT(*) AS n FROM settlements").get()).toEqual(a.prepare("SELECT COUNT(*) AS n FROM settlements").get());
+    } finally {
+      a.close();
+      b.close();
+    }
+  });
 });
 
 // the golden vector of A2 (CT-099): the stand-in of the tests gives the bytes and the hashes of the contract
 const VECTOR = new URL("../../../contracts/tests/vectors/clearing_hashes.json", import.meta.url).pathname;
-describe.skipIf(!existsSync(VECTOR))("BE-077 the hashes of the tests are the ones of the golden vector", () => {
+describe.skipIf(!existsSync(VECTOR))("BE-077 the SDK hashes and the copy of the tests are the ones of the golden vector", () => {
   const vector = (): { edges: Array<{ name: string; input: ClearedEdge[]; edges_hash: string }>; positions: Array<{ name: string; input: unknown[]; positions_hash: string }> } => JSON.parse(readFileSync(VECTOR, "utf8"));
 
   it("TC-BE-077-08 edges_hash and positions_hash of every case of the vector", () => {
     const v = vector();
     expect(v.edges.length).toBeGreaterThan(0);
     expect(v.positions.length).toBeGreaterThan(0);
-    for (const c of v.edges) expect([c.name, edgesHash(c.input)]).toEqual([c.name, c.edges_hash]);
-    for (const c of v.positions) expect([c.name, positionsHash(c.input)]).toEqual([c.name, c.positions_hash]);
+    for (const c of v.edges) expect([c.name, edgesHash(c.input), sdkEdgesHash(c.input)]).toEqual([c.name, c.edges_hash, c.edges_hash]);
+    for (const c of v.positions) expect([c.name, positionsHash(c.input), (sdkPositionsHash as (l: unknown[]) => string)(c.input)]).toEqual([c.name, c.positions_hash, c.positions_hash]);
   });
 });

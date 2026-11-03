@@ -1,5 +1,5 @@
 // BE-077: the hashes of interface 0.0.13 as `contracts/scripts/clearing_hashes.py` defines them, for the tests only. The production code uses the functions of the SDK
-// (`edgesHash`, `positionsHash`, SDK-080); this stand-in is checked against the golden vector `contracts/tests/vectors/clearing_hashes.json`.
+// (`edgesHash`, `positionsHash`, SDK-080); this independent copy is checked against the golden vector `contracts/tests/vectors/clearing_hashes.json` together with the SDK.
 import { createHash } from "node:crypto";
 import type { ClearedEdge } from "../../src/indexer/clearing-hashes.js";
 

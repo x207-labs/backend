@@ -60,13 +60,19 @@ function applyClearingSummary(ctx: HandlerContext, e: ClearingAppliedSummary): v
 function applyCommittedSummary(ctx: HandlerContext, e: EpochCommittedSummary): void {
   ensureEpoch(ctx, e.epoch);
   if (e.positions.length !== e.position_count) throw new IndexerHaltError(`epoch_committed epoch ${e.epoch}: position_count ${e.position_count}, the event has ${e.positions.length}`);
-  const hash = clearingHashes().positionsHash(e.positions);
+  const hash = clearingHashes().positionsHash(e.positions as never);
   if (hash !== e.positions_hash) throw new IndexerHaltError(`epoch_committed epoch ${e.epoch}: positions_hash ${e.positions_hash} is not the hash of the positions of the event (${hash})`);
+  // the totals are the sums of the positions: what the debtors owe and what the creditors can claim
+  const sumOf = (role: string): bigint => e.positions.filter((p) => p.role === role).reduce((acc, p) => acc + units(p.amount, "amount"), 0n);
+  const totalDue = units(e.total_due, "total_due");
+  const totalClaimable = units(e.total_claimable, "total_claimable");
+  if (sumOf("debtor") !== totalDue) throw new IndexerHaltError(`epoch_committed epoch ${e.epoch}: total_due ${totalDue}, the debtors add up to ${sumOf("debtor")}`);
+  if (sumOf("creditor") !== totalClaimable) throw new IndexerHaltError(`epoch_committed epoch ${e.epoch}: total_claimable ${totalClaimable}, the creditors add up to ${sumOf("creditor")}`);
   const deadline = ns(e.payment_deadline, "payment_deadline");
   advancePhase(ctx, e.epoch, "payment_window");
   ctx.db
-    .prepare("UPDATE epochs SET committed_at_ns = ?, payment_deadline_ns = ? WHERE circle_id = ? AND epoch = ?")
-    .run(ns(e.committed_at, "committed_at"), deadline, ctx.circleId, e.epoch);
+    .prepare("UPDATE epochs SET committed_at_ns = ?, payment_deadline_ns = ?, total_due = ?, total_claimable = ? WHERE circle_id = ? AND epoch = ?")
+    .run(ns(e.committed_at, "committed_at"), deadline, totalDue, totalClaimable, ctx.circleId, e.epoch);
   insertPositions(ctx, e.epoch, deadline, e.positions);
 }
 
@@ -156,13 +162,13 @@ export const epochHandlers: HandlerMap = {
     const set = ctx.db.prepare(
       "UPDATE obligations SET cleared = ? WHERE circle_id = ? AND epoch = ? AND debtor = ? AND creditor = ?",
     );
-    for (const edge of e.edges) {
+    for (const edge of e.edges ?? []) {
       const result = set.run(units(edge.cleared, "cleared"), ctx.circleId, e.epoch, edge.debtor, edge.creditor);
       requireChange(result.changes, `edge ${edge.debtor} -> ${edge.creditor} epoch ${e.epoch}`);
     }
     ctx.db
       .prepare("UPDATE clearing_log SET edge_count = edge_count + ? WHERE circle_id = ? AND epoch = ?")
-      .run(e.edges.length, ctx.circleId, e.epoch);
+      .run((e.edges ?? []).length, ctx.circleId, e.epoch);
   },
 
   epoch_committed(ctx, e) {
