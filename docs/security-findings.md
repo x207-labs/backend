@@ -1,6 +1,8 @@
 # Security findings tracker (BE-062)
 
-One table for every finding of the cross reviews: batch 2 (`security-review-batch2.md`, SDK of P5 to P2), batch 3 (`security-review-batch3.md`, frontend and agents) and the contract 0.0.12 (`security-review-0.0.12.md`). Status: `open`, `fixed <commit>`, `by design`, `info`. A fix is entered when it is seen in `git log` of the repository named; "in progress" means a change is in the working tree and not committed. Last update: after `sdk 3d0d269`, `frontend 300c2af`, `agents 694d38d`, `contracts f4c0d22`, `backend 7ece83d`. Lockfile of the SDK (`3d0d269`) is not a finding.
+**Summary for the jury.** Eight cross reviews of the SDK, the frontend, the agents, the backend with its broker, and the contract produced 70 findings: 4 High, 18 Medium, 29 Low and 19 Info. The count per batch is 13 (SDK, batch 2), 9 (frontend and agents, batch 3), 12 (contract 0.0.12), 10 (batch 4, backend and broker), 8 (batch 5), 10 (batch 6, one-time codes), 1 (found by the near-sandbox run) and 7 (batch 8, contract 0.0.13). The trend is down and the level is down with it: all 4 High findings were in the first three batches (a forged proof of cheating, a purchase signed to an unchecked payee, a file key sealed to an unchecked key, and the dispute that kept a buyer's money), each reviewed by a different session from the one that wrote the code, and all 4 are fixed; later batches have no High, and batch 8 has one Medium. Every finding of batches 2 to 6 that is not Info is fixed or by design (the commit is in the table), except B5-F5. What remains open is small and named: B5-F5 (the order of refusals in `docs/order.md`, a document) and the four findings of batch 8 on the contract 0.0.13, of which B8-F1 (the cleared edges cannot be read after `prune_epoch`) is the one that matters before the contract goes live. The tracker keeps its limits in the open: B3-F2, B3-F4, B3-F7 and B3-F9 are fixed with a written limit, and the Info rows are limits that the documents say aloud, not defects hidden. The method is stated in each batch file: a read-only review by another session, findings marked "run" were reproduced, and a fix is entered here only when it is seen in `git log`.
+
+One table for every finding of the cross reviews: batch 2 (`security-review-batch2.md`, SDK of P5 to P2), batch 3 (`security-review-batch3.md`, frontend and agents), the contract 0.0.12 (`security-review-0.0.12.md`), batches 4 to 6 (backend and broker, SDK and facilitator, one-time codes), the near-sandbox run, and batch 8 (`security-review-batch8.md`, the contract 0.0.13). Status: `open`, `fixed <commit>`, `by design`, `info`. A fix is entered when it is seen in `git log` of the repository named; "in progress" means a change is in the working tree and not committed. Last update: 2026-11-03, after `sdk ff5f6cd`, `frontend 577d992`, `agents 1e63ca1`, `backend e7f46d9`, `contracts f1a81a6` (the CT-099 working tree was read as it was). The lockfile of the SDK (`3d0d269`) is not a finding.
 
 Levels: **High** (a proof or money can be forged by the other party), **Medium** (a guarantee fails under an easy mistake or a plausible setup), **Low** (hardening), **Info** (a limit to write down).
 
@@ -53,10 +55,10 @@ Levels: **High** (a proof or money can be forged by the other party), **Medium**
 ## Batch 5 (SD-074 facilitator, SD-072 delegate order)
 | ID | Level | Repo | Summary | Status | Owner |
 | --- | --- | --- | --- | --- | --- |
-| B5-F1 | Medium | sdk | `payForProofs` of a delegate order: `alreadyPaid` must hold the keys (`proposal:<id>`), not the `paid` hashes, or a proposal is paid twice | open | Main B |
-| B5-F2 | Medium | sdk | Facilitator against a contract older than 0.0.12: `is_frozen` view missing, every verify is `500 internal_error` | open | Main B |
-| B5-F3 | Low | sdk | `verifyTx` is synchronous and cannot ask the chain | open | Main B |
-| B5-F4 | Low | backend | `mandate.dao` must answer the Sputnik view `get_policy` (`order_bad_mandate` / `not_a_dao`; 503 without RPC); registry not required, the buyer signs the mandate | fixed (see commit below) | Main C |
+| B5-F1 | Medium | sdk | `payForProofs` of a delegate order: `alreadyPaid` must hold the keys (`proposal:<id>`), not the `paid` hashes, or a proposal is paid twice | fixed `d251d14` (`paidKeys`; a hash in `alreadyPaid` of a delegate order is refused) | Main B |
+| B5-F2 | Medium | sdk | Facilitator against a contract older than 0.0.12: `is_frozen` view missing, every verify is `500 internal_error` | fixed `cb8b944` (`interface_version` is read and remembered 60 s; `is_frozen` from 0.0.12 up; a failing view is an error) | Main B |
+| B5-F3 | Low | sdk | `verifyTx` is synchronous and cannot ask the chain | fixed `d251d14` (`payForProofsAsync`, `OrderLedger.payProofsAsync`) | Main B |
+| B5-F4 | Low | backend | `mandate.dao` must answer the Sputnik view `get_policy` (`order_bad_mandate` / `not_a_dao`; 503 without RPC); registry not required, the buyer signs the mandate | fixed `837938b`, `9a7f72d` (backend); page `e3b053b` (frontend) | Main C |
 | B5-F5 | Low | sdk | Order of the refusals in `docs/order.md` differs from the code | open | Main B |
 | B5-F6 | Info | sdk | 10 s window of `is_frozen`, stricter rule in the epoch of the freeze | info | Main B |
 | B5-F7 | Info | sdk | The mandate does not bind the direction of the vote | info | Main B |
@@ -79,16 +81,27 @@ Levels: **High** (a proof or money can be forged by the other party), **Medium**
 ## Batch 6 (one-time codes: SD-076, FE-032, AG-030)
 | ID | Level | Repo | Summary | Status | Owner |
 | --- | --- | --- | --- | --- | --- |
-| B6-F1 | High | backend, frontend | A dispute `other` without proof ends `disputed` (unpaid) for a buyer who holds a working code; a code works once | backend fixed (`BE-069: fix`, ADR-48 points 5 to 7: complaint, not `disputed`); the page text (button, advice) is Main B's | Main C fixed, Main B |
-| B6-F2 | Medium | sdk, backend, frontend | `arbiter` is a name, not a bond: it lifts the 20 credit cap and the pages say "with bond" | backend fixed (`BE-069: fix`: caps 20 and 100 credit whatever the arbiter, `arbiter_not_supported`); SDK `codeNeedsBond` and the texts "with bond" are Main B's | Main C fixed, Main B |
-| B6-F3 | Medium | agents | The buyer agent confirms at once, without trying the code and giving up the one hour window | open | Main B |
-| B6-F4 | Low | sdk, frontend, agents | The delivery is not checked against the code document of the listing (`doc` not passed) | open | Main B |
-| B6-F5 | Low | sdk, backend | No bound on the size and characters of a code on the receiving side | backend fixed (`BE-069: fix`); SDK open | Main C fixed, Main B |
-| B6-F6 | Low | frontend | The public key of the seller is typed, not read from the contract | open | Main B |
-| B6-F7 | Low | frontend | The label says the code is sent nowhere; plain text field | open | Main B |
+| B6-F1 | High | backend, frontend | A dispute `other` without proof ends `disputed` (unpaid) for a buyer who holds a working code; a code works once | fixed: backend `cd70659` (complaint, not `disputed`), frontend `06dfc06` | Main C fixed, Main B |
+| B6-F2 | Medium | sdk, backend, frontend | `arbiter` is a name, not a bond: it lifts the 20 credit cap and the pages say "with bond" | fixed: backend `cd70659`, sdk `42ca6e5`, frontend `06dfc06`, `b3c076c` | Main C fixed, Main B |
+| B6-F3 | Medium | agents | The buyer agent confirms at once, without trying the code and giving up the one hour window | fixed `1e63ca1` (the agent tries the code before it confirms) | Main B |
+| B6-F4 | Low | sdk, frontend, agents | The delivery is not checked against the code document of the listing (`doc` not passed) | fixed: sdk `42ca6e5`, frontend `b3c076c`, agents `1e63ca1` | Main B |
+| B6-F5 | Low | sdk, backend | No bound on the size and characters of a code on the receiving side | fixed: backend `9905047`, sdk `42ca6e5`, frontend `b3c076c` | Main C fixed, Main B |
+| B6-F6 | Low | frontend | The public key of the seller is typed, not read from the contract | fixed `06dfc06` (the key is read from the contract) | Main B |
+| B6-F7 | Low | frontend | The label says the code is sent nowhere; plain text field | fixed `06dfc06` (the labels say where the code goes) | Main B |
 | B6-F8 | Info | agents | The mock book differs from the real one | info | Main B |
 | B6-F9 | Info | agents, backend/broker | Redaction of the key is by exact string only | info | Main B, Main C |
 | B6-F10 | Info | frontend, backend | The seller seals the key to the buyer that the backend names | info | Main C |
+
+## Batch 8 (contract 0.0.13, CT-099; `security-review-batch8.md`)
+| ID | Level | Repo | Summary | Status | Owner |
+| --- | --- | --- | --- | --- | --- |
+| B8-F1 | Medium | contracts, backend | The cleared edges are only in `list_obligations` after the commit, and `prune_epoch` removes them: a late or new indexer halts on `edges_hash`, and the edges are lost from the chain | open | A2 (contract), Main C (read at the block of the event) |
+| B8-F2 | Low | contracts | `get_proposal` `edge_count` is `edges.len()`, which is 0 after the commit | open | A2 |
+| B8-F3 | Low | contracts | The pages of `get_proposal` are not atomic when a better proposal replaces the stored one; no hash or version in the view | open | A2 |
+| B8-F4 | Low | contracts | The log size unit test uses `debtor`/`due`; the worst case is `creditor`/`claimable` (about 13.8 KB, 16 percent margin); the 13 digit bound is not asserted | open | A2 |
+| B8-F5 | Info | contracts, sdk, backend | The canonical bytes of `edges_hash` and `positions_hash` agree in Rust, the SDK and the backend (golden vector) | info | A2, Main B, Main C |
+| B8-F6 | Info | contracts | No event grows with the edges any more; the sandbox results of A2 were not seen by the reviewer | info | A2 |
+| B8-F7 | Info | all readers | Two events changed shape in 0.0.13: deploy the readers first | info | Main C, Main B |
 
 ## Found by the near-sandbox test
 | ID | Level | Repo | Summary | Status | Owner |
@@ -96,4 +109,4 @@ Levels: **High** (a proof or money can be forged by the other party), **Medium**
 | BE-055-S1 | Medium | backend | `events_raw.data_json` is an array with one object on a real chain, and the queries of the proofs (`epoch`, `solver`), of the installments (`voucher_registered`) and of the intent book (`intent_posted`) read `$.field`: on a real chain the epoch of a proof was null, no solver proof was ever found, the event of an installment was never matched and the on-chain data of an intent was empty. Found only by the run on near-sandbox (the unit tests stored a bare object). Solver (A2) asked to check the same reading | fixed `6a2a6ef`, `7220eeb`, `1caffb0` (`event-data.ts` reads both shapes); confirmed on near-sandbox in run 4 | Main C |
 
 ## Counts
-Fixed: BE-055-S1, B2-F1 to F12 (F6 in the backend and in the SDK), B3-F1 to F9. Open: B5-F1 to B5-F3, B5-F5. Batch 4: B4-F1 to F7 fixed, B4-F8 to F10 info. Batch 6: B6-F1 to F4, F6, F7 open, B6-F5 backend half fixed, F8 to F10 info. Fixed also: C-1, C-6 to C-10 (contracts 0.0.12, A2). By design: C-2, C-3. Info (documented): C-4, C-5, C-11, C-12. Limits written in the table: B3-F2 (buyer account from the API, confirmed by fingerprint), B3-F4 (CSP not tried with a real wallet), B3-F7 (text only), B3-F9 (warning only).
+By level: High 4 (all fixed), Medium 18, Low 29, Info 19, in 70 rows. Fixed: BE-055-S1, B2-F1 to F12 (F6 in the backend and in the SDK), B3-F1 to F9, B4-F1 to F7, B5-F1 to F4, B6-F1 to F7, C-1, C-6 to C-10. Open: B5-F5, B8-F1 to B8-F4. By design: C-2, C-3. Info (documented): B4-F8 to F10, B5-F6 to F8, B6-F8 to F10, C-4, C-5, C-11, C-12, B2-F11, B2-F12, B3-F9 (fixed with a limit), B8-F5 to F7. Limits written in the table: B3-F2 (buyer account from the API, confirmed by fingerprint), B3-F4 (CSP not tried with a real wallet), B3-F7 (text only), B3-F9 (warning only).
