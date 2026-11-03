@@ -39,3 +39,12 @@ defaulted debtor `409` with `stakeSlashed`, a creditor that claimed `200` with `
 The member that requested exit in epoch 1 and withdrew after `finalize_epoch` reads `status` `exited`,
 `exitRequestedEpoch` 1 and `stake` `"0"` from `GET …/members/{account}`, equal to the contract's `member` view.
 `stake`, `limit` and `status` of the other members equal the view as well.
+
+## On-chain proofs (BE-055, `test/sandbox/order-proofs.sandbox.test.ts`)
+A keeper order whose seller is `keepera`: another account (`keeperb`) calls `close_epoch` first and is not a proof; then `keepera` calls it and the transaction shows in `GET orders/{hash}/onchain-proofs` with the method and the signer the indexer read from the chain (`RpcBlockSource`), and `payForProofs` of the SDK makes one voucher for it. It uses the fixture of the SDK (`sdk/test-support`), so it runs only on request and with the binary and the wasm built:
+
+```bash
+X207_SANDBOX=1 npx vitest run test/sandbox
+```
+
+Only one near-sandbox at a time on this machine (`pgrep -fl near-sandbox` must be empty: the contract suite uses it). The file is outside `tsconfig.test.json` (it imports the SDK fixture from outside the root of this package); vitest compiles it.
