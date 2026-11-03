@@ -467,6 +467,19 @@ CREATE TABLE order_proposal_kinds (
 );
 `;
 
+// BE-069 (ADR-48): a one-time code is sold with the fair exchange of BE-056. `kind` tells the purchase of a license from the purchase of a code; `code_checks` keeps the answer of the issuer for a listing
+// (never the code, never the salt).
+const V1114_CODES = `
+ALTER TABLE purchases ADD COLUMN kind TEXT NOT NULL DEFAULT 'license';
+CREATE TABLE code_checks (
+  circle_id     TEXT    NOT NULL,
+  listing_hash  TEXT    NOT NULL,
+  verdict       TEXT    NOT NULL CHECK (verdict IN ('valid','used','unknown')),
+  checked_at_ms INTEGER NOT NULL,
+  PRIMARY KEY (circle_id, listing_hash)
+);
+`;
+
 export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1101, name: "m11_intents", sql: V1101_INTENTS },
   { version: 1102, name: "m11_listings", sql: V1102_LISTINGS },
@@ -481,4 +494,5 @@ export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1111, name: "m11_purchases", sql: V1111_PURCHASES },
   { version: 1112, name: "m11_hash_scheme", sql: V1112_HASH_SCHEME },
   { version: 1113, name: "m11_delegate_claims", sql: V1113_DELEGATE_CLAIMS },
+  { version: 1114, name: "m11_codes", sql: V1114_CODES },
 ];

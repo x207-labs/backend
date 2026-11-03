@@ -5145,6 +5145,488 @@
         }
       }
     },
+    "/x207/circles/{circle}/listings/{hash}/code-check": {
+      "get": {
+        "operationId": "get_listings_hash_code_check",
+        "summary": "Read listings by hash code check",
+        "tags": [
+          "marketplace"
+        ],
+        "parameters": [
+          {
+            "name": "circle",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "code_bound_to_identity",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "code_bound_to_identity",
+              "code_issuer_unknown",
+              "invalid_request",
+              "license_id_rejected",
+              "preview_contains_pii",
+              "proof_invalid",
+              "scope_invalid"
+            ]
+          },
+          "403": {
+            "description": "Not allowed for this account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "purchase_not_party",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "purchase_not_party",
+              "source_forbidden"
+            ]
+          },
+          "404": {
+            "description": "Not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "circle_not_found",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "circle_not_found",
+              "purchase_not_found"
+            ]
+          },
+          "409": {
+            "description": "The state does not allow this.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "already_exists",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "already_exists",
+              "code_not_checked",
+              "code_unknown",
+              "code_used",
+              "listing_not_open",
+              "purchase_bad_state"
+            ]
+          },
+          "429": {
+            "description": "Too many requests; see the header `Retry-After` (BE-066).",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "rate_limited",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "rate_limited"
+            ]
+          },
+          "503": {
+            "description": "A dependency is not ready.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "indexer_unavailable",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "indexer_unavailable"
+            ]
+          }
+        },
+        "x-source": "src/marketplace/purchases.ts"
+      },
+      "post": {
+        "operationId": "post_listings_hash_code_check",
+        "summary": "Send listings by hash code check",
+        "tags": [
+          "marketplace"
+        ],
+        "parameters": [
+          {
+            "name": "circle",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "code_bad_commitment",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "code_bad_commitment",
+              "code_bound_to_identity",
+              "code_issuer_unknown",
+              "code_not_verifiable",
+              "invalid_request",
+              "license_id_rejected",
+              "preview_contains_pii",
+              "proof_invalid",
+              "scope_invalid"
+            ]
+          },
+          "401": {
+            "description": "A signature does not match the voucher key of the account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_signature",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "invalid_signature"
+            ]
+          },
+          "403": {
+            "description": "Not allowed for this account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "purchase_not_party",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "purchase_not_party",
+              "source_forbidden"
+            ]
+          },
+          "404": {
+            "description": "Not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "circle_not_found",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "circle_not_found",
+              "purchase_not_found"
+            ]
+          },
+          "409": {
+            "description": "The state does not allow this.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "already_exists",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "already_exists",
+              "code_not_checked",
+              "code_unknown",
+              "code_used",
+              "listing_not_open",
+              "purchase_bad_state"
+            ]
+          },
+          "413": {
+            "description": "The body is larger than `API_MAX_BODY_BYTES` (BE-066).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "payload_too_large",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "payload_too_large"
+            ]
+          },
+          "429": {
+            "description": "Too many requests; see the header `Retry-After` (BE-066).",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "rate_limited",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "rate_limited"
+            ]
+          },
+          "503": {
+            "description": "A dependency is not ready.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "code_issuer_unavailable",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "code_issuer_unavailable",
+              "indexer_unavailable"
+            ]
+          }
+        },
+        "x-source": "src/marketplace/purchases.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {},
+                  "notice": {},
+                  "salt": {},
+                  "signature": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
     "/x207/circles/{circle}/listings/{hash}/delivery": {
       "get": {
         "operationId": "get_listings_hash_delivery",
@@ -6453,7 +6935,7 @@
                   "codes": {
                     "value": {
                       "error": {
-                        "code": "invalid_request",
+                        "code": "code_bound_to_identity",
                         "message": "…",
                         "details": {}
                       }
@@ -6463,6 +6945,8 @@
               }
             },
             "x-error-codes": [
+              "code_bound_to_identity",
+              "code_issuer_unknown",
               "invalid_request",
               "license_id_rejected",
               "preview_contains_pii",
@@ -6566,6 +7050,9 @@
             },
             "x-error-codes": [
               "already_exists",
+              "code_not_checked",
+              "code_unknown",
+              "code_used",
               "epoch_not_open",
               "exclusive_taken",
               "listing_not_open",
@@ -6717,7 +7204,7 @@
                   "codes": {
                     "value": {
                       "error": {
-                        "code": "invalid_request",
+                        "code": "code_bound_to_identity",
                         "message": "…",
                         "details": {}
                       }
@@ -6727,6 +7214,8 @@
               }
             },
             "x-error-codes": [
+              "code_bound_to_identity",
+              "code_issuer_unknown",
               "invalid_request",
               "license_id_rejected",
               "preview_contains_pii",
@@ -6831,6 +7320,9 @@
             },
             "x-error-codes": [
               "already_exists",
+              "code_not_checked",
+              "code_unknown",
+              "code_used",
               "listing_not_open",
               "purchase_bad_state"
             ]
@@ -8093,7 +8585,7 @@
                   "codes": {
                     "value": {
                       "error": {
-                        "code": "invalid_request",
+                        "code": "code_bound_to_identity",
                         "message": "…",
                         "details": {}
                       }
@@ -8103,6 +8595,8 @@
               }
             },
             "x-error-codes": [
+              "code_bound_to_identity",
+              "code_issuer_unknown",
               "invalid_request",
               "license_id_rejected",
               "preview_contains_pii",
@@ -8182,6 +8676,9 @@
             },
             "x-error-codes": [
               "already_exists",
+              "code_not_checked",
+              "code_unknown",
+              "code_used",
               "listing_not_open",
               "purchase_bad_state"
             ]
@@ -8287,7 +8784,7 @@
                   "codes": {
                     "value": {
                       "error": {
-                        "code": "invalid_request",
+                        "code": "code_bound_to_identity",
                         "message": "…",
                         "details": {}
                       }
@@ -8297,6 +8794,8 @@
               }
             },
             "x-error-codes": [
+              "code_bound_to_identity",
+              "code_issuer_unknown",
               "invalid_request",
               "license_id_rejected",
               "preview_contains_pii",
@@ -8376,6 +8875,9 @@
             },
             "x-error-codes": [
               "already_exists",
+              "code_not_checked",
+              "code_unknown",
+              "code_used",
               "listing_not_open",
               "purchase_bad_state"
             ]
@@ -12056,7 +12558,7 @@
                   "codes": {
                     "value": {
                       "error": {
-                        "code": "invalid_request",
+                        "code": "code_bound_to_identity",
                         "message": "…",
                         "details": {}
                       }
@@ -12066,6 +12568,8 @@
               }
             },
             "x-error-codes": [
+              "code_bound_to_identity",
+              "code_issuer_unknown",
               "invalid_request",
               "license_id_rejected",
               "preview_contains_pii",
@@ -12145,6 +12649,9 @@
             },
             "x-error-codes": [
               "already_exists",
+              "code_not_checked",
+              "code_unknown",
+              "code_used",
               "listing_not_open",
               "purchase_bad_state"
             ]
@@ -12256,7 +12763,7 @@
                   "codes": {
                     "value": {
                       "error": {
-                        "code": "invalid_request",
+                        "code": "code_bound_to_identity",
                         "message": "…",
                         "details": {}
                       }
@@ -12266,6 +12773,8 @@
               }
             },
             "x-error-codes": [
+              "code_bound_to_identity",
+              "code_issuer_unknown",
               "invalid_request",
               "license_id_rejected",
               "preview_contains_pii",
@@ -12369,6 +12878,9 @@
             },
             "x-error-codes": [
               "already_exists",
+              "code_not_checked",
+              "code_unknown",
+              "code_used",
               "listing_not_open",
               "purchase_bad_state"
             ]

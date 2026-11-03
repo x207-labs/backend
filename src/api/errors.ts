@@ -52,7 +52,9 @@ export type OrderApiErrorCode =
   | "order_not_found" | "order_not_party" | "order_bad_state" | "order_duplicate" | "milestone_not_found" | "sample_required" | "target_required" | "target_unverified" | "target_forbidden"
   | "order_bad_kind" | "order_bad_account" | "order_same_party" | "order_bad_hash" | "order_sample_required" | "order_target_required" | "order_target_forbidden" | "order_bad_target"
   | "order_bad_milestones" | "order_bad_amount" | "order_bad_proof" | "order_bad_nonce" | "order_bad_resource" | "order_not_proof_kind"
-  | "order_mandate_required" | "order_mandate_forbidden" | "order_bad_mandate" | "claim_invalid" | "claim_rpc_unavailable" | "payload_too_large" | "open_limit_reached";
+  | "order_mandate_required" | "order_mandate_forbidden" | "order_bad_mandate" | "claim_invalid" | "claim_rpc_unavailable" | "payload_too_large" | "open_limit_reached"
+  | "code_bad_account" | "code_bad_commitment" | "code_bad_salt" | "code_bad_value" | "code_bad_code" | "code_bad_nonce" | "code_bad_resource" | "code_bad_arbiter" | "code_bad_limit" | "code_over_limit_unbonded"
+  | "code_not_checked" | "code_used" | "code_unknown" | "code_issuer_unknown" | "code_issuer_unavailable" | "code_bound_to_identity" | "code_not_verifiable";
 /** BE-056: codes of 5g. */
 export type PurchaseApiErrorCode =
   | "purchase_not_found" | "purchase_not_party" | "purchase_bad_state" | "proof_invalid" | "exclusive_taken" | "license_id_rejected" | "preview_contains_pii" | "source_forbidden" | "takedown_invalid";

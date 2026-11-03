@@ -9,9 +9,9 @@ import { closeSync, openSync, readFileSync, unlinkSync, writeSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type Database from "better-sqlite3";
-import { ContentHasher, LicenseError, checkCheatProof, httpsRefProblem, licenseResource, parseRawCid, verifyRelease, verifyVoucher, type CheatProof, type LicenseRelease, type UnsignedVoucher, type Voucher } from "@x207/core";
+import { CODE_DISPUTE_WINDOW_SECONDS, CodeError, ContentHasher, LicenseError, checkCheatProof, checkCodeDocument, codeCommitment, codeDocumentHash, codeResource, httpsRefProblem, licenseResource, parseRawCid, verifyRelease, verifyVoucher, type CheatProof, type CodeDocument, type CodeIssuer, type LicenseRelease, type UnsignedVoucher, type Voucher } from "@x207/core";
 import { assertOpenRoom, DEFAULT_OPEN, type OpenLimits } from "../api/abuse.js";
-import { ApiError, invalidRequest } from "../api/errors.js";
+import { ApiError, invalidRequest, type ApiErrorCode } from "../api/errors.js";
 import { row, rows } from "../api/format.js";
 import type { Route } from "../api/router.js";
 import { activeMemberKey } from "./auth.js";
@@ -75,6 +75,14 @@ export interface PurchaseOptions {
   maxCiphertextBytes?: number;
   /** For the downloads of the sources: replace the DNS resolver and the HTTPS transport (tests). */
   sourceFetch?: { resolver?: Resolver; transport?: Transport };
+  /** One-time codes (BE-069, ADR-48): the issuers by name, which the check before the release asks. */
+  codeIssuers?: Readonly<Record<string, CodeIssuer>>;
+  /** How long a verdict `valid` of the issuer is good for the release of the key, seconds. Default 600. */
+  codeCheckTtlSeconds?: number;
+  /** Dispute window of a code purchase, seconds. Default 3600 (ADR-48). */
+  codeDisputeWindowSeconds?: number;
+  /** Value above which a code that cannot be checked needs a bond, smallest unit. Default 20 credit. */
+  codeUnverifiableLimit?: string;
 }
 
 // ---- the license inside the detail of a listing -----------------------------------------------------------------------------------------------------------------------
@@ -91,6 +99,16 @@ function licenseDetail(detail: string): Record<string, unknown> | null {
   try {
     const d: unknown = JSON.parse(detail);
     return d !== null && typeof d === "object" && !Array.isArray(d) && (d as { kind?: unknown }).kind === "license" ? (d as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The JSON of `Listing.detail` when it describes a one-time code (`kind: "code"`, BE-069); `null` otherwise. */
+function codeDetail(detail: string): Record<string, unknown> | null {
+  try {
+    const d: unknown = JSON.parse(detail);
+    return d !== null && typeof d === "object" && !Array.isArray(d) && (d as { kind?: unknown }).kind === "code" ? (d as Record<string, unknown>) : null;
   } catch {
     return null;
   }
@@ -121,17 +139,43 @@ export const licenseCheck = (options: PurchaseOptions = {}): ListingCheck => (li
   }
 };
 
-function detailOf(listing: ListingRow): LicenseDetail {
+/**
+ * Check of a listing that sells a one-time code (BE-069). The detail holds the fields of the code document of the SDK (SD-076) and the hash of that document; the document is built again from the
+ * listing (circle, seller, value) and must hash to `code_doc`, so nothing of it can change after the signature. The value cap of a code that cannot be checked, the arbiter, and the issuer are checked here.
+ */
+export const codeCheck = (options: PurchaseOptions = {}): ListingCheck => (listing) => {
+  const l = listing as { detail?: unknown; account?: string; circle?: string; offer?: { value?: string } };
+  const d = codeDetail(String(l.detail ?? ""));
+  if (d === null) return;
+  if (typeof d.code_doc !== "string" || !HASH.test(d.code_doc)) bad("code_doc harus 64 heksadesimal huruf kecil di detail listing kode");
+  if (d.identity_bound === true) throw new ApiError(400, "code_bound_to_identity", "Kode yang terikat pada identitas pemiliknya tidak bisa dijual", {});
+  const doc: CodeDocument = { circle: l.circle as string, seller: l.account as string, code_commitment: d.code_commitment as string, issuer: d.issuer as string, value: l.offer?.value as string, verifiable: d.verifiable as boolean, arbiter: (d.arbiter as string | null | undefined) ?? null, nonce: d.nonce as string };
+  try {
+    const normal = checkCodeDocument(doc, options.codeUnverifiableLimit);
+    if (codeDocumentHash(normal) !== d.code_doc) bad("code_doc bukan hash dokumen kode yang dibangun dari listing ini (circle, penjual, nilai, dan field detail)");
+  } catch (error) {
+    if (error instanceof CodeError) throw new ApiError(400, error.code as ApiErrorCode, error.message, {});
+    throw error;
+  }
+  if (doc.verifiable && options.codeIssuers?.[doc.issuer] === undefined) throw new ApiError(400, "code_issuer_unknown", `penerbit ${doc.issuer} tidak terdaftar di backend ini`, { issuer: doc.issuer });
+};
+
+function detailOf(listing: ListingRow): LicenseDetail & { kind: "license" | "code" } {
+  const code = codeDetail(listing.detail);
+  if (code !== null && typeof code.code_doc === "string" && typeof code.code_commitment === "string") {
+    return { kind: "code", license_doc: code.code_doc, content_hash: code.code_commitment, license_id: "one-time-code", license_hash: null, exclusive: true };
+  }
   const d = licenseDetail(listing.detail);
   if (d === null || typeof d.license_doc !== "string" || typeof d.content_hash !== "string" || typeof d.license_id !== "string" || typeof d.exclusive !== "boolean") {
     throw new ApiError(409, "listing_not_open", "Listing ini bukan listing lisensi", { listingHash: listing.listing_hash });
   }
-  return { license_doc: d.license_doc, content_hash: d.content_hash, license_id: d.license_id, license_hash: typeof d.license_hash === "string" ? d.license_hash : null, exclusive: d.exclusive };
+  return { kind: "license", license_doc: d.license_doc, content_hash: d.content_hash, license_id: d.license_id, license_hash: typeof d.license_hash === "string" ? d.license_hash : null, exclusive: d.exclusive };
 }
 
 // ---- rows and views ---------------------------------------------------------------------------------------------------------------------------------------------------
 interface PurchaseRow {
   id: bigint;
+  kind: string;
   listing_hash: string;
   buyer: string;
   seller: string;
@@ -166,6 +210,7 @@ const releasable = (p: PurchaseRow): boolean => p.status === "confirmed" || p.st
 export function purchaseView(p: PurchaseRow) {
   return {
     purchaseId: p.id.toString(),
+    kind: p.kind,
     listingHash: p.listing_hash,
     buyer: p.buyer,
     seller: p.seller,
@@ -173,7 +218,7 @@ export function purchaseView(p: PurchaseRow) {
     contentHash: p.content_hash,
     licenseId: p.license_id,
     exclusive: p.exclusive === 1n,
-    needsBond: p.exclusive === 1n,
+    needsBond: p.exclusive === 1n && p.kind === "license",
     source: p.source_kind === null ? null : { kind: p.source_kind, ref: p.source_ref },
     cipherHash: p.cipher_hash,
     release: p.release_json === null ? null : (JSON.parse(p.release_json) as LicenseRelease),
@@ -222,10 +267,31 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
   const guard = { ...(options.sourceFetch?.resolver ? { resolver: options.sourceFetch.resolver } : {}), ...(options.sourceFetch?.transport ? { transport: options.sourceFetch.transport } : {}), code: "source_forbidden" as const };
   const ids = options.licenseIds ?? DEFAULT_LICENSE_IDS;
   const downloads = new Semaphore(MAX_DOWNLOADS);
+  const codeWindow = options.codeDisputeWindowSeconds ?? CODE_DISPUTE_WINDOW_SECONDS;
+  const checkTtlMs = (options.codeCheckTtlSeconds ?? 600) * 1000;
 
   const refuse = (message: string, details: Record<string, unknown> = {}): never => {
     throw new ApiError(409, "purchase_bad_state", message, details);
   };
+
+  /** The key of a code may be released only after a fresh verdict `valid`, when its issuer can be asked. A `used` code ends the sale: the purchase and the listing are cancelled, nothing moves. */
+  function assertCodeGood(db: Database.Database, circleId: string, p: PurchaseRow, listingDetail: string, nowMs: number): void {
+    const cd = codeDetail(listingDetail);
+    if (cd === null || cd.verifiable !== true) return;
+    const c = row<{ verdict: string; checked_at_ms: bigint }>(db, "SELECT verdict, checked_at_ms FROM code_checks WHERE circle_id = ? AND listing_hash = ?", circleId, p.listing_hash);
+    if (c === undefined || nowMs - Number(c.checked_at_ms) > checkTtlMs) throw new ApiError(409, "code_not_checked", "Kode ini harus dicek ke penerbit dulu (POST …/code-check) sebelum kunci dilepas; hasil cek berlaku sebentar", { ttlSeconds: checkTtlMs / 1000 });
+    if (c.verdict === "used") {
+      cancelCodeSale(db, circleId, p.listing_hash, nowMs);
+      throw new ApiError(409, "code_used", "Penerbit menyatakan kode ini sudah terpakai; pembelian dibatalkan dan voucher tidak berpindah", {});
+    }
+    if (c.verdict !== "valid") throw new ApiError(409, "code_unknown", "Penerbit tidak mengenal kode ini; kunci tidak dilepas", {});
+  }
+  function cancelCodeSale(db: Database.Database, circleId: string, listingHash: string, nowMs: number): void {
+    db.transaction(() => {
+      db.prepare("UPDATE purchases SET status = 'cancelled', dispute_reason = 'code_used', closed_at_ms = ? WHERE circle_id = ? AND listing_hash = ? AND status IN ('paid_held','cipher_posted')").run(nowMs, circleId, listingHash);
+      db.prepare("UPDATE listings SET status = 'cancelled', closed_at_ms = ? WHERE circle_id = ? AND listing_hash = ? AND status = 'open'").run(nowMs, circleId, listingHash);
+    })();
+  }
   const notParty = (actor: string, message: string): never => {
     throw new ApiError(403, "purchase_not_party", message, { actor });
   };
@@ -289,6 +355,69 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
 
   return [
     {
+      method: "POST",
+      pattern: "/x207/circles/{circle}/listings/{hash}/code-check",
+      circleScoped: true,
+      handler: async ({ db, circle, params, body, now }) => {
+        const nowS = nowSeconds(now());
+        const listing = findListing(db, circle.circle_id, params.hash as string);
+        const cd = codeDetail(listing.detail);
+        if (cd === null || typeof cd.code_commitment !== "string") throw new ApiError(409, "listing_not_open", "Listing ini bukan listing kode", { listingHash: listing.listing_hash });
+        if (listing.status !== "open" || Number(listing.expires_at) <= nowS) throw new ApiError(409, "listing_not_open", "Listing tidak terbuka", { listingHash: listing.listing_hash, status: listing.status });
+        if (body === null || typeof body !== "object") throw invalidRequest("body harus objek");
+        const { notice, signature, code, salt } = body as { notice?: Record<string, unknown>; signature?: unknown; code?: unknown; salt?: unknown };
+        if (typeof signature !== "string") throw invalidRequest("signature wajib string");
+        if (notice === null || typeof notice !== "object") throw invalidRequest("notice wajib objek");
+        // keys: circle, listing_hash, actor, action, at; action is "check". The signature covers the listing, so a check of one listing cannot be shown for another.
+        if (Object.keys(notice).join(",") !== "circle,listing_hash,actor,action,at") throw invalidRequest("kunci notice harus circle, listing_hash, actor, action, at (urutan tetap)");
+        if (notice.circle !== circle.contract_id) throw invalidRequest("notice.circle harus akun kontrak lingkaran", { expected: circle.contract_id, got: notice.circle });
+        if (notice.listing_hash !== listing.listing_hash || notice.action !== "check") throw invalidRequest("notice.listing_hash harus listing ini dan action harus check");
+        if (!Number.isSafeInteger(notice.at) || Math.abs((notice.at as number) - nowS) > NOTICE_SKEW_SECONDS) throw invalidRequest(`notice.at harus detik unix dalam ${NOTICE_SKEW_SECONDS} detik dari jam server`);
+        if (notice.actor !== listing.account_id) throw new ApiError(403, "purchase_not_party", "Hanya penjual yang menunjukkan kodenya untuk dicek", { actor: notice.actor });
+        if (!verifyNoticeJson(JSON.stringify(notice), circle.contract_id, signature, activeMemberKey(db, circle.circle_id, listing.account_id))) {
+          throw new ApiError(401, "invalid_signature", "Tanda tangan notice tidak cocok dengan kunci penjual", { account: listing.account_id });
+        }
+        // from here on nothing that holds the code or the salt may reach a message, a detail, a log or a table
+        if (typeof code !== "string" || typeof salt !== "string" || !HASH.test(salt)) throw invalidRequest("code (teks) dan salt (64 heksadesimal huruf kecil) wajib");
+        let commitment: string;
+        try {
+          commitment = codeCommitment(code, Uint8Array.from(Buffer.from(salt, "hex")));
+        } catch (error) {
+          if (error instanceof CodeError) throw new ApiError(400, error.code as ApiErrorCode, "kode tidak sah (panjang atau karakter)", {});
+          throw error;
+        }
+        if (commitment !== cd.code_commitment) throw new ApiError(400, "code_bad_commitment", "salt dan kode tidak cocok dengan code_commitment listing", {});
+        if (cd.verifiable !== true) throw new ApiError(400, "code_not_verifiable", "Penerbit kode ini tidak punya cek; tidak ada yang dicek", { issuer: cd.issuer });
+        const issuer = options.codeIssuers?.[String(cd.issuer)];
+        if (issuer === undefined) throw new ApiError(400, "code_issuer_unknown", `penerbit ${String(cd.issuer)} tidak terdaftar di backend ini`, { issuer: cd.issuer });
+        let verdict: "valid" | "used" | "unknown";
+        try {
+          verdict = await issuer.checkCode(code);
+        } catch {
+          throw new ApiError(503, "code_issuer_unavailable", "Penerbit tidak menjawab; belum ada keputusan, coba lagi", { issuer: cd.issuer });
+        }
+        db.prepare("INSERT INTO code_checks (circle_id, listing_hash, verdict, checked_at_ms) VALUES (?, ?, ?, ?) ON CONFLICT (circle_id, listing_hash) DO UPDATE SET verdict = excluded.verdict, checked_at_ms = excluded.checked_at_ms").run(circle.circle_id, listing.listing_hash, verdict, now());
+        if (verdict === "used") cancelCodeSale(db, circle.circle_id, listing.listing_hash, now());
+        return { status: 200, body: { listingHash: listing.listing_hash, verdict, checkedAt: now(), validUntilMs: verdict === "valid" ? now() + checkTtlMs : null } };
+      },
+    },
+    {
+      method: "GET",
+      pattern: "/x207/circles/{circle}/listings/{hash}/code-check",
+      circleScoped: true,
+      handler: ({ db, circle, params, now }) => {
+        const listing = findListing(db, circle.circle_id, params.hash as string);
+        const cd = codeDetail(listing.detail);
+        if (cd === null) throw new ApiError(409, "listing_not_open", "Listing ini bukan listing kode", { listingHash: listing.listing_hash });
+        const c = row<{ verdict: string; checked_at_ms: bigint }>(db, "SELECT verdict, checked_at_ms FROM code_checks WHERE circle_id = ? AND listing_hash = ?", circle.circle_id, listing.listing_hash);
+        const checkedAt = c === undefined ? null : Number(c.checked_at_ms);
+        return {
+          status: 200,
+          body: { listingHash: listing.listing_hash, issuer: cd.issuer, verifiable: cd.verifiable === true, verdict: c?.verdict ?? null, checkedAt, fresh: checkedAt !== null && now() - checkedAt <= checkTtlMs, listingStatus: listing.status },
+        };
+      },
+    },
+    {
       method: "GET",
       pattern: "/x207/circles/{circle}/marketplace/license-ids",
       circleScoped: true,
@@ -321,7 +450,8 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
         if (v.circle !== circle.contract_id) throw invalidRequest("voucher.circle harus akun kontrak lingkaran", { expected: circle.contract_id, got: v.circle });
         if (v.payee !== listing.account_id) throw invalidRequest("voucher.payee harus penjual listing", { expected: listing.account_id });
         if (v.payer === v.payee) throw invalidRequest("pembeli tidak boleh penjual");
-        if (v.resource !== licenseResource(d.license_doc)) throw invalidRequest("voucher.resource harus x207:license:<license_doc>", { expected: licenseResource(d.license_doc) });
+        const expectedResource = d.kind === "code" ? codeResource(d.license_doc) : licenseResource(d.license_doc);
+        if (v.resource !== expectedResource) throw invalidRequest(d.kind === "code" ? "voucher.resource harus x207:code:<code_doc>" : "voucher.resource harus x207:license:<license_doc>", { expected: expectedResource });
         const key = activeMemberKey(db, circle.circle_id, v.payer);
         if (!verifyVoucher({ ...v, signature } as Voucher, key)) throw new ApiError(401, "invalid_signature", "Tanda tangan voucher tidak cocok dengan kunci voucher pembeli", { account: v.payer });
         const open = await resolveOpenEpoch(db, circle);
@@ -341,10 +471,10 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
         assertOpenRoom(db, "SELECT COUNT(*) AS n FROM purchases WHERE circle_id = ? AND buyer = ? AND status IN ('paid_held','cipher_posted','key_released','disputed')", [circle.circle_id, v.payer], options.openLimits?.purchases ?? DEFAULT_OPEN.purchases, "pembelian", v.payer);
         const id = db
           .prepare(
-            `INSERT INTO purchases (circle_id, listing_hash, buyer, seller, content_hash, license_doc, license_id, exclusive, voucher_json, voucher_signature, created_at_ms)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO purchases (circle_id, listing_hash, buyer, seller, content_hash, license_doc, license_id, exclusive, voucher_json, voucher_signature, created_at_ms, kind)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
-          .run(circle.circle_id, listing.listing_hash, v.payer, v.payee, d.content_hash, d.license_doc, d.license_id, d.exclusive ? 1 : 0, JSON.stringify(v), signature, now()).lastInsertRowid;
+          .run(circle.circle_id, listing.listing_hash, v.payer, v.payee, d.content_hash, d.license_doc, d.license_id, d.exclusive ? 1 : 0, JSON.stringify(v), signature, now(), d.kind).lastInsertRowid;
         const p = findPurchase(db, circle.circle_id, String(id));
         return { status: 201, body: { purchase_id: p.id.toString(), ...purchaseView(p) } };
       },
@@ -392,9 +522,11 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
           if (typeof r.key_commitment !== "string" || !HASH.test(r.key_commitment)) throw invalidRequest("release.key_commitment harus 64 heksadesimal huruf kecil");
           if (r.license_hash !== p.license_doc && r.license_hash !== detail?.license_hash) throw invalidRequest("release.license_hash harus license_doc atau license_hash dari listing");
           if (!verifyRelease(r, signature, activeMemberKey(db, circle.circle_id, p.seller))) throw new ApiError(401, "invalid_signature", "Tanda tangan rilis tidak cocok dengan kunci penjual", { account: p.seller });
+          // a code that the issuer can check is checked before the key goes to the buyer (ADR-48)
+          if (p.kind === "code") assertCodeGood(db, circle.circle_id, p, d, now());
           db.transaction(() => {
             record(db, circle.circle_id, p, p.seller, "key_released", at, signature, now(), JSON.stringify(r));
-            db.prepare("UPDATE purchases SET status = 'key_released', release_json = ?, release_signature = ?, released_at = ?, dispute_until = ? WHERE id = ?").run(JSON.stringify(r), signature, at, at + window, p.id);
+            db.prepare("UPDATE purchases SET status = 'key_released', release_json = ?, release_signature = ?, released_at = ?, dispute_until = ? WHERE id = ?").run(JSON.stringify(r), signature, at, at + (p.kind === "code" ? codeWindow : window), p.id);
           })();
           return { status: 201, body: purchaseView(findPurchase(db, circle.circle_id, params.id as string)) };
         }
