@@ -187,7 +187,7 @@ describe("BE-059 AWS STS adapter with a permission boundary (mock HTTP)", () => 
 
 /** The `.env` of the project root, read without printing anything. Only these names are looked at. */
 function testEnv(): Record<string, string> {
-  const names = ["GITHUB_TEST_TOKEN", "GITHUB_TEST_ORG", "GITHUB_TEST_GRANTEE", "DISCORD_TEST_BOT_TOKEN", "DISCORD_TEST_GUILD_ID", "DISCORD_TEST_GRANTEE_ID", "DISCORD_TEST_ROLE_ID"];
+  const names = ["GITHUB_TEST_TOKEN", "GITHUB_TEST_ORG", "GITHUB_TEST_REPO", "GITHUB_TEST_GRANTEE", "DISCORD_TEST_BOT_TOKEN", "DISCORD_TEST_GUILD_ID", "DISCORD_TEST_GRANTEE_ID", "DISCORD_TEST_ROLE_ID"];
   const out: Record<string, string> = {};
   let file = "";
   try {
@@ -215,12 +215,12 @@ describe("BE-059 real accounts of the owner (skipped unless every variable is se
     if (discord.adapter && discord.handle) await discord.adapter.revoke(discord.handle).catch(() => undefined);
   });
 
-  it.skipIf(!hasAll("GITHUB_TEST_TOKEN", "GITHUB_TEST_ORG", "GITHUB_TEST_GRANTEE"))("TC-BE-059-09 GitHub: the grantee of the owner is looked up and invited to the test organization, then removed", async () => {
+  it.skipIf(!hasAll("GITHUB_TEST_TOKEN", "GITHUB_TEST_ORG", "GITHUB_TEST_REPO", "GITHUB_TEST_GRANTEE"))("TC-BE-059-09 GitHub: the grantee of the owner is looked up and invited as a collaborator to the test repository, then removed", async () => {
     const adapter = new GithubAdapter({ token: env.GITHUB_TEST_TOKEN!, allowedOwners: [env.GITHUB_TEST_ORG!] });
     github.adapter = adapter;
     expect(await adapter.verifyGranteeRef(env.GITHUB_TEST_GRANTEE!)).toEqual({ ok: true });
     expect(await adapter.verifyGranteeRef("x207-no-such-user-0123456789-zz")).toMatchObject({ ok: false });
-    const g = await adapter.grant({ grantId: 9001, granteeRef: env.GITHUB_TEST_GRANTEE!, resource: `org:${env.GITHUB_TEST_ORG}`, permission: null, expiresAtMs: Date.now() + DAY });
+    const g = await adapter.grant({ grantId: 9001, granteeRef: env.GITHUB_TEST_GRANTEE!, resource: `${env.GITHUB_TEST_ORG}/${env.GITHUB_TEST_REPO}`, permission: "pull", expiresAtMs: Date.now() + DAY });
     github.handle = g.handle;
     expect(["active", "absent"]).toContain(await adapter.status(g.handle));
     await adapter.revoke(g.handle);
