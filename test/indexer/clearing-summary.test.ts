@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import type Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDatabase } from "../../src/db/index.js";
@@ -9,16 +9,12 @@ import type { HandlerContext } from "../../src/indexer/handlers/index.js";
 import { IndexerHaltError } from "../../src/indexer/errors.js";
 import { Indexer } from "../../src/indexer/indexer.js";
 import { rebuildReadModel } from "../../src/indexer/rebuild.js";
+import { stubHashes, edgesHash, positionsHash } from "../helpers/clearing-hashes.js";
 import { acct, ArrayBlockSource, block, CONTRACT, eventLog, fxLog42, nsOf, positions } from "../helpers/fx-log42.js";
 
 // BE-077: interface 0.0.13. `clearing_applied` is a summary (edge_count, edges_hash) and the edges come from the view list_obligations; `epoch_committed` has all positions
 // and positions_hash. The hash functions are the SDK ones (SDK-080); here a stand-in with the same shape: sha256 of the canonical JSON, edges with cleared > 0 sorted by (debtor, creditor).
-const sha = (v: unknown): string => createHash("sha256").update(JSON.stringify(v)).digest("hex");
-const stub = {
-  edgesHash: (edges: ClearedEdge[]): string =>
-    sha(edges.filter((e) => BigInt(e.cleared) > 0n).map((e) => ({ debtor: e.debtor, creditor: e.creditor, cleared: e.cleared })).sort((a, b) => (a.debtor + "\0" + a.creditor < b.debtor + "\0" + b.creditor ? -1 : 1))),
-  positionsHash: (list: unknown[]): string => sha([...(list as Array<{ account_id: string }>)].sort((a, b) => (a.account_id < b.account_id ? -1 : 1))),
-};
+const stub = stubHashes;
 
 const CIRCLE = "agents-main";
 const EDGES: ClearedEdge[] = [
@@ -145,5 +141,19 @@ describe("BE-077 clearing_applied and epoch_committed of interface 0.0.13", () =
     // after the rebuild the obligations are back from the events that the parser knows, `cleared` is empty until the summary is replayed from the kept set
     epochHandlers.clearing_applied!(ctxAt(1005), summary() as never);
     expect(db.prepare("SELECT debtor, creditor, cleared FROM obligations ORDER BY debtor, creditor").all()).toEqual(before);
+  });
+});
+
+// the golden vector of A2 (CT-099): the stand-in of the tests gives the bytes and the hashes of the contract
+const VECTOR = new URL("../../../contracts/tests/vectors/clearing_hashes.json", import.meta.url).pathname;
+describe.skipIf(!existsSync(VECTOR))("BE-077 the hashes of the tests are the ones of the golden vector", () => {
+  const vector = (): { edges: Array<{ name: string; input: ClearedEdge[]; edges_hash: string }>; positions: Array<{ name: string; input: unknown[]; positions_hash: string }> } => JSON.parse(readFileSync(VECTOR, "utf8"));
+
+  it("TC-BE-077-08 edges_hash and positions_hash of every case of the vector", () => {
+    const v = vector();
+    expect(v.edges.length).toBeGreaterThan(0);
+    expect(v.positions.length).toBeGreaterThan(0);
+    for (const c of v.edges) expect([c.name, edgesHash(c.input)]).toEqual([c.name, c.edges_hash]);
+    for (const c of v.positions) expect([c.name, positionsHash(c.input)]).toEqual([c.name, c.positions_hash]);
   });
 });
