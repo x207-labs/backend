@@ -115,7 +115,9 @@ describe("BE-049 validation of a listing per kind of asset (catalogue #1 to #10)
     const eventEnds = (ends: number) => (d: Record<string, unknown>) => ({ ...d, event: { ...(d.event as object), ends_at: ends } });
     expect(message(await fromTemplate(m, "ticket", eventEnds(NOW_S + 1000), { expiresAt: NOW_S + 2000 }))[2]).toContain("event.ends_at");
     expect(message(await fromTemplate(m, "ticket", eventEnds(NOW_S - 5)))[2]).toContain("sudah lewat");
-    expect(message(await fromTemplate(m, "ticket", ({ event: _e, ...d }) => d))[2]).toContain("event.ends_at atau valid_until");
+    // the SDK writes the end of the event in `event.ends_at` and, in newer versions, in `valid_until` too: remove both
+    const noEvent = await fromTemplate(m, "ticket", ({ event: _e, valid_until: _v, ...d }) => d);
+    expect(message(noEvent)[2]).toContain("event.ends_at atau valid_until");
     expect((await fromTemplate(m, "ticket", eventEnds(NOW_S + 1000), { expiresAt: NOW_S + 1000 })).status).toBe(201);
     expect(message(await fromTemplate(m, "coupon", ({ valid_until: _v, ...d }) => d))[2]).toContain("valid_until");
     expect(message(await fromTemplate(m, "coupon", (d) => ({ ...d, valid_until: "soon" })))[2]).toContain("valid_until");
