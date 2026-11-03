@@ -21,6 +21,8 @@ export interface GrantWatcherOptions {
   pageSize?: number;
   /** Name of the cursor row, so that two watchers in one database do not share a position. */
   name?: string;
+  /** Receives one line for each event the handler failed on. */
+  log?: (line: string) => void;
 }
 
 /** Same encoding as the read API: base64url of `{h, r, i}`, the position of one event. */
@@ -30,7 +32,8 @@ export const cursorOf = (e: Pick<WatchedEvent, "blockHeight" | "receiptId" | "lo
 /**
  * BK-003: reads `grant_activated`, `grant_revoked` and `member_defaulted` from the read API, oldest first. The position is stored in the
  * database after every event the handler took, so a restart continues where it stopped, and an event is handled at most once per
- * `(receipt_id, log_index)`. A handler that throws leaves the cursor before that event: the next poll offers it again.
+ * `(receipt_id, log_index)`. A handler that throws is logged and the event is skipped (security review F5): one bad event must not stop every
+ * event behind it. The sweep of the revoker still closes what such an event would have closed.
  * (The backup of reading the node directly is not built.)
  */
 export class GrantWatcher {
@@ -57,11 +60,10 @@ export class GrantWatcher {
         if (this.#o.store.markSeen(event.receiptId, event.logIndex)) {
           try {
             await handler(event);
+            handled += 1;
           } catch (error) {
-            this.#o.store.db.prepare("DELETE FROM seen_events WHERE receipt_id = ? AND log_index = ?").run(event.receiptId, event.logIndex);
-            throw error;
+            (this.#o.log ?? console.error)(`event ${event.event} ${event.receiptId}#${event.logIndex} skipped: ${error instanceof Error ? error.message : String(error)}`);
           }
-          handled += 1;
         }
         this.#o.store.setCursor(this.#name, cursorOf(event));
       }

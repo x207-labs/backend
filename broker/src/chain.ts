@@ -1,13 +1,11 @@
 import { Account, JsonRpcProvider, KeyPairSigner } from "near-api-js";
-import type { AccessGrant, AccountId, GrantRole, RevokeReason } from "@x207/core";
+import type { AccessGrant, AccountId, RevokeReason } from "@x207/core";
 import { parseFunctionCallKeyScope } from "@x207/core";
 
 /** Everything the broker does on NEAR. Tests replace it with a fake; `NearBrokerChain` is the real one. */
 export interface BrokerChain {
   /** `get_grant` view; `null` when the grant does not exist. */
   getGrant(grantId: number): Promise<AccessGrant | null>;
-  /** `grants_of` view. */
-  grantsOf(account: AccountId, role: GrantRole): Promise<AccessGrant[]>;
   /** The lease sub-account that the keys are added to. */
   readonly leaseAccount: AccountId;
   /** `AddKey` of a function-call key with the limits of the grant scope, signed with the key of the lease sub-account. */
@@ -68,10 +66,6 @@ export class NearBrokerChain implements BrokerChain {
 
   getGrant(grantId: number): Promise<AccessGrant | null> {
     return this.#view("get_grant", { grant_id: grantId });
-  }
-
-  grantsOf(account: AccountId, role: GrantRole): Promise<AccessGrant[]> {
-    return this.#view("grants_of", { account_id: account, role });
   }
 
   async addLeaseKey(publicKey: string, scope: string): Promise<string> {

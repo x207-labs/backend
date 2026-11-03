@@ -11,6 +11,7 @@ import { ClassBAdapter } from "./keys/class-b.js";
 import { Revoker } from "./revoker.js";
 import { createBrokerHandler, serve } from "./server.js";
 import { BrokerStore } from "./store.js";
+import { activeGrantIdsOf } from "./grants-api.js";
 import { GrantWatcher } from "./watcher/index.js";
 
 export interface RunningBroker {
@@ -60,8 +61,11 @@ export async function startBroker(options: StartOptions): Promise<RunningBroker>
   const providers = new ProviderRegistry(classCProviders, options.env ?? process.env, audit);
   const classC = new ClassCAdapter({ baseUrl: "", store });
   const dispatcher = new Dispatcher({ chain, adapters: { B: classB, ...(classCProviders.length > 0 ? { C: classC } : {}) } });
-  const revoker = new Revoker({ chain, store, classB, now, ...(options.log ? { log: options.log } : {}) });
-  const watcher = new GrantWatcher({ readApiUrl: config.readApiUrl, circle: config.circleId, store, ...(options.fetch ? { fetch: options.fetch } : {}) });
+  const revoker = new Revoker({
+    chain, store, classB, now, activeGrantIdsOf: activeGrantIdsOf({ readApiUrl: config.readApiUrl, circle: config.circleId, ...(options.fetch ? { fetch: options.fetch } : {}) }), ...(options.log ? { log: options.log } : {}) });
+  const watcher = new GrantWatcher({
+    readApiUrl: config.readApiUrl, circle: config.circleId, store, ...(options.log ? { log: options.log } : {}), ...(options.fetch ? { fetch: options.fetch } : {}),
+  });
   const extra = new X207ExtraSource({
     facilitatorUrl: config.facilitatorUrl, ...(options.fetch ? { fetch: options.fetch } : {}), ...(options.extraCacheMs === undefined ? {} : { cacheMs: options.extraCacheMs }),
   });

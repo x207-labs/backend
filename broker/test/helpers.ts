@@ -1,4 +1,4 @@
-import type { AccessGrant, AccountId, GrantRole, RevokeReason } from "@x207/core";
+import type { AccessGrant, AccountId, RevokeReason } from "@x207/core";
 import type { BrokerChain } from "../src/chain.js";
 
 export const GRANTOR = "scraper.x207-circle.near";
@@ -30,10 +30,8 @@ export class FakeChain implements BrokerChain {
     this.calls.push(`getGrant:${id}`);
     return this.grants.get(id) ?? null;
   }
-  async grantsOf(account: AccountId, role: GrantRole): Promise<AccessGrant[]> {
-    this.calls.push(`grantsOf:${account}:${role}`);
-    return [...this.grants.values()].filter((g) => (role === "grantee" ? g.grantee === account : g.grantor === account));
-  }
+  /** What the read API lists for a grantee: the ids of the active grants (the broker confirms each with `getGrant`). */
+  activeIdsOf = async (account: AccountId): Promise<number[]> => [...this.grants.values()].filter((g) => g.grantee === account && g.status === "active").map((g) => g.grant_id);
   async addLeaseKey(publicKey: string, scope: string): Promise<string> {
     this.calls.push(`addKey:${publicKey}`);
     void scope;

@@ -64,21 +64,23 @@ describe("BK-003 watcher", () => {
     expect(seen).toEqual([10]);
   });
 
-  it("TC-BK-003-04 a handler that fails leaves the cursor before the event, and the next poll offers it again", async () => {
+  it("TC-BK-003-04 a handler that fails is logged and its event skipped, the events behind it are still handled", async () => {
     const store = new BrokerStore(":memory:");
     const { fetchFn } = readApi(log);
-    const watcher = new GrantWatcher({ readApiUrl: "http://api", circle: "c", store, fetch: fetchFn });
-    let fail = true;
+    const lines: string[] = [];
+    const watcher = new GrantWatcher({ readApiUrl: "http://api", circle: "c", store, fetch: fetchFn, log: (l) => lines.push(l) });
     const seen: string[] = [];
     const handler = (e: WatchedEvent) => {
-      if (e.event === "member_defaulted" && fail) throw new Error("chain down");
+      if (e.event === "member_defaulted") throw new Error("chain down");
       seen.push(e.event);
     };
-    await expect(watcher.poll(handler)).rejects.toThrow("chain down");
-    expect(seen).toEqual(["grant_activated"]);
-    fail = false;
     await watcher.poll(handler);
-    expect(seen).toEqual(["grant_activated", "member_defaulted", "grant_revoked"]);
+    expect(seen).toEqual(["grant_activated", "grant_revoked"]);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("member_defaulted");
+    expect(lines[0]).toContain("chain down");
+    expect(await watcher.poll(handler)).toBe(0);
+    expect(seen).toEqual(["grant_activated", "grant_revoked"]);
   });
 
   it("TC-BK-003-05 a read API that answers an error stops the poll without moving the cursor", async () => {

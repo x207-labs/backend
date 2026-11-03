@@ -12,7 +12,7 @@ function setup() {
   const classB = new ClassBAdapter({ chain, store, viewAccessKey: async () => null, now: () => clock.now });
   const dispatcher = new Dispatcher({ chain, adapters: { B: classB } });
   const log: string[] = [];
-  const revoker = new Revoker({ chain, store, classB, now: () => clock.now, log: (l) => log.push(l) });
+  const revoker = new Revoker({ chain, store, classB, activeGrantIdsOf: chain.activeIdsOf, now: () => clock.now, log: (l) => log.push(l) });
   return { chain, store, clock, dispatcher, revoker, log };
 }
 

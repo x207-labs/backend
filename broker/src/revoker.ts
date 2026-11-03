@@ -8,6 +8,8 @@ export interface RevokerOptions {
   chain: BrokerChain;
   store: BrokerStore;
   classB: ClassBAdapter;
+  /** Ids of the open grants that `account` rents, from the read API (`activeGrantIdsOf`). */
+  activeGrantIdsOf: (account: AccountId) => Promise<number[]>;
   /** Wall clock in ms, the clock of `paid_until`. */
   now: () => number;
   log?: (line: string) => void;
@@ -25,7 +27,7 @@ const nsToMs = (ns: string): number => Number(BigInt(ns) / 1_000_000n);
  * the status on chain. A failed `revoke_grant` is reported, never retried silently, and does not undo the `DeleteKey`.
  *  - `paid_until` passed: `DeleteKey` and `revoke_grant(operator)`.
  *  - `expires_at` reached: `DeleteKey` and `revoke_grant(expired)`.
- *  - the lessee defaulted (`member_defaulted`): for each active grant of `grants_of(lessee, grantee)`, `DeleteKey` and `revoke_grant(defaulted)`.
+ *  - the lessee defaulted (`member_defaulted`): for each active grant that the read API lists for the lessee and `get_grant` confirms, `DeleteKey` and `revoke_grant(defaulted)`.
  *  - somebody else revoked the grant (`grant_revoked`): only `DeleteKey`.
  */
 export class Revoker {
@@ -86,8 +88,10 @@ export class Revoker {
   async onDefault(account: AccountId): Promise<RevokeReport> {
     const report: RevokeReport = { closed: [] };
     this.#log(`member_defaulted account=${account}`);
-    const grants = await this.#o.chain.grantsOf(account, "grantee");
-    for (const grant of grants) if (grant.status === "active") await this.#close(grant, "defaulted", report);
+    for (const id of await this.#o.activeGrantIdsOf(account)) {
+      const grant = await this.#o.chain.getGrant(id);
+      if (grant !== null && grant.status === "active" && grant.grantee === account) await this.#close(grant, "defaulted", report);
+    }
     return report;
   }
 
