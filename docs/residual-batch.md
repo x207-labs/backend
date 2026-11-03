@@ -31,3 +31,16 @@ payload has `signer_id`, `verifying_contract`, `deadline`, base64 `nonce`; a non
    checked against a live Verifier. The module reads only the signed `message`; the signer (agent or SDK) builds the nonce and signs.
 4. How many debtors fit in one 300 Tgas call is not measured; 5 is a guess.
 5. A run on mainnet needs the owner; `intents.testnet` has no code. Nothing here sends a transaction in `dry` or `mock`.
+
+## Before a claim: `withdraw_intents_balance`
+A residual that arrives through Intents (`mt_on_transfer`) is booked in the epoch pool at once, but the USDT stays a multi-token balance at Intents until `withdraw_intents_balance` (permissionless, interface 0.0.9) brings it to the NEP-141 account of the circle. The order for the worker, per batch:
+
+1. `execute_intents` (live), or the deliveries of the mock; each debtor is reconciled to `paid` or `pending` from `net_position`.
+2. `withdraw_intents_balance` once, with at least 130 Tgas attached (the builder of the SDK asks for 150). In `dry` the plan says `planned` with the expected amount; in `mock` the injected `withdraw` runs for what the circle kept (the transfers minus the refunds of the debtors that were paid).
+3. Only then the claims. The view `intents_balance` says how much is still at Intents; `0` means nothing is waiting.
+
+What happens if the withdrawal is not done before a claim:
+- A claim to `near` is paid with `ft_transfer` from the NEP-141 balance of the circle. While the booked USDT is still at Intents, that balance is **smaller than the pool says**. If it still covers the claim, the claim is paid from the money that is there, **including the stakes of other members**, and the books close again only when the withdrawal arrives. If it does not cover the claim, `ft_transfer` fails, the claim goes the normal failed way (`residual_claim_failed`, the position is `claimable` again) and can be repeated after the withdrawal.
+- A withdrawal that Intents cannot finish books nothing and can be called again (`ERR_WITHDRAW_IN_FLIGHT` while one is open, `ERR_NOTHING_TO_WITHDRAW` when nothing is booked).
+- So a keeper that claims for members must call `withdraw_intents_balance` first whenever `intents_balance` is above 0. The sandbox test is `contracts/tests/be034_intents_withdraw.rs`; the real answer of `ft_withdraw` of `intents.near` is assumed from the reference contract and was not tried.
+
