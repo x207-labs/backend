@@ -310,6 +310,70 @@ CREATE TABLE invoice_installments (
 );
 `;
 
+// Service orders (BE-054, ADR-45): the order, the signatures of the two parties, a row per milestone (or place for an outcome) and the signed notices behind them.
+const V1110_ORDERS = `
+CREATE TABLE orders (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  circle_id        TEXT    NOT NULL,
+  order_hash       TEXT    NOT NULL,
+  kind             TEXT    NOT NULL,
+  pattern          TEXT    NOT NULL CHECK (pattern IN ('milestone','outcome','proof')),
+  buyer            TEXT    NOT NULL,
+  seller           TEXT    NOT NULL,
+  order_json       TEXT    NOT NULL,
+  budget           TEXT    NOT NULL,
+  needs_bond       INTEGER NOT NULL,
+  target           TEXT,
+  target_verified  INTEGER,
+  target_checked_via TEXT,
+  epoch0           INTEGER NOT NULL,
+  status           TEXT    NOT NULL DEFAULT 'proposed' CHECK (status IN ('proposed','open','closed')),
+  created_at_ms    INTEGER NOT NULL,
+  UNIQUE (circle_id, order_hash)
+);
+CREATE INDEX idx_orders_buyer ON orders (circle_id, buyer);
+CREATE INDEX idx_orders_seller ON orders (circle_id, seller);
+CREATE TABLE order_signatures (
+  circle_id  TEXT NOT NULL,
+  order_hash TEXT NOT NULL,
+  account    TEXT NOT NULL,
+  signature  TEXT NOT NULL,
+  PRIMARY KEY (circle_id, order_hash, account)
+);
+CREATE TABLE order_milestones (
+  circle_id        TEXT    NOT NULL,
+  order_hash       TEXT    NOT NULL,
+  idx              INTEGER NOT NULL,
+  amount           TEXT    NOT NULL,
+  due_at           INTEGER NOT NULL,
+  status           TEXT    NOT NULL DEFAULT 'open' CHECK (status IN ('open','delivered','confirmed','disputed','paid','cancelled')),
+  outcome          TEXT    CHECK (outcome IN ('accepted','rejected')),
+  deliverable_hash TEXT,
+  delivered_at     INTEGER,
+  confirm_by       INTEGER,
+  confirmed_at     INTEGER,
+  auto_confirmed   INTEGER NOT NULL DEFAULT 0,
+  dispute_reason   TEXT,
+  at_s             INTEGER,
+  PRIMARY KEY (circle_id, order_hash, idx)
+);
+CREATE TABLE order_notices (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  circle_id        TEXT    NOT NULL,
+  order_hash       TEXT    NOT NULL,
+  milestone        INTEGER NOT NULL,
+  notice_hash      TEXT    NOT NULL,
+  actor            TEXT    NOT NULL,
+  action           TEXT    NOT NULL,
+  at_s             INTEGER NOT NULL,
+  deliverable_hash TEXT,
+  reason           TEXT,
+  signature        TEXT    NOT NULL,
+  recorded_at_ms   INTEGER NOT NULL,
+  UNIQUE (circle_id, notice_hash)
+);
+`;
+
 export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1101, name: "m11_intents", sql: V1101_INTENTS },
   { version: 1102, name: "m11_listings", sql: V1102_LISTINGS },
@@ -320,4 +384,5 @@ export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1107, name: "m11_delivery_sides", sql: V1107_DELIVERY_SIDES },
   { version: 1108, name: "m11_spot_checks", sql: V1108_SPOT_CHECKS },
   { version: 1109, name: "m11_invoices", sql: V1109_INVOICES },
+  { version: 1110, name: "m11_orders", sql: V1110_ORDERS },
 ];
