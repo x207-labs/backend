@@ -1,0 +1,284 @@
+{
+ "_doc": "Shared by backend/test/marketplace/ssrf-shared.test.ts and backend/broker/test/ssrf-shared.test.ts: the two copies of the SSRF guard (src/marketplace/ssrf.ts and broker/src/provider/ssrf.ts) must give the same answers. Change a copy and not the other, and one suite fails. `result`: ok | forbidden. `resolve`: what the resolver answers. `resolvedHost`: the name the resolver must be asked for.",
+ "publicIps": [
+  "8.8.8.8",
+  "1.1.1.1",
+  "93.184.216.34",
+  "172.32.0.1",
+  "2606:4700:4700::1111",
+  "2a00:1450:4001:81b::200e",
+  "::ffff:8.8.8.8",
+  "64:ff9b::808:808"
+ ],
+ "nonPublicIps": [
+  "127.0.0.1",
+  "127.255.255.254",
+  "10.0.0.5",
+  "172.16.0.1",
+  "172.31.255.255",
+  "192.168.1.1",
+  "169.254.169.254",
+  "169.254.0.1",
+  "100.64.0.1",
+  "0.0.0.0",
+  "224.0.0.1",
+  "255.255.255.255",
+  "192.0.2.1",
+  "198.18.0.1",
+  "198.51.100.7",
+  "203.0.113.9",
+  "::",
+  "::1",
+  "fe80::1",
+  "fc00::1",
+  "fd12:3456::1",
+  "ff02::1",
+  "2001:db8::1",
+  "::ffff:127.0.0.1",
+  "::ffff:10.1.2.3",
+  "::ffff:169.254.169.254",
+  "::ffff:7f00:1",
+  "64:ff9b::a00:1",
+  "64:ff9b:1::808:808",
+  "not-an-ip",
+  "172.32.0.1x",
+  ""
+ ],
+ "urls": [
+  {
+   "url": "https://example.com/x",
+   "resolve": [
+    "8.8.8.8"
+   ],
+   "result": "ok",
+   "why": "a public name"
+  },
+  {
+   "url": "https://example.com./x",
+   "resolve": [
+    "8.8.8.8"
+   ],
+   "result": "ok",
+   "why": "a trailing dot is the same name, and the resolver gets it without the dot",
+   "resolvedHost": "example.com"
+  },
+  {
+   "url": "https://good.example.com/x",
+   "resolve": [
+    "8.8.8.8",
+    "2606:4700:4700::1111"
+   ],
+   "result": "ok",
+   "why": "all answers public, IPv4 and IPv6"
+  },
+  {
+   "url": "http://example.com/x",
+   "resolve": [
+    "8.8.8.8"
+   ],
+   "result": "forbidden",
+   "why": "not https"
+  },
+  {
+   "url": "ftp://example.com/x",
+   "resolve": [
+    "8.8.8.8"
+   ],
+   "result": "forbidden",
+   "why": "not https"
+  },
+  {
+   "url": "https://example.com:8443/x",
+   "resolve": [
+    "8.8.8.8"
+   ],
+   "result": "forbidden",
+   "why": "port other than 443"
+  },
+  {
+   "url": "https://user:pw@example.com/x",
+   "resolve": [
+    "8.8.8.8"
+   ],
+   "result": "forbidden",
+   "why": "credentials in the URL"
+  },
+  {
+   "url": "not a url",
+   "resolve": [
+    "8.8.8.8"
+   ],
+   "result": "forbidden",
+   "why": "not a URL"
+  },
+  {
+   "url": "https://127.0.0.1/x",
+   "resolve": [
+    "8.8.8.8"
+   ],
+   "result": "forbidden",
+   "why": "loopback literal"
+  },
+  {
+   "url": "https://169.254.169.254/latest/meta-data",
+   "resolve": [
+    "8.8.8.8"
+   ],
+   "result": "forbidden",
+   "why": "cloud metadata literal"
+  },
+  {
+   "url": "https://[::1]/x",
+   "resolve": [
+    "8.8.8.8"
+   ],
+   "result": "forbidden",
+   "why": "IPv6 loopback literal"
+  },
+  {
+   "url": "https://[::ffff:10.0.0.1]/x",
+   "resolve": [
+    "8.8.8.8"
+   ],
+   "result": "forbidden",
+   "why": "IPv4-mapped private literal"
+  },
+  {
+   "url": "https://10.1.2.3/x",
+   "resolve": [
+    "8.8.8.8"
+   ],
+   "result": "forbidden",
+   "why": "private literal"
+  },
+  {
+   "url": "https://2130706433/x",
+   "resolve": [
+    "8.8.8.8"
+   ],
+   "result": "forbidden",
+   "why": "decimal form of 127.0.0.1"
+  },
+  {
+   "url": "https://evil.example.com/x",
+   "resolve": [
+    "10.0.0.5"
+   ],
+   "result": "forbidden",
+   "why": "a name that resolves to 10.0.0.5"
+  },
+  {
+   "url": "https://evil.example.com/x",
+   "resolve": [
+    "127.0.0.1"
+   ],
+   "result": "forbidden",
+   "why": "a name that resolves to 127.0.0.1"
+  },
+  {
+   "url": "https://evil.example.com/x",
+   "resolve": [
+    "192.168.0.10"
+   ],
+   "result": "forbidden",
+   "why": "a name that resolves to 192.168.0.10"
+  },
+  {
+   "url": "https://evil.example.com/x",
+   "resolve": [
+    "169.254.169.254"
+   ],
+   "result": "forbidden",
+   "why": "a name that resolves to 169.254.169.254"
+  },
+  {
+   "url": "https://evil.example.com/x",
+   "resolve": [
+    "::1"
+   ],
+   "result": "forbidden",
+   "why": "a name that resolves to ::1"
+  },
+  {
+   "url": "https://evil.example.com/x",
+   "resolve": [
+    "fd00::5"
+   ],
+   "result": "forbidden",
+   "why": "a name that resolves to fd00::5"
+  },
+  {
+   "url": "https://evil.example.com/x",
+   "resolve": [
+    "::ffff:10.0.0.5"
+   ],
+   "result": "forbidden",
+   "why": "a name that resolves to ::ffff:10.0.0.5"
+  },
+  {
+   "url": "https://evil.example.com/x",
+   "resolve": [
+    "64:ff9b:1::a00:5"
+   ],
+   "result": "forbidden",
+   "why": "a name that resolves to 64:ff9b:1::a00:5"
+  },
+  {
+   "url": "https://evil.example.com/x",
+   "resolve": [
+    "8.8.8.8",
+    "10.0.0.5"
+   ],
+   "result": "forbidden",
+   "why": "one private answer among public ones"
+  },
+  {
+   "url": "https://localhost/x",
+   "resolve": [
+    "8.8.8.8"
+   ],
+   "result": "forbidden",
+   "why": "localhost"
+  },
+  {
+   "url": "https://localhost./x",
+   "resolve": [
+    "8.8.8.8"
+   ],
+   "result": "forbidden",
+   "why": "localhost with a trailing dot"
+  },
+  {
+   "url": "https://localhost../x",
+   "resolve": [
+    "8.8.8.8"
+   ],
+   "result": "forbidden",
+   "why": "localhost with two dots"
+  },
+  {
+   "url": "https://a.localhost./x",
+   "resolve": [
+    "8.8.8.8"
+   ],
+   "result": "forbidden",
+   "why": "*.localhost"
+  },
+  {
+   "url": "https://metadata.google.internal./x",
+   "resolve": [
+    "8.8.8.8"
+   ],
+   "result": "forbidden",
+   "why": "*.internal"
+  },
+  {
+   "url": "https://printer.local./x",
+   "resolve": [
+    "8.8.8.8"
+   ],
+   "result": "forbidden",
+   "why": "*.local"
+  }
+ ]
+}
