@@ -18,6 +18,9 @@ import { paramRoutes } from "./routes/params.js";
 import { reportRoutes } from "../report207/index.js";
 import { ruleRoutes } from "./routes/rules.js";
 import { settlementRoutes } from "./routes/settlements.js";
+import { opsRoutes } from "./routes/ops.js";
+import { Telemetry } from "./telemetry.js";
+import { silentLogger, type Logger } from "../log.js";
 import { jobRoutes } from "./routes/jobs.js";
 import { proposalRoutes } from "./routes/proposals.js";
 import type { ViewFunction } from "../settlement/intents.js";
@@ -39,6 +42,16 @@ export interface ApiServerOptions {
    * `POST /x207/settlement/withdraw/{quote,intent,submit}` dan `GET /x207/settlement/jobs/{jobId}`.
    */
   settlement?: { client: OneClickClient; accountExists: AccountExists };
+  /** Log terstruktur JSON (BE-071); default: tidak mencatat. */
+  logger?: Logger;
+  /** Penghitung metrik proses ini; default dibuat sendiri. */
+  telemetry?: Telemetry;
+  /** Bearer token untuk `GET /metrics` (env `METRICS_TOKEN`); kosong = terbuka. */
+  metricsToken?: string;
+  /** Pertanyaan murah ke RPC untuk `GET /healthz`; melempar bila RPC gagal. */
+  rpcProbe?: () => Promise<{ endpoint?: string }>;
+  /** Baris tambahan untuk `GET /metrics`. */
+  extraMetrics?: () => string[];
   /** View NEAR untuk `GET …/proposals` (BE-023); tanpa ini path itu tidak ada. */
   daoView?: ViewFunction;
 }
@@ -78,9 +91,9 @@ function d9Ready(db: Database.Database): boolean {
 }
 
 function send(res: ServerResponse, result: RouteResult, extra: Record<string, string>): void {
-  const payload = JSON.stringify(result.body);
+  const payload = result.raw ? result.raw.text : JSON.stringify(result.body);
   res.writeHead(result.status, {
-    "Content-Type": "application/json; charset=utf-8",
+    "Content-Type": result.raw ? result.raw.contentType : "application/json; charset=utf-8",
     "Access-Control-Allow-Origin": "*",
     ...extra,
     ...result.headers,
@@ -94,8 +107,8 @@ function workerRoutes(settlement: ApiServerOptions["settlement"]): Route[] {
 }
 
 /** Semua route yang dilayani server ini; dipakai juga oleh test dokumen OpenAPI (BE-068) supaya dokumen dan router tidak berpisah. */
-export function collectRoutes(options: Pick<ApiServerOptions, "settlement" | "daoView" | "extraRoutes">): Route[] {
-  return [...healthRoutes, ...memberRoutes, ...limitRoutes, ...epochRoutes, ...obligationRoutes, ...settlementRoutes, ...paramRoutes, ...bundleRoutes, ...grantRoutes, ...intentRoutes, ...eventRoutes, ...metricRoutes, ...ruleRoutes, ...reportRoutes, ...workerRoutes(options.settlement), ...(options.daoView ? proposalRoutes(options.daoView) : []), ...(options.extraRoutes ?? [])];
+export function collectRoutes(options: Pick<ApiServerOptions, "settlement" | "daoView" | "extraRoutes" | "telemetry" | "metricsToken" | "rpcProbe" | "extraMetrics">): Route[] {
+  return [...opsRoutes({ telemetry: options.telemetry ?? new Telemetry(), ...(options.metricsToken ? { metricsToken: options.metricsToken } : {}), ...(options.rpcProbe ? { rpcProbe: options.rpcProbe } : {}), ...(options.extraMetrics ? { extraMetrics: options.extraMetrics } : {}) }), ...healthRoutes, ...memberRoutes, ...limitRoutes, ...epochRoutes, ...obligationRoutes, ...settlementRoutes, ...paramRoutes, ...bundleRoutes, ...grantRoutes, ...intentRoutes, ...eventRoutes, ...metricRoutes, ...ruleRoutes, ...reportRoutes, ...workerRoutes(options.settlement), ...(options.daoView ? proposalRoutes(options.daoView) : []), ...(options.extraRoutes ?? [])];
 }
 
 /** Server read API (Spec API Backend). Pemanggil yang memanggil `listen`. */
@@ -104,7 +117,9 @@ export function createApiServer(options: ApiServerOptions): Server {
   const now = options.now ?? Date.now;
   const limit = options.rateLimitPerMinute ?? 0;
   const abuse: AbuseLimits = { ...DEFAULT_LIMITS, ipPerMinute: limit, writeIpPerMinute: 0, writeAccountPerMinute: 0, ...options.abuse };
-  const routes = collectRoutes(options);
+  const telemetry = options.telemetry ?? new Telemetry(now());
+  const logger = options.logger ?? silentLogger;
+  const routes = collectRoutes({ ...options, telemetry });
   const ipHits = new WindowCounter();
   const writeIpHits = new WindowCounter();
   const accountHits = new WindowCounter();
@@ -131,11 +146,12 @@ export function createApiServer(options: ApiServerOptions): Server {
     }
   }
 
-  async function handle(req: IncomingMessage): Promise<{ result: RouteResult; indexedBlock?: string }> {
-    checkRate(callerOf(req), req.method === "POST");
+  async function handle(req: IncomingMessage, seen: { route: string }): Promise<{ result: RouteResult; indexedBlock?: string }> {
     const url = new URL(req.url ?? "/", "http://localhost");
-
     const match = matchRoute(routes, req.method ?? "GET", url.pathname);
+    // the route is known before the limit is checked, so that a request refused with 429 is counted under its route
+    if (match) seen.route = match.route.pattern;
+    checkRate(callerOf(req), req.method === "POST");
     if (!match) throw new ApiError(404, "not_found", "Endpoint tidak dikenal", { path: url.pathname });
 
     let circle: CircleRow = { circle_id: "", contract_id: "", network: "" };
@@ -163,7 +179,7 @@ export function createApiServer(options: ApiServerOptions): Server {
         const wait = accountHits.wait(account, abuse.writeAccountPerMinute, now());
         if (wait > 0) throw rateLimited(`Akun ${account} terlalu sering menulis`, { scope: "account_write", account, limitPerMinute: abuse.writeAccountPerMinute }, wait);
       }
-      const result = await match.route.handler({ db, params: match.params, query: url.searchParams, now, circle, body });
+      const result = await match.route.handler({ db, params: match.params, query: url.searchParams, now, circle, body, headers: req.headers });
       if (account !== null && result.status >= 200 && result.status < 300) accountHits.add(account, now());
       return indexedBlock === undefined ? { result } : { result, indexedBlock };
     } catch (err) {
@@ -182,15 +198,29 @@ export function createApiServer(options: ApiServerOptions): Server {
       res.end();
       return;
     }
+    const started = process.hrtime.bigint();
+    const seen = { route: "unmatched" };
+    let status = 500;
+    let failure: unknown;
     try {
-      const { result, indexedBlock } = await handle(req);
+      const { result, indexedBlock } = await handle(req, seen);
+      status = result.status;
       send(res, result, indexedBlock === undefined ? {} : { "X-X207-Indexed-Block": indexedBlock });
     } catch (err) {
       if (err instanceof ApiError) {
+        status = err.status;
+        if (err.code === "rate_limited") telemetry.rateLimited(String(err.details.scope ?? "ip"));
         send(res, { status: err.status, body: err.toBody(), headers: err.headers }, {});
-        return;
+      } else {
+        failure = err;
+        send(res, { status: 500, body: { error: { code: "internal_error", message: "Kesalahan internal", details: {} } } }, {});
       }
-      send(res, { status: 500, body: { error: { code: "internal_error", message: "Kesalahan internal", details: {} } } }, {});
+    } finally {
+      const seconds = Number(process.hrtime.bigint() - started) / 1e9;
+      telemetry.observe(req.method ?? "GET", seen.route, status, seconds);
+      // one line per request: the route PATTERN, never the path, the query or the body (they hold hashes, accounts and signatures)
+      if (failure !== undefined) logger.error("internal error", { method: req.method, route: seen.route, status, error: failure });
+      else logger.info("request", { method: req.method, route: seen.route, status, ms: Math.round(seconds * 1000), ip: callerOf(req) });
     }
   });
 }

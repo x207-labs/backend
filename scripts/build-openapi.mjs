@@ -52,6 +52,7 @@ function operationOf(route) {
   }
   if (/invalidRequest\(/.test(prelude + text) || /asApiError\(/.test(prelude + text)) (found.get(400) ?? found.set(400, new Set()).get(400)).add("invalid_request");
   if (/assertOpenRoom\(/.test(prelude + text)) (found.get(409) ?? found.set(409, new Set()).get(409)).add("open_limit_reached");
+  if (pattern === "/metrics") (found.get(401) ?? found.set(401, new Set()).get(401)).add("invalid_signature");
   if (circleScoped) {
     (found.get(404) ?? found.set(404, new Set()).get(404)).add("circle_not_found");
     (found.get(503) ?? found.set(503, new Set()).get(503)).add("indexer_unavailable");
@@ -61,7 +62,10 @@ function operationOf(route) {
   const responses = {};
   const successes = [...text.matchAll(/status:\s*(20[01])\b/g)].map((m) => m[1]);
   for (const code of [...new Set(successes.length > 0 ? successes : [method === "POST" ? "200" : "200"])].sort()) {
-    responses[code] = { description: code === "201" ? "Created." : "OK.", content: { "application/json": { schema: isList ? { $ref: "#/components/schemas/Page" } : { type: "object", additionalProperties: true } } } };
+    responses[code] = {
+      description: code === "201" ? "Created." : "OK.",
+      content: pattern === "/metrics" ? { "text/plain": { schema: { type: "string", description: "Prometheus text format (BE-071)" } } } : { "application/json": { schema: isList ? { $ref: "#/components/schemas/Page" } : { type: "object", additionalProperties: true } } },
+    };
   }
   for (const [status, codes] of [...found.entries()].sort((a, b) => a[0] - b[0])) {
     responses[String(status)] = {
@@ -115,7 +119,9 @@ function summaryOf({ method, pattern }) {
 
 // ---- the broker (separate server, `{error, message}` envelope) ---------------------------------------------------------------------------------------------------------------
 export const BROKER_ROUTES = [
-  { method: "GET", path: "/health", summary: "Health of the broker", errors: {} },
+  { method: "GET", path: "/health", summary: "Liveness of the broker (always {ok: true})", errors: {} },
+  { method: "GET", path: "/healthz", summary: "Health of the broker: database, and the revoke queues (class B leases past their paid day, provider accesses whose revoke failed); 503 when down (BE-071)", errors: { 503: ["down"] } },
+  { method: "GET", path: "/metrics", summary: "Prometheus text: requests by route name and status, 429, revoke queues (BE-071); bearer token when METRICS_TOKEN is set", errors: { 401: ["invalid_signature"] } },
   { method: "GET", path: "/grants/{grantId}/lease", summary: "Rent of a class B grant for one day (x402: 402 first, then the voucher)", errors: { 402: ["payment_required"], 403: ["grant_not_active", "grant_revoked"], 404: ["grant_not_found"], 501: ["class_not_supported"], 502: ["chain_unavailable"] } },
   { method: "POST", path: "/grants/{grantId}/proxy/{path}", summary: "Call through the class C proxy (x402); the rest of the path goes to the provider", errors: { 402: ["payment_required"], 403: ["grant_scope_denied", "payer_not_grantee"], 429: ["grant_quota_exceeded"], 501: ["class_not_supported", "secret_hosted_forbidden"], 502: ["provider_unreachable", "provider_redirect", "secret_not_configured", "delivery_failed"] } },
   { method: "GET", path: "/grants/{grantId}/usage", summary: "Calls billed through a class C grant, per epoch, and what they cost (BE-070); the buyer compares it with its own count", errors: { 404: ["grant_not_found"], 501: ["class_not_supported"] } },

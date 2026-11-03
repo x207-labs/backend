@@ -50,6 +50,6 @@ describe("main process", () => {
     });
     expect(quote.status).toBe(404);
     expect(((await quote.json()) as { error: { code: string } }).error.code).toBe("member_not_found");
-    expect(lines.some((l) => l.includes("mode mock"))).toBe(true);
+    expect(lines.some((l) => l.includes('"mode":"mock"') && l.includes('"msg":"x207 backend siap"'))).toBe(true);
   });
 });

@@ -12,6 +12,7 @@ import { settlementConfigFromEnv } from "./settlement/config.js";
 import { nearAccountExists } from "./settlement/deposit/quote.js";
 import { startJobMonitor } from "./settlement/deposit/monitor.js";
 import { abuseFromEnv } from "./api/abuse.js";
+import { createLogger } from "./log.js";
 import { jsonRpcClaimRpc } from "./marketplace/order-claims.js";
 import { rpcViewFunction } from "./settlement/intents.js";
 import { OneClickClient } from "./settlement/one-click.js";
@@ -92,6 +93,8 @@ export interface App {
  */
 export async function startApp(env: NodeJS.ProcessEnv = process.env, log: (line: string) => void = console.error): Promise<App> {
   const config = appConfigFromEnv(env);
+  // BE-071: one JSON object per line, secrets taken out (src/log.ts); `log` is where the lines go
+  const logger = createLogger({ write: log });
   const settlement = settlementConfigFromEnv(env);
   const db = openDatabase(config.dbPath);
   const rpc = new FailoverRpcClient({ endpoints: config.rpcEndpoints, timeoutMs: 30_000 });
@@ -107,16 +110,16 @@ export async function startApp(env: NodeJS.ProcessEnv = process.env, log: (line:
   await indexer.bootstrap();
 
   const client = new OneClickClient({ config: settlement });
-  if (!env.X207_CODE_SEEN_KEY) log("peringatan: X207_CODE_SEEN_KEY kosong, kode yang dijual dua kali tidak dideteksi (code_duplicate mati)");
-  const server = createApiServer({ db, ...apiOptionsFromEnv(env), settlement: { client, accountExists: nearAccountExists(primary) }, daoView: rpcViewFunction(primary), extraRoutes: marketplaceRoutes(db, { chainView: rpcViewFunction(primary), claimRpc: jsonRpcClaimRpc(primary), openLimits: abuseFromEnv(env).open, ...(env.X207_CODE_SEEN_KEY ? { codeSeenKey: env.X207_CODE_SEEN_KEY } : {}), daoRegistry: env.X207_DAO_REGISTRY_PATH ? daoRegistryFromFile(env.X207_DAO_REGISTRY_PATH) : [] }) });
+  if (!env.X207_CODE_SEEN_KEY) logger.warn("X207_CODE_SEEN_KEY kosong, kode yang dijual dua kali tidak dideteksi (code_duplicate mati)");
+  const server = createApiServer({ db, ...apiOptionsFromEnv(env), logger, ...(env.METRICS_TOKEN ? { metricsToken: env.METRICS_TOKEN } : {}), rpcProbe: async () => { await viewGetParams(primary, config.contractId); return { endpoint: primary }; }, settlement: { client, accountExists: nearAccountExists(primary) }, daoView: rpcViewFunction(primary), extraRoutes: marketplaceRoutes(db, { chainView: rpcViewFunction(primary), claimRpc: jsonRpcClaimRpc(primary), openLimits: abuseFromEnv(env).open, ...(env.X207_CODE_SEEN_KEY ? { codeSeenKey: env.X207_CODE_SEEN_KEY } : {}), daoRegistry: env.X207_DAO_REGISTRY_PATH ? daoRegistryFromFile(env.X207_DAO_REGISTRY_PATH) : [] }) });
   await new Promise<void>((ready) => server.listen(config.port, config.host, ready));
   const stopMonitor = startJobMonitor({ db, client }, config.jobPollMs);
 
   const abort = new AbortController();
   const running = indexer
-    .run({ signal: abort.signal, onError: (error) => log(`indexer: ${String(error)}`) })
-    .catch((error: unknown) => log(`indexer berhenti: ${String(error)}`));
-  log(`x207 backend: ${config.host}:${config.port}, kontrak ${config.contractId}, mode ${settlement.mode}`);
+    .run({ signal: abort.signal, onError: (error) => logger.warn("indexer: sumber gagal, mencoba lagi", { error }) })
+    .catch((error: unknown) => logger.error("indexer berhenti", { error }));
+  logger.info("x207 backend siap", { host: config.host, port: config.port, contract: config.contractId, mode: settlement.mode });
 
   return {
     db,

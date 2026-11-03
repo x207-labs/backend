@@ -2,6 +2,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { Readable } from "node:stream";
 import { x207Middleware, X207ExtraSource, type X207Middleware } from "@x207/scheme";
 import type { AccessGrant } from "@x207/core";
+import { BrokerTelemetry, healthz, metrics, routeLabel, type RouteLabel } from "./ops.js";
+import type { BrokerStore } from "./store.js";
 import { guardVoucher } from "./in-flight.js";
 import { DispatchError, type Dispatcher } from "./dispatcher.js";
 import type { ClassBAdapter } from "./keys/class-b.js";
@@ -20,6 +22,11 @@ export interface BrokerServerOptions {
   /** Class C proxy (BK-008). Without it `/grants/{id}/proxy/*` is `class_not_supported`. */
   /** P2 rent of an access at a provider (BE-060): `/grants/{id}/access`. Without it these paths are `class_not_supported`. */
   provider?: Omit<ProviderRoutesOptions, "dispatcher" | "facilitatorUrl" | "circleId" | "brokerAccount" | "extra" | "creditPrice" | "fetch">;
+  /** State of the broker for `/healthz` and `/metrics` (BE-071). */
+  store?: BrokerStore;
+  now?: () => number;
+  /** Bearer token for `/metrics`. */
+  metricsToken?: string;
   proxy?: Omit<ProxyOptions, "dispatcher" | "facilitatorUrl" | "circleId" | "brokerAccount" | "extra" | "creditPrice" | "fetch">;
 }
 
@@ -53,8 +60,12 @@ export function createBrokerHandler(options: BrokerServerOptions): (request: Req
         ...(options.fetch ? { fetch: options.fetch } : {}),
       })
     : undefined;
-  return async (request) => {
+  const telemetry = new BrokerTelemetry(options.now?.() ?? Date.now());
+  const ops = { ...(options.store ? { store: options.store } : {}), ...(options.provider ? { manager: options.provider.manager } : {}), now: options.now ?? Date.now, telemetry, ...(options.metricsToken ? { metricsToken: options.metricsToken } : {}) };
+  const inner = async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
+    if (url.pathname === "/healthz") return healthz(ops);
+    if (url.pathname === "/metrics") return metrics(ops, request);
     if (ACCESS_PATH.test(url.pathname)) return providerRoutes ? providerRoutes(request) : json(501, { error: "class_not_supported" });
     if (url.pathname === "/health") return json(200, { ok: true });
     if (USAGE_PATH.test(url.pathname)) return usage ? usage(request) : json(501, { error: "class_not_supported" });
@@ -93,6 +104,18 @@ export function createBrokerHandler(options: BrokerServerOptions): (request: Req
         return json(502, { error: "delivery_failed", message: (error as Error).message });
       }
     }));
+  };
+  // the counters see every answer, by the name of the route (never the path, which holds a grant id)
+  return async (request) => {
+    const label: RouteLabel = routeLabel(new URL(request.url).pathname, request.method);
+    let status = 500;
+    try {
+      const response = await inner(request);
+      status = response.status;
+      return response;
+    } finally {
+      telemetry.observe(label, request.method, status);
+    }
   };
 }
 

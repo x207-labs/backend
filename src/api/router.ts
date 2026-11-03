@@ -16,12 +16,16 @@ export interface RouteContext {
   circle: CircleRow;
   /** Body JSON permintaan `POST`; `undefined` untuk `GET`. */
   body: unknown;
+  /** Header permintaan (nama huruf kecil), untuk route yang memeriksa `authorization` (`GET /metrics`). */
+  headers: Record<string, string | string[] | undefined>;
 }
 
 export interface RouteResult {
   status: number;
   body: unknown;
   headers?: Record<string, string>;
+  /** Jawaban teks apa adanya (`GET /metrics`), bukan JSON. */
+  raw?: { contentType: string; text: string };
 }
 
 export interface Route {
