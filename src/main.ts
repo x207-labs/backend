@@ -3,6 +3,7 @@ import type Database from "better-sqlite3";
 import type { ContractAbi } from "@x207/core";
 import { apiOptionsFromEnv, createApiServer } from "./api/server.js";
 import { openDatabase } from "./db/index.js";
+import { daoRegistryFromFile } from "./marketplace/dao-registry.js";
 import { marketplaceRoutes } from "./marketplace/index.js";
 import { FailoverRpcClient } from "./indexer/rpc-client.js";
 import { Indexer } from "./indexer/indexer.js";
@@ -104,7 +105,7 @@ export async function startApp(env: NodeJS.ProcessEnv = process.env, log: (line:
   await indexer.bootstrap();
 
   const client = new OneClickClient({ config: settlement });
-  const server = createApiServer({ db, ...apiOptionsFromEnv(env), settlement: { client, accountExists: nearAccountExists(primary) }, daoView: rpcViewFunction(primary), extraRoutes: marketplaceRoutes(db, { chainView: rpcViewFunction(primary) }) });
+  const server = createApiServer({ db, ...apiOptionsFromEnv(env), settlement: { client, accountExists: nearAccountExists(primary) }, daoView: rpcViewFunction(primary), extraRoutes: marketplaceRoutes(db, { chainView: rpcViewFunction(primary), daoRegistry: env.X207_DAO_REGISTRY_PATH ? daoRegistryFromFile(env.X207_DAO_REGISTRY_PATH) : [] }) });
   await new Promise<void>((ready) => server.listen(config.port, config.host, ready));
   const stopMonitor = startJobMonitor({ db, client }, config.jobPollMs);
 

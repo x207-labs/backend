@@ -158,6 +158,8 @@ export class ProviderAccessManager {
     try {
       result = await adapter.grant({ grantId: grant.grant_id, granteeRef: scope.grantee_ref, resource: scope.resource, permission: scope.permission, expiresAtMs: paidUntil });
     } catch (error) {
+      // a refusal that the adapter names itself (a vote kind that is not for rent) keeps its code
+      if (error instanceof ProviderAccessError) throw error;
       throw new ProviderAccessError("grant_failed", (error as Error).message);
     }
     if (adapter.nativeExpiry && (result.nativeExpiresAtMs === null || result.nativeExpiresAtMs > paidUntil)) {
