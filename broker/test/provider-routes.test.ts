@@ -81,6 +81,16 @@ describe("BE-060 HTTP rent of a P2 access: pay, ask, look, stop", () => {
     expect(f.seen).toContain("/settle");
   });
 
+  it("TC-BE-060-20 the view of an access carries the warning when the reference is not proven, also on GET (B4-F7)", async () => {
+    const { handler, adapter } = setup();
+    (adapter as { proveGranteeRef?: unknown }).proveGranteeRef = undefined;
+    const { x207 } = await requirements(handler);
+    const paid = (await (await handler(pay(x207, { grantee_ref: "alice-dev" }))).json()) as any;
+    expect(paid).toMatchObject({ proof: "not_applicable", warnings: ["grantee_unproven"] });
+    const viewed = (await (await handler(new Request(url(1), { method: "GET" }))).json()) as any;
+    expect(viewed).toMatchObject({ proof: "not_applicable", warnings: ["grantee_unproven"] });
+  });
+
   it("TC-BE-060-02 nothing is settled when the access cannot be opened: a ref other than the scope, a payer who is not the lessee, a ref the provider does not know", async () => {
     const { handler, f, adapter, chain } = setup();
     const { x207 } = await requirements(handler);

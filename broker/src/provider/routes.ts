@@ -58,7 +58,7 @@ export function createProviderRoutes(options: ProviderRoutesOptions): (request: 
     const day = Math.floor(now() / 86_400_000);
     return {
       grantId: grant.grant_id, provider: a.provider, granteeRef: a.granteeRef, status: a.status, paidUntil: iso(a.paidUntilMs), providerExpiresAt: iso(a.nativeExpiresMs), reason: a.reason,
-      proof: a.proof, revokePending: a.status === "revoke_pending" ? { attempts: a.attempts, nextRetryAt: iso(a.nextRetryMs), lastError: a.lastError } : null,
+      proof: a.proof, warnings: a.proof === "verified" ? [] : ["grantee_unproven"], revokePending: a.status === "revoke_pending" ? { attempts: a.attempts, nextRetryAt: iso(a.nextRetryMs), lastError: a.lastError } : null,
       today: { day, cost: cost === null ? null : cost.toString(), billed: manager.charges(grant.grant_id).find((c) => c.day === day)?.amount.toString() ?? null },
       unit: "credit", decimals: 6,
     };

@@ -92,7 +92,10 @@ export class SshAdapter implements ProviderAccessAdapter {
 
   async verifyGranteeRef(ref: string): Promise<{ ok: true } | { ok: false; reason: string }> {
     const parsed = parsePublicKey(ref);
-    return parsed.ok ? { ok: true } : parsed;
+    if (!parsed.ok) return parsed;
+    // the proof is a raw ed25519 signature (SD-071): a key of another type could be named but never proven, so the grant could never open (B4-F5)
+    if (!parsed.key.startsWith("ssh-ed25519 ")) return { ok: false, reason: "hanya kunci ssh-ed25519 yang bisa dibuktikan kepemilikannya; RSA, ECDSA, dan kunci keamanan tidak didukung" };
+    return { ok: true };
   }
 
   /** `ssh-signature` (SD-071): a raw ed25519 signature of the challenge of the grant by the private key of the key that is the reference. A signature of another grant, another nonce or another key fails. */

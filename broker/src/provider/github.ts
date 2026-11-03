@@ -101,7 +101,7 @@ export class GithubAdapter implements ProviderAccessAdapter {
     await verifyNearGistProof({
       proof, challenge: args.challenge, voucherPublicKey: args.voucherPublicKey,
       fetchGist: async () => {
-        const res = await guardedGet(`https://api.github.com/gists/${id}`, { ...(this.#o.gistFetch?.resolver ? { resolver: this.#o.gistFetch.resolver } : {}), ...(this.#o.gistFetch?.transport ? { transport: this.#o.gistFetch.transport } : {}), maxBytes: 262_144 });
+        const res = await guardedGet(`https://api.github.com/gists/${id}`, { ...(this.#o.gistFetch?.resolver ? { resolver: this.#o.gistFetch.resolver } : {}), ...(this.#o.gistFetch?.transport ? { transport: this.#o.gistFetch.transport } : {}), maxBytes: 262_144, headers: { authorization: `Bearer ${this.#o.token}`, accept: "application/vnd.github+json", "x-github-api-version": "2022-11-28" } });
         if (!res.reachable || res.status !== 200) throw new Error(`GitHub menjawab ${res.reachable ? res.status : "tidak terjangkau"}`);
         const gist = JSON.parse(res.body) as { owner?: { login?: string }; files?: Record<string, { content?: string; truncated?: boolean }> };
         const owner = gist.owner?.login;

@@ -5,7 +5,7 @@
 // Mode: `self-hosted` (the default) is the broker that the grantor runs; the administrator credential of a provider lives on that machine only. `hosted` is the broker that x207 runs
 // for a demo: it refuses every adapter that talks to a real service, because it would need the credential of somebody else.
 import { randomBytes } from "node:crypto";
-import { granteeChallenge } from "@x207/core";
+import { GranteeProofError, granteeChallenge } from "@x207/core";
 import type { BrokerStore } from "../store.js";
 import {
   ProviderAccessError, parseProviderScope, type ProviderAccessAdapter, type ProviderGrantResult, type ProviderScope,
@@ -85,6 +85,8 @@ export class ProviderAccessManager {
   readonly #adapters = new Map<string, ProviderAccessAdapter>();
   readonly #circle: string;
   readonly #voucherKeyOf: ((account: string) => Promise<string | null>) | undefined;
+  /** Grants whose proof is being checked right now. */
+  readonly #proving = new Set<number>();
 
   constructor(options: ManagerOptions) {
     this.#store = options.store;
@@ -178,20 +180,33 @@ export class ProviderAccessManager {
     let proven: string | null = existing?.proof ?? null;
     // the proof is asked once, when the access is opened; the rent of the next days needs none
     if (!existing && adapter.proveGranteeRef) {
-      const challenge = adapter.needsChallenge ? this.#takeChallenge(grant.grant_id, scope.grantee_ref) : null;
-      const voucherPublicKey = grant.grantee && this.#voucherKeyOf ? await this.#voucherKeyOf(grant.grantee) : null;
-      let verdict: boolean | { unproven: string };
+      // one proof at a time per grant, and the challenge is used up only by a verdict: a GitHub error, a rate limit or a timeout leaves it for another try (B4-F6)
+      if (this.#proving.has(grant.grant_id)) throw new ProviderAccessError("grantee_ref_unverified", "bukti grant ini sedang diperiksa; tunggu jawabannya");
+      this.#proving.add(grant.grant_id);
       try {
-        verdict = await adapter.proveGranteeRef({ ref: scope.grantee_ref, proof, challenge, granteeAccount: grant.grantee ?? null, voucherPublicKey });
-      } catch (error) {
-        throw new ProviderAccessError("grantee_ref_unverified", `${scope.grantee_ref}: ${(error as Error).message}`);
+        const challenge = adapter.needsChallenge ? this.#peekChallenge(grant.grant_id, scope.grantee_ref) : null;
+        const voucherPublicKey = grant.grantee && this.#voucherKeyOf ? await this.#voucherKeyOf(grant.grantee) : null;
+        let verdict: boolean | { unproven: string };
+        try {
+          verdict = await adapter.proveGranteeRef({ ref: scope.grantee_ref, proof, challenge, granteeAccount: grant.grantee ?? null, voucherPublicKey });
+        } catch (error) {
+          // only a failure to look (the gist could not be fetched, or any other error) keeps the challenge; a bad proof uses it up
+          if (challenge !== null && error instanceof GranteeProofError && error.code !== "grantee_proof_unverifiable") this.#useUpChallenge(grant.grant_id);
+          throw new ProviderAccessError("grantee_ref_unverified", `${scope.grantee_ref}: ${(error as Error).message}`);
+        }
+        if (challenge !== null) this.#useUpChallenge(grant.grant_id);
+        if (verdict === false) throw new ProviderAccessError("grantee_ref_unverified", `${scope.grantee_ref}: bukti kepemilikan tidak lolos`);
+        if (verdict !== true) {
+          warnings.push("grantee_unproven");
+          proven = `unproven: ${verdict.unproven}`;
+        } else proven = "verified";
+      } finally {
+        this.#proving.delete(grant.grant_id);
       }
-      if (verdict === false) throw new ProviderAccessError("grantee_ref_unverified", `${scope.grantee_ref}: bukti kepemilikan tidak lolos`);
-      if (verdict !== true) {
-        warnings.push("grantee_unproven");
-        proven = `unproven: ${verdict.unproven}`;
-      } else proven = "verified";
     }
+    // an adapter with no proof at all (S3, AWS) says so, instead of leaving `null` that the page reads as "no information" (B4-F7); anything but `verified` carries the warning, also on a renewal
+    if (proven === null && !adapter.proveGranteeRef) proven = "not_applicable";
+    if (proven !== "verified" && !warnings.includes("grantee_unproven")) warnings.push("grantee_unproven");
     if (existing && existing.status !== "active") throw new ProviderAccessError("grant_failed", `akses grant ${grant.grant_id} sudah ${existing.status}`);
     const now = this.#now();
     const paidUntil = Math.min(Math.max(now, existing?.paidUntilMs ?? 0) + days * DAY_MS, nsToMs(grant.limits.expires_at));
@@ -242,12 +257,19 @@ export class ProviderAccessManager {
     return { text: granteeChallenge({ circle: this.#circle, grantId: grant.grant_id, granteeRef: scope.grantee_ref, nonce }), nonce, expiresAtMs, circle: this.#circle, granteeRef: scope.grantee_ref };
   }
 
-  #takeChallenge(grantId: number, granteeRef: string): { circle: string; grantId: number; granteeRef: string; nonce: string } {
+  /** The live challenge of a grant, NOT used up: it is used up by `#useUpChallenge` once the proof was checked (B4-F6). */
+  #peekChallenge(grantId: number, granteeRef: string): { circle: string; grantId: number; granteeRef: string; nonce: string } {
     const row = this.#store.db.prepare("SELECT nonce, expires_at_ms FROM grantee_challenges WHERE grant_id = ?").get(grantId) as { nonce: string; expires_at_ms: number } | undefined;
     if (!row) throw new ProviderAccessError("grantee_ref_unverified", "tidak ada tantangan: minta GET …/access/challenge dulu");
-    this.#store.db.prepare("DELETE FROM grantee_challenges WHERE grant_id = ?").run(grantId);
-    if (row.expires_at_ms <= this.#now()) throw new ProviderAccessError("grantee_ref_unverified", "tantangan sudah kedaluwarsa: minta yang baru");
+    if (row.expires_at_ms <= this.#now()) {
+      this.#useUpChallenge(grantId);
+      throw new ProviderAccessError("grantee_ref_unverified", "tantangan sudah kedaluwarsa: minta yang baru");
+    }
     return { circle: this.#circle, grantId, granteeRef, nonce: row.nonce };
+  }
+
+  #useUpChallenge(grantId: number): void {
+    this.#store.db.prepare("DELETE FROM grantee_challenges WHERE grant_id = ?").run(grantId);
   }
 
   /** Close the access of a grant now (the contract revoked it, the lessee defaulted, the cap was passed). A provider that fails leaves it `revoke_pending`. */
