@@ -1,9 +1,10 @@
 // Invoice book and installments (BE-051, pipeline P8, ADR-44, spec 5e). The document and the vouchers follow `@x207/core` (SD-065, docs/invoice.md of the SDK) and the errors of
 // `InvoiceError` are passed on as they are. The backend does not register vouchers: the issuer does. What the backend does is keep the evidence (vouchers signed by the debtor in advance),
 // and tell, from the events of the contract that the indexer stored, what happened to each installment:
-//   registered         an event `voucher_registered` with the (payer, payee, epoch, seq) AND the cumulative amount of the voucher we wait for;
-//   blocked_by_debtor  the epoch is closed and the pair already holds a voucher with a `seq` at or above ours, but not ours (ERR_SEQ_NOT_INCREASING for the issuer): `missed` at once;
-//   headroom           the epoch is closed and the pair never reached our `seq`: the installment stays `scheduled` (with `reason`) so that the debtor can shift it once (`catch-up`);
+//   registered         the cumulative amount registered for the pair (payer, payee, epoch) is at least that of the voucher we wait for, from a voucher of any `seq` (an ordinary
+//                      voucher of the debtor starts at seq 2 and already carries the installment), or the event `voucher_registered` of exactly our voucher;
+//   blocked_by_debtor  the epoch is closed and the pair holds a voucher, but with less than the installment (the debtor got in first, ERR_SEQ_NOT_INCREASING for the issuer): `missed` at once;
+//   headroom           the epoch is closed and the pair holds no voucher at all: the installment stays `scheduled` (with `reason`) so that the debtor can shift it once (`catch-up`);
 //                      a second failure of the shifted installment, or the close of the epoch it would have to move to, makes it `missed`.
 import type Database from "better-sqlite3";
 import {
@@ -150,12 +151,15 @@ export function syncInvoices(db: Database.Database, circleId: string): void {
       const set = (status: string, reason: string | null): void => {
         db.prepare("UPDATE invoice_installments SET status = ?, reason = ? WHERE circle_id = ? AND invoice_hash = ? AND idx = ?").run(status, reason, circleId, inv.invoice_hash, it.idx);
       };
-      if (registeredOnChain(db, circle.contract_id, inv.debtor, inv.issuer, vEpoch, vSeq, it.v_cumulative)) {
+      // paid when the pair holds at least the cumulative amount of our voucher, under any seq: an ordinary voucher of the debtor starts at seq 2 and already carries the installment
+      const pair = pairState(db, circleId, vEpoch, inv.debtor, inv.issuer);
+      if (registeredOnChain(db, circle.contract_id, inv.debtor, inv.issuer, vEpoch, vSeq, it.v_cumulative) || BigInt(pair.cumulativeAmount) >= BigInt(it.v_cumulative)) {
         set("registered", null);
         continue;
       }
       if (!epochClosed(db, circleId, vEpoch)) continue;
-      if (pairState(db, circleId, vEpoch, inv.debtor, inv.issuer).seq >= vSeq) {
+      // the epoch is over: a voucher of the pair is registered but holds less than the installment -> the debtor got in first; none at all -> no headroom
+      if (pair.seq > 0) {
         set("missed", "blocked_by_debtor");
       } else if (it.shifted === 1n) {
         set("missed", "headroom");

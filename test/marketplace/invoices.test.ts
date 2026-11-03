@@ -183,4 +183,30 @@ describe("BE-051 invoice book and installments", () => {
     const d = doc("andi", "budi");
     expect((await m.post(`/invoices/${h}/approve`, approvalBody(m, d, "budi", 43, 1))).json.error.code).toBe("invoice_bad_state");
   });
+
+  it("TC-BE-051-10 the rule at the close of the epoch: any seq that carries the installment is paid; a voucher with less is a block; no voucher is headroom", async () => {
+    const m = await start();
+    const d = doc("andi", "budi");
+    await create(m, "andi", "budi", 3);
+    const h = hashOf("andi", "budi");
+    await m.post(`/invoices/${h}/approve`, approvalBody(m, d, "budi", 43, 3));
+    // (a) the debtor paid by an ordinary voucher at seq 2 whose cumulative holds the installment (20) and 5 more; seq 1 was never registered
+    chainVoucher(m, { payer: "budi", payee: "andi", epoch: 43, seq: 2, cumulative: "25000000" });
+    // (b) seq 1000 with cumulative 1: the debtor got in first and the installment is not covered
+    chainVoucher(m, { payer: "budi", payee: "andi", epoch: 44, seq: 1000, cumulative: "1" });
+    // (c) nothing in epoch 45
+    closeEpoch(m, 43);
+    closeEpoch(m, 44);
+    closeEpoch(m, 45);
+    const view = (await m.get(`/invoices/${h}`)).json;
+    expect(view.installments.map((i: any) => [i.status, i.reason])).toEqual([["registered", null], ["missed", "blocked_by_debtor"], ["scheduled", "headroom"]]);
+    expect(view.status).toBe("missed");
+    // (c) goes on to the catch-up: the pair has nothing in epoch 46 yet
+    const plan = planOf(d, 43, 3);
+    const shifted = await m.post(`/invoices/${h}/installments/3/catch-up`, signedVoucher(m, catchUpVoucher(plan, 3, { seq: 0, cumulativeAmount: "0" }, false), "budi"));
+    expect(shifted.status).toBe(200);
+    expect(shifted.json.installments[2]).toMatchObject({ status: "shifted", voucherEpoch: 46 });
+    // the honest debtor is not punished in the reputation: only the blocked invoice counts against it, and nothing for (a)
+    expect((await m.get(`/reputation/${acct("budi")}`)).json.invoices.blockedByDebtor).toBe(1);
+  });
 });
