@@ -79,8 +79,8 @@ Levels: **High** (a proof or money can be forged by the other party), **Medium**
 ## Batch 6 (one-time codes: SD-076, FE-032, AG-030)
 | ID | Level | Repo | Summary | Status | Owner |
 | --- | --- | --- | --- | --- | --- |
-| B6-F1 | High | backend, frontend | A dispute `other` without proof ends `disputed` (unpaid) for a buyer who holds a working code; a code works once | open (needs a decision) | Main C, Main B, coordinator |
-| B6-F2 | Medium | sdk, backend, frontend | `arbiter` is a name, not a bond: it lifts the 20 credit cap and the pages say "dengan jaminan" | open (needs a decision) | Main C, Main B |
+| B6-F1 | High | backend, frontend | A dispute `other` without proof ends `disputed` (unpaid) for a buyer who holds a working code; a code works once | backend fixed (`BE-069: fix`, ADR-48 points 5 to 7: complaint, not `disputed`); the page text (button, advice) is Main B's | Main C fixed, Main B |
+| B6-F2 | Medium | sdk, backend, frontend | `arbiter` is a name, not a bond: it lifts the 20 credit cap and the pages say "dengan jaminan" | backend fixed (`BE-069: fix`: caps 20 and 100 credit whatever the arbiter, `arbiter_not_supported`); SDK `codeNeedsBond` and the texts "dengan jaminan" are Main B's | Main C fixed, Main B |
 | B6-F3 | Medium | agents | The buyer agent confirms at once, without trying the code and giving up the one hour window | open | Main B |
 | B6-F4 | Low | sdk, frontend, agents | The delivery is not checked against the code document of the listing (`doc` not passed) | open | Main B |
 | B6-F5 | Low | sdk, backend | No bound on the size and characters of a code on the receiving side | backend fixed (`BE-069: fix`); SDK open | Main C fixed, Main B |

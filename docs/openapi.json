@@ -5193,7 +5193,7 @@
                   "codes": {
                     "value": {
                       "error": {
-                        "code": "code_bound_to_identity",
+                        "code": "arbiter_not_supported",
                         "message": "…",
                         "details": {}
                       }
@@ -5203,8 +5203,10 @@
               }
             },
             "x-error-codes": [
+              "arbiter_not_supported",
               "code_bound_to_identity",
               "code_issuer_unknown",
+              "code_over_limit_unbonded",
               "invalid_request",
               "license_id_rejected",
               "preview_contains_pii",
@@ -5398,7 +5400,7 @@
                   "codes": {
                     "value": {
                       "error": {
-                        "code": "code_bad_commitment",
+                        "code": "arbiter_not_supported",
                         "message": "…",
                         "details": {}
                       }
@@ -5408,10 +5410,12 @@
               }
             },
             "x-error-codes": [
+              "arbiter_not_supported",
               "code_bad_commitment",
               "code_bound_to_identity",
               "code_issuer_unknown",
               "code_not_verifiable",
+              "code_over_limit_unbonded",
               "invalid_request",
               "license_id_rejected",
               "preview_contains_pii",
@@ -6936,7 +6940,7 @@
                   "codes": {
                     "value": {
                       "error": {
-                        "code": "code_bound_to_identity",
+                        "code": "arbiter_not_supported",
                         "message": "…",
                         "details": {}
                       }
@@ -6946,8 +6950,10 @@
               }
             },
             "x-error-codes": [
+              "arbiter_not_supported",
               "code_bound_to_identity",
               "code_issuer_unknown",
+              "code_over_limit_unbonded",
               "invalid_request",
               "license_id_rejected",
               "preview_contains_pii",
@@ -7205,7 +7211,7 @@
                   "codes": {
                     "value": {
                       "error": {
-                        "code": "code_bound_to_identity",
+                        "code": "arbiter_not_supported",
                         "message": "…",
                         "details": {}
                       }
@@ -7215,8 +7221,10 @@
               }
             },
             "x-error-codes": [
+              "arbiter_not_supported",
               "code_bound_to_identity",
               "code_issuer_unknown",
+              "code_over_limit_unbonded",
               "invalid_request",
               "license_id_rejected",
               "preview_contains_pii",
@@ -8586,7 +8594,7 @@
                   "codes": {
                     "value": {
                       "error": {
-                        "code": "code_bound_to_identity",
+                        "code": "arbiter_not_supported",
                         "message": "…",
                         "details": {}
                       }
@@ -8596,8 +8604,10 @@
               }
             },
             "x-error-codes": [
+              "arbiter_not_supported",
               "code_bound_to_identity",
               "code_issuer_unknown",
+              "code_over_limit_unbonded",
               "invalid_request",
               "license_id_rejected",
               "preview_contains_pii",
@@ -8785,7 +8795,7 @@
                   "codes": {
                     "value": {
                       "error": {
-                        "code": "code_bound_to_identity",
+                        "code": "arbiter_not_supported",
                         "message": "…",
                         "details": {}
                       }
@@ -8795,8 +8805,10 @@
               }
             },
             "x-error-codes": [
+              "arbiter_not_supported",
               "code_bound_to_identity",
               "code_issuer_unknown",
+              "code_over_limit_unbonded",
               "invalid_request",
               "license_id_rejected",
               "preview_contains_pii",
@@ -12559,7 +12571,7 @@
                   "codes": {
                     "value": {
                       "error": {
-                        "code": "code_bound_to_identity",
+                        "code": "arbiter_not_supported",
                         "message": "…",
                         "details": {}
                       }
@@ -12569,8 +12581,10 @@
               }
             },
             "x-error-codes": [
+              "arbiter_not_supported",
               "code_bound_to_identity",
               "code_issuer_unknown",
+              "code_over_limit_unbonded",
               "invalid_request",
               "license_id_rejected",
               "preview_contains_pii",
@@ -12764,7 +12778,7 @@
                   "codes": {
                     "value": {
                       "error": {
-                        "code": "code_bound_to_identity",
+                        "code": "arbiter_not_supported",
                         "message": "…",
                         "details": {}
                       }
@@ -12774,8 +12788,10 @@
               }
             },
             "x-error-codes": [
+              "arbiter_not_supported",
               "code_bound_to_identity",
               "code_issuer_unknown",
+              "code_over_limit_unbonded",
               "invalid_request",
               "license_id_rejected",
               "preview_contains_pii",

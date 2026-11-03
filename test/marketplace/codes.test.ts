@@ -168,14 +168,21 @@ describe("BE-069 one-time codes: the code book on the fair exchange of BE-056", 
     expect((await m.get(`/purchases/${id}`)).json).toMatchObject({ status: "confirmed", autoConfirmed: true });
   });
 
-  it("TC-BE-069-06 a code that cannot be checked is limited to 20 credit unless there is an arbiter; the SDK names the error", async () => {
+  it("TC-BE-069-06 the caps hold whatever the arbiter says: 20 credit for a code that cannot be checked, 100 for one that can; an arbiter is refused (ADR-48 points 6 and 7)", async () => {
     const m = await start();
     expect(UNVERIFIABLE_CODE_LIMIT).toBe(C(20));
     expect((await sell(m, { verifiable: false, value: 20 })).posted.status).toBe(201);
     const over = await sell(m, { verifiable: false, value: 21 });
     expect([over.posted.status, over.posted.json.error.code]).toEqual([400, "code_over_limit_unbonded"]);
-    expect((await sell(m, { verifiable: false, value: 21, arbiter: acct("citra") })).posted.status).toBe(201);
-    expect((await sell(m, { verifiable: true, value: 500 })).posted.status).toBe(201); // a checkable code has no cap
+    expect((await sell(m, { verifiable: true, value: 100 })).posted.status).toBe(201);
+    const rich = await sell(m, { verifiable: true, value: 5000 });
+    expect([rich.posted.status, rich.posted.json.error.code]).toEqual([400, "code_over_limit_unbonded"]);
+    expect((await sell(m, { verifiable: true, value: 101 })).posted.json.error.code).toBe("code_over_limit_unbonded");
+    // an arbiter is only a name: it lifts no cap and is not accepted
+    for (const [verifiable, value] of [[false, 21], [false, 5], [true, 500]] as const) {
+      const r = await sell(m, { verifiable, value, arbiter: acct("citra") });
+      expect([r.posted.status, r.posted.json.error.code], `${verifiable} ${value}`).toEqual([400, "arbiter_not_supported"]);
+    }
     // no check for a code that has none
     const free = await sell(m, { verifiable: false, value: 5 });
     expect((await check(m, free)).json.error.code).toBe("code_not_verifiable");
@@ -274,6 +281,47 @@ describe("BE-069 one-time codes: the code book on the fair exchange of BE-056", 
     const refused = await m.post(`/purchases/${id}`, { notice: big.release, signature: big.signature });
     expect([refused.status, refused.json.error.code]).toEqual([400, "invalid_request"]);
     expect((await release(m, id, s).post()).status).toBe(201); // the honest release goes through
+  });
+
+  it("TC-BE-069-14 a buyer who says other, pii or used without a proof of cheating makes a complaint, one per purchase; the sale goes on to the automatic confirmation and the seller is paid (ADR-48 points 5 to 7)", async () => {
+    const m = await start();
+    const s = await sell(m);
+    const id = (await buy(m, s)).json.purchase_id as string;
+    await postCipher(m, id, s);
+    await check(m, s);
+    await release(m, id, s).post();
+    // a buyer that has paid somebody before counts as a source of complaints
+    m.db.prepare("INSERT INTO epochs (circle_id, epoch, phase) VALUES ('agents-main', 42, 'open') ON CONFLICT DO NOTHING").run();
+    m.db.prepare("INSERT INTO obligations (circle_id, epoch, debtor, creditor, seq, cumulative_amount, registration_mode, registered_block, receipt_id) VALUES ('agents-main', 42, ?, ?, 1, 5000000, 'cumulative', 1, 'r1')").run(acct("budi"), acct("citra"));
+    const before = (await m.get(`/reputation/${acct("andi")}`)).json;
+    expect(before.complaints).toEqual({ transactions: 0, counterparties: 0 });
+    const complaint = await buyerNotice(m, id, "disputed", "budi", "other", null);
+    expect([complaint.status, complaint.json.complaint, complaint.json.status]).toEqual([201, true, "key_released"]);
+    expect("voucher" in complaint.json).toBe(false);
+    expect((await buyerNotice(m, id, "disputed", "budi", "contains_pii", null)).json.error.code).toBe("already_exists"); // one per purchase
+    expect((await buyerNotice(m, id, "disputed", "budi", "other", { release: {} })).json.error.code).toBe("invalid_request"); // a proof belongs to content_mismatch only
+    // content_mismatch without a proof is still refused: only a proof of cheating stops the sale
+    expect((await buyerNotice(m, id, "disputed", "budi", "content_mismatch", null)).json.error.code).toBe("proof_invalid");
+    expect((await m.get(`/purchases/${id}`)).json.status).toBe("key_released");
+    // silence for one hour: confirmed, the voucher is shown to the seller side
+    m.clock.now += 61 * 60_000;
+    const done = (await m.get(`/purchases/${id}`)).json;
+    expect(done).toMatchObject({ status: "confirmed", autoConfirmed: true });
+    expect(done.voucher).toMatchObject({ payer: acct("budi"), payee: acct("andi") });
+    // the reputation of the seller: one completed sale and one complaint
+    const after = (await m.get(`/reputation/${acct("andi")}`)).json;
+    expect(after.complaints).toEqual({ transactions: 1, counterparties: 1 });
+    expect(after.completed).toEqual({ transactions: 1, counterparties: 1 });
+    expect(after.completionRate).toBe(0.5);
+    // a complaint of a buyer that has paid nobody does not count
+    const t = await sell(m);
+    const id2 = (await buy(m, t, "citra")).json.purchase_id as string;
+    await postCipher(m, id2, t);
+    await check(m, t);
+    const r2 = createCodeRelease({ doc: t.doc, code: t.code, salt: t.enc.salt, buyer: acct("citra"), buyerPublicKey: m.keys.citra!.publicKey, purchase_id: id2, ciphertext: t.enc.ciphertext, contentKey: t.enc.key, at: at(m), sellerSecretKey: m.keys.andi!.secretKey });
+    await m.post(`/purchases/${id2}`, { notice: r2.release, signature: r2.signature });
+    expect((await buyerNotice(m, id2, "disputed", "citra", "other", null)).json.complaint).toBe(true);
+    expect((await m.get(`/reputation/${acct("andi")}`)).json.complaints.counterparties).toBe(1); // citra has paid nobody
   });
 
   it("TC-BE-069-10 a seller who encrypts another code than the commitment is caught by the proof of cheating of the fair exchange", async () => {

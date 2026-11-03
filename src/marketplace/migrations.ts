@@ -492,6 +492,22 @@ CREATE TABLE code_seen (
 CREATE INDEX idx_code_seen_listing ON code_seen (circle_id, listing_hash);
 `;
 
+// BE-069 fix (ADR-48 points 5 to 7): a buyer of a code who says `other` or `contains_pii` without a proof of cheating does not stop the sale: it is a complaint against the seller, one per purchase,
+// and the purchase goes on to the automatic confirmation.
+const V1116_COMPLAINTS = `
+CREATE TABLE purchase_complaints (
+  circle_id     TEXT    NOT NULL,
+  purchase_id   INTEGER NOT NULL REFERENCES purchases(id),
+  seller        TEXT    NOT NULL,
+  buyer         TEXT    NOT NULL,
+  reason        TEXT    NOT NULL,
+  at_s          INTEGER NOT NULL,
+  created_at_ms INTEGER NOT NULL,
+  PRIMARY KEY (circle_id, purchase_id)
+);
+CREATE INDEX idx_complaints_seller ON purchase_complaints (circle_id, seller);
+`;
+
 export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1101, name: "m11_intents", sql: V1101_INTENTS },
   { version: 1102, name: "m11_listings", sql: V1102_LISTINGS },
@@ -508,4 +524,5 @@ export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1113, name: "m11_delegate_claims", sql: V1113_DELEGATE_CLAIMS },
   { version: 1114, name: "m11_codes", sql: V1114_CODES },
   { version: 1115, name: "m11_code_seen", sql: V1115_CODE_SEEN },
+  { version: 1116, name: "m11_complaints", sql: V1116_COMPLAINTS },
 ];

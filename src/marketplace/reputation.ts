@@ -178,14 +178,19 @@ export function reputationOf(db: Database.Database, circleId: string, account: s
   const abandoned = perf.filter((p) => p.outcome === "abandoned");
   // BE-051: an invoice that the debtor accepted counts for it once per issuer: all installments registered is a completed deal, a missed one (also `blocked_by_debtor`) is a failure
   const inv = invoiceRecordOf(db, circleId, account);
-  const cw = distinct([...completed.map((p) => p.receiver), ...inv.registered]);
+  // BE-069: a one-time code that the buyer confirmed (or that was confirmed by silence) is a completed sale; a complaint of a buyer about a code (`other`, `contains_pii`, "used" without a proof of cheating)
+  // is counted against the seller, one per purchase and once per buyer, and only from a buyer that has paid somebody itself
+  const codeSales = rows<{ buyer: string }>(db, "SELECT buyer FROM purchases WHERE circle_id = ? AND seller = ? AND kind = 'code' AND status = 'confirmed'", circleId, account).map((r) => r.buyer);
+  const complaints = rows<{ buyer: string }>(db, "SELECT buyer FROM purchase_complaints WHERE circle_id = ? AND seller = ?", circleId, account).filter((r) => hasPaidSomebody(db, circleId, r.buyer));
+  const cw = distinct([...completed.map((p) => p.receiver), ...inv.registered, ...codeSales]);
+  const kw = distinct(complaints.map((r) => r.buyer));
   const mw = distinct(inv.missed);
   const dw = distinct(disputes.map((p) => p.receiver));
   const aw = distinct(abandoned.map((p) => p.receiver));
   const checks = rows<{ passed: bigint; verifier: string }>(db, "SELECT passed, verifier FROM spot_checks WHERE circle_id = ? AND subject = ?", circleId, account);
   const passedChecks = checks.filter((c) => c.passed === 1n).length;
   const failedChecks = checks.length - passedChecks;
-  const rate = cw + dw + aw + mw > 0 ? cw / (cw + dw + aw + mw) : null;
+  const rate = cw + dw + aw + mw + kw > 0 ? cw / (cw + dw + aw + mw + kw) : null;
   const confidence = cw / (cw + CONFIDENCE_HALF);
   const checkFactor = (passedChecks + 1) / (passedChecks + 3 * failedChecks + 1);
   const score = cw === 0 || rate === null ? 0 : Math.round(1000 * rate * confidence * checkFactor);
@@ -193,7 +198,8 @@ export function reputationOf(db: Database.Database, circleId: string, account: s
   return {
     account,
     score,
-    completed: { transactions: completed.length, counterparties: cw },
+    completed: { transactions: completed.length + codeSales.length, counterparties: cw },
+    complaints: { transactions: complaints.length, counterparties: kw },
     disputes: { transactions: disputes.length, counterparties: dw },
     abandoned: { transactions: abandoned.length, counterparties: aw },
     invoices: { registered: inv.registered.length, missed: inv.missed.length, blockedByDebtor: inv.blockedByDebtor, missedIssuers: mw },
@@ -201,7 +207,7 @@ export function reputationOf(db: Database.Database, circleId: string, account: s
     responseSeconds: { median: response, samples: completed.filter((p) => p.responseSeconds !== null).length },
     spotChecks: { passed: passedChecks, failed: failedChecks, verifiers: distinct(checks.map((c) => c.verifier)) },
     basis: "paid deals only; one count per counterparty",
-    formula: `score = round(1000 * completed/(completed+disputes+abandoned+missedInvoices) * completed/(completed+${CONFIDENCE_HALF}) * (checksPassed+1)/(checksPassed+3*checksFailed+1)), counts are distinct counterparties`,
+    formula: `score = round(1000 * completed/(completed+disputes+abandoned+missedInvoices+codeComplaints) * completed/(completed+${CONFIDENCE_HALF}) * (checksPassed+1)/(checksPassed+3*checksFailed+1)), counts are distinct counterparties`,
   };
 }
 

@@ -38,6 +38,8 @@ export const DEFAULT_LICENSE_IDS: ReadonlyArray<{ id: string; redistribute: bool
 export const CONTENT_LICENSE_TYPES: ReadonlySet<string> = new Set([
   "data:dataset", "model:weights", "ads:promo-slot", "design:template", "creative:licensed-asset", "plugin:preset", "course:own-class", "content:own-work", "data:own-anonymized",
 ]);
+/** Largest value of a code whose issuer can be asked (ADR-48 point 6): 100 credit. */
+export const DEFAULT_VERIFIABLE_CODE_LIMIT = "100000000";
 const DISPUTE_REASONS = ["content_mismatch", "contains_pii", "other"] as const;
 const BUYER_ACTIONS = ["confirmed", "disputed", "cancelled"] as const;
 const ACTIVE = "('paid_held','cipher_posted','key_released','confirmed')";
@@ -83,6 +85,8 @@ export interface PurchaseOptions {
   codeDisputeWindowSeconds?: number;
   /** Value above which a code that cannot be checked needs a bond, smallest unit. Default 20 credit. */
   codeUnverifiableLimit?: string;
+  /** Largest value of a code that the issuer can check, smallest unit. Default 100 credit (ADR-48 point 6); above it `code_over_limit_unbonded`. */
+  codeVerifiableLimit?: string;
   /** Secret of the operator for `code_seen` (env `X207_CODE_SEEN_KEY`): the backend keeps an HMAC of each code it checked, to refuse the same code in a second live listing. Empty: no detection. */
   codeSeenKey?: string;
 }
@@ -152,9 +156,15 @@ export const codeCheck = (options: PurchaseOptions = {}): ListingCheck => (listi
   if (typeof d.code_doc !== "string" || !HASH.test(d.code_doc)) bad("code_doc harus 64 heksadesimal huruf kecil di detail listing kode");
   if (d.identity_bound === true) throw new ApiError(400, "code_bound_to_identity", "Kode yang terikat pada identitas pemiliknya tidak bisa dijual", {});
   const doc: CodeDocument = { circle: l.circle as string, seller: l.account as string, code_commitment: d.code_commitment as string, issuer: d.issuer as string, value: l.offer?.value as string, verifiable: d.verifiable as boolean, arbiter: (d.arbiter as string | null | undefined) ?? null, nonce: d.nonce as string };
+  // ADR-48 points 6 and 7: the arbiter of the document is only a name (no bond exists for a sale paid by one voucher), so it neither lifts a cap nor is accepted; the caps hold whatever it says
+  if (doc.arbiter !== null) throw new ApiError(400, "arbiter_not_supported", "arbiter tidak didukung untuk penjualan kode: tidak ada jaminan yang dikunci, jadi batas nilai berlaku tanpa pengecualian", { arbiter: doc.arbiter });
   try {
     const normal = checkCodeDocument(doc, options.codeUnverifiableLimit);
     if (codeDocumentHash(normal) !== d.code_doc) bad("code_doc bukan hash dokumen kode yang dibangun dari listing ini (circle, penjual, nilai, dan field detail)");
+    // a code that the issuer can check is capped too, at a higher value (100 credit by default)
+    if (normal.verifiable && BigInt(normal.value) > BigInt(options.codeVerifiableLimit ?? DEFAULT_VERIFIABLE_CODE_LIMIT)) {
+      throw new ApiError(400, "code_over_limit_unbonded", `kode yang bisa dicek dibatasi ${options.codeVerifiableLimit ?? DEFAULT_VERIFIABLE_CODE_LIMIT} unit; tidak ada jaminan yang bisa menaikkannya`, { limit: options.codeVerifiableLimit ?? DEFAULT_VERIFIABLE_CODE_LIMIT });
+    }
   } catch (error) {
     if (error instanceof CodeError) throw new ApiError(400, error.code as ApiErrorCode, error.message, {});
     throw error;
@@ -610,6 +620,18 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
           if (p.status !== "key_released") refuse(`disputed hanya dari key_released, keadaan sekarang ${p.status}`, { status: p.status });
           if (at > Number(p.dispute_until)) refuse("jendela sengketa sudah lewat", { disputeUntil: Number(p.dispute_until) });
           if (typeof reason !== "string" || !(DISPUTE_REASONS as readonly string[]).includes(reason)) throw invalidRequest("reason wajib: content_mismatch, contains_pii, atau other", { allowed: [...DISPUTE_REASONS] });
+          // ADR-48 points 5 to 7: for a code only a proof of cheating can stop the sale. "Used", "other" or "pii" without a proof is a complaint against the seller (one per purchase); the sale
+          // goes on to the automatic confirmation, because nobody can tell who used a code and a buyer who holds a working code could otherwise keep it unpaid
+          if (p.kind === "code" && reason !== "content_mismatch") {
+            if (proof !== null) throw invalidRequest("proof hanya untuk content_mismatch");
+            const exists = row(db, "SELECT 1 AS x FROM purchase_complaints WHERE circle_id = ? AND purchase_id = ?", circle.circle_id, p.id);
+            if (exists !== undefined) throw new ApiError(409, "already_exists", "Pembelian ini sudah punya keluhan", { purchaseId: p.id.toString() });
+            db.transaction(() => {
+              record(db, circle.circle_id, p, actor, "complained", at, signature, now(), text);
+              db.prepare("INSERT INTO purchase_complaints (circle_id, purchase_id, seller, buyer, reason, at_s, created_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?)").run(circle.circle_id, p.id, p.seller, p.buyer, reason, at, now());
+            })();
+            return { status: 201, body: { ...purchaseView(findPurchase(db, circle.circle_id, params.id as string)), complaint: true } };
+          }
           let outcome: "disputed" | "refuted" = "disputed";
           if (reason === "content_mismatch") {
             // the proof is checked here, by the backend, against the ciphertext that the seller named
