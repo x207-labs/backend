@@ -311,10 +311,35 @@ CREATE TABLE escrows (
 );
 `;
 
+// interface 0.0.10 (CT-090): a class A escrow can hold an exact amount of a NEP-141 token. The table is rebuilt so that the NFT columns may be empty. `amount` is TEXT: a token with 18 decimals passes 2^63.
+const V6_FT_ESCROWS = `
+CREATE TABLE escrows_new (
+  circle_id    TEXT    NOT NULL REFERENCES circles (circle_id),
+  grant_id     INTEGER NOT NULL,
+  kind         TEXT    NOT NULL DEFAULT 'nft' CHECK (kind IN ('nft','ft')),
+  nft_contract TEXT,
+  token_id     TEXT,
+  ft_contract  TEXT,
+  amount       TEXT,
+  state        TEXT    NOT NULL CHECK (state IN ('held','delivered','cancelled','stuck')),
+  block_height INTEGER NOT NULL,
+  receipt_id   TEXT    NOT NULL,
+  log_index    INTEGER NOT NULL,
+  PRIMARY KEY (circle_id, grant_id),
+  CHECK ((kind = 'nft' AND nft_contract IS NOT NULL AND token_id IS NOT NULL AND ft_contract IS NULL AND amount IS NULL)
+      OR (kind = 'ft' AND ft_contract IS NOT NULL AND amount IS NOT NULL AND nft_contract IS NULL AND token_id IS NULL))
+);
+INSERT INTO escrows_new (circle_id, grant_id, kind, nft_contract, token_id, state, block_height, receipt_id, log_index)
+  SELECT circle_id, grant_id, 'nft', nft_contract, token_id, state, block_height, receipt_id, log_index FROM escrows;
+DROP TABLE escrows;
+ALTER TABLE escrows_new RENAME TO escrows;
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "d9_initial", sql: V1_D9_INITIAL },
   { version: 2, name: "d9_bundles", sql: V2_BUNDLES },
   { version: 3, name: "d9_grants", sql: V3_GRANTS },
   { version: 4, name: "d9_escrows", sql: V4_ESCROWS },
   { version: 5, name: "d9_intents", sql: V5_INTENTS },
+  { version: 6, name: "d9_ft_escrows", sql: V6_FT_ESCROWS },
 ];

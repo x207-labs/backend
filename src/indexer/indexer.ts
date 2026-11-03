@@ -208,7 +208,8 @@ export class Indexer {
     if (log.executorId !== this.#contractId || !log.log.startsWith(EVENT_PREFIX)) return 0;
     const row = toRow(block, log, this.#contractId);
     if (!row) return 0;
-    assertAmountsInRange(JSON.parse(row.data_json));
+    // the amount of ft_escrow_held is in the units of another token (up to 2^128 - 1); its handler checks it
+    if (row.event !== "ft_escrow_held") assertAmountsInRange(JSON.parse(row.data_json));
 
     const inserted = this.#db.prepare(INSERT_EVENT).run({ ...row, handled: HANDLED.pending });
     if (inserted.changes === 0) {

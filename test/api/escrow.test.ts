@@ -35,7 +35,7 @@ describe("CT-075 escrow events in D9", () => {
     expect(debtBefore).toBe(0);
     expect(f.db.prepare("SELECT state FROM escrows").all()).toEqual([{ state: "held" }]);
     const res = await fetch(`${f.srv.url}/x207/circles/agents-main/grants/1`);
-    expect(((await res.json()) as { escrow: unknown }).escrow).toEqual({ nftContract: "nft.test.near", tokenId: "t1", state: "held" });
+    expect(((await res.json()) as { escrow: unknown }).escrow).toEqual({ kind: "nft", nftContract: "nft.test.near", tokenId: "t1", state: "held" });
     expect(f.db.prepare("SELECT event, handled FROM events_raw WHERE event LIKE 'escrow_%' ORDER BY event").all()).toEqual([{ event: "escrow_failed", handled: 1 }, { event: "escrow_held", handled: 1 }]);
   });
 

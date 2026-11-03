@@ -24,8 +24,11 @@ const COLUMNS = "grant_id, asset_type, grantor, grantee, class, unit, unit_price
 
 interface EscrowRow {
   grant_id: bigint;
-  nft_contract: string;
-  token_id: string;
+  kind: string;
+  nft_contract: string | null;
+  token_id: string | null;
+  ft_contract: string | null;
+  amount: string | null;
   state: string;
 }
 
@@ -33,12 +36,18 @@ interface EscrowRow {
 function escrowsOf(db: Parameters<typeof rows>[0], circleId: string, ids: readonly bigint[]): Map<bigint, EscrowRow> {
   if (ids.length === 0) return new Map();
   const found = rows<EscrowRow>(
-    db, `SELECT grant_id, nft_contract, token_id, state FROM escrows WHERE circle_id = ? AND grant_id IN (${ids.map(() => "?").join(",")})`, circleId, ...ids,
+    db, `SELECT grant_id, kind, nft_contract, token_id, ft_contract, amount, state FROM escrows WHERE circle_id = ? AND grant_id IN (${ids.map(() => "?").join(",")})`, circleId, ...ids,
   );
   return new Map(found.map((e) => [e.grant_id, e]));
 }
 
-const escrowView = (e: EscrowRow | undefined) => (e === undefined ? null : { nftContract: e.nft_contract, tokenId: e.token_id, state: e.state });
+/** `kind` `nft`: the NFT and its token. `kind` `ft` (CT-090): the token contract and the exact amount, in the units of that token (a decimal string, not credits). */
+const escrowView = (e: EscrowRow | undefined) =>
+  e === undefined
+    ? null
+    : e.kind === "ft"
+      ? { kind: "ft", ftContract: e.ft_contract, amount: String(e.amount), state: e.state }
+      : { kind: "nft", nftContract: e.nft_contract, tokenId: e.token_id, state: e.state };
 
 function view(g: GrantRow, escrow?: EscrowRow) {
   return {

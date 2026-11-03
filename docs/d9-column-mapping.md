@@ -92,3 +92,9 @@ Tabel infrastruktur `events_raw`, `indexer_cursor`, dan `settlement_jobs` bukan 
 | params | block_height | teknis | |
 | params | receipt_id | teknis | `init:<block>` untuk baris awal |
 | params | log_index | teknis | |
+
+## escrows (migrasi 4 dan 6, CT-075 dan CT-090)
+Satu baris per escrow kelas A, kunci `(circle_id, grant_id)`. `kind` `nft` mengisi `nft_contract` dan `token_id`; `kind` `ft` (event `ft_escrow_held`, interface 0.0.10) mengisi `ft_contract` dan `amount`. `amount` berupa teks desimal dalam satuan token itu (bukan credit) karena token 18 desimal melewati 2^63; pemeriksaan batas 2^63 di ingest tidak berlaku untuk event ini, handler memeriksa 1..2^128-1. `state` berpindah lewat `grant_activated` (delivered), `grant_revoked` (cancelled) dan `escrow_failed` (held atau stuck), sama untuk kedua jenis. Read API: `escrow` pada `GET …/grants` dan `…/grants/{id}` berisi `{kind:"nft", nftContract, tokenId, state}` atau `{kind:"ft", ftContract, amount, state}`.
+
+## intent_book dan intent_withdrawals (migrasi 5, BE-045)
+`intent_book`: hash intent per circle dengan `status` `posted` atau `removed`. `intent_withdrawals`: satu baris per `intents_withdrawn`.
