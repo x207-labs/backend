@@ -7,13 +7,13 @@ Levels as in batch 2: High = money or a proof can be forged by the other party w
 ## Summary
 | # | Level | Where | Finding |
 | --- | --- | --- | --- |
-| B6-F1 | **High** | backend `purchases.ts` (dispute), `Codes.tsx:395` | A dispute with reason `other` needs no proof and ends `disputed` (not paid) for the buyer who already holds a working code; for a code, which works once, the buyer redeems it and disputes. The page offers that button |
-| B6-F2 | Medium | `code.ts` `checkCodeDocument`, backend `codeCheck`, `Codes.tsx:238,208` | `arbiter` is only a name: no bond is locked, yet it lifts the 20 credit cap (ADR-48 point 2), and the pages say "dengan jaminan" |
+| B6-F1 | **High** | backend `purchases.ts` (dispute), `Codes.tsx` (button of the dispute) | A dispute with reason `other` needs no proof and ends `disputed` (not paid) for the buyer who already holds a working code; for a code, which works once, the buyer redeems it and disputes. The page offers that button |
+| B6-F2 | Medium | `code.ts` `checkCodeDocument`, backend `codeCheck`, `Codes.tsx`, `codeFlow.ts` | `arbiter` is only a name: no bond is locked, yet it lifts the 20 credit cap (ADR-48 point 2), and the pages say "dengan jaminan" |
 | B6-F3 | Medium | `agents/scenario/code.ts` `receiveCode` | The buyer agent confirms (pays) as soon as the code matches the commitment: it never tries the code at the issuer and gives up the one hour window |
 | B6-F4 | Low | `code.ts` `verifyCodeDelivery`, `codeFlow.ts` `receiveCode`, `agents` `receiveCode` | The delivery is not checked against the code document of the listing the buyer looked at (`doc` is not passed); the commitment comes from the purchase view of the same backend |
 | B6-F5 | Low | `code.ts` `verifyCodeDelivery`, backend release | Nothing bounded the size or the characters of a code on the receiving side; a seller could ship a payload of megabytes. **Backend half fixed** (`BE-069: fix`); the SDK half is Main B's |
-| B6-F6 | Low | `Codes.tsx:306,347` | The buyer types the public key of the seller, not read from the contract |
-| B6-F7 | Low | `Codes.tsx:59` | The label of the code field says "tidak dikirim ke mana pun", but a code that can be checked is sent to the backend; the field is plain text |
+| B6-F6 | Low | `Codes.tsx` (field of the key) | The buyer types the public key of the seller, not read from the contract |
+| B6-F7 | Low | `Codes.tsx` (field of the code) | The label of the code field says "tidak dikirim ke mana pun", but a code that can be checked is sent to the backend; the field is plain text |
 | B6-F8 | Info | `agents/scenario/code.ts` `MockCodeBook` | The mock book differs from the real one (error names `code_value_over_cap`, `code_format_invalid`; release checks only `cipher_hash`); the test with `HttpCodeBook` is what shows the real behaviour |
 | B6-F9 | Info | `SecretProxy.call`, broker `redact` | The key is redacted only as the exact string; an echo in another form (percent-encoded, base64, cut) is not |
 | B6-F10 | Info | `Codes.tsx` `Serve` | The seller seals the key to the buyer account that the backend names; the voucher that proves who paid is not shown until the purchase is confirmed |
