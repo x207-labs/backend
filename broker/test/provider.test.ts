@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { BrokerStore } from "../src/store.js";
 import { MockProviderAdapter, ProviderAccessError, ProviderAccessManager, RETRY_BASE_MS, type ProviderGrantInput } from "../src/provider/index.js";
+import { ERROR_STATUS } from "../src/provider/routes.js";
 import { NOW } from "./helpers.js";
 
 const NS = (ms: number): string => (BigInt(ms) * 1_000_000n).toString();
@@ -121,7 +122,13 @@ describe("BE-057 P2 provider access: one interface, mock provider, revoke_pendin
     expect((await manager.revokeAccess(1, "defaulted")).status).toBe("revoked");
     expect((await manager.revokeAccess(1, "defaulted")).status).toBe("revoked");
     expect(adapter.revokeCalls).toBe(1);
-    await expect(manager.grantAccess(input())).rejects.toMatchObject({ code: "grant_failed" });
+    await expect(manager.grantAccess(input())).rejects.toMatchObject({ code: "access_conflict" });
     await expect(manager.revokeAccess(5, "x")).rejects.toMatchObject({ code: "access_not_found" });
+  });
+
+  it("BE-057 fix: grant_failed is split in two codes: access_conflict (409, the state of the access or of another grant) and provider_grant_failed (502, the provider)", () => {
+    expect(ERROR_STATUS.access_conflict).toBe(409);
+    expect(ERROR_STATUS.provider_grant_failed).toBe(502);
+    expect(Object.keys(ERROR_STATUS)).not.toContain("grant_failed");
   });
 });

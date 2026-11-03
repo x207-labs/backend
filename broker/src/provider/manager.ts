@@ -207,7 +207,7 @@ export class ProviderAccessManager {
     // an adapter with no proof at all (S3, AWS) says so, instead of leaving `null` that the page reads as "no information" (B4-F7); anything but `verified` carries the warning, also on a renewal
     if (proven === null && !adapter.proveGranteeRef) proven = "not_applicable";
     if (proven !== "verified" && !warnings.includes("grantee_unproven")) warnings.push("grantee_unproven");
-    if (existing && existing.status !== "active") throw new ProviderAccessError("grant_failed", `access for grant ${grant.grant_id} is already ${existing.status}`);
+    if (existing && existing.status !== "active") throw new ProviderAccessError("access_conflict", `access for grant ${grant.grant_id} is already ${existing.status}`);
     const now = this.#now();
     const paidUntil = Math.min(Math.max(now, existing?.paidUntilMs ?? 0) + days * DAY_MS, nsToMs(grant.limits.expires_at));
     // two live grants for one thing: the end of the first would take away what the second still pays for (B4-F2)
@@ -216,7 +216,7 @@ export class ProviderAccessManager {
       const other = this.#store.db.prepare(
         `SELECT k.grant_id FROM provider_shared_keys k JOIN provider_access a ON a.grant_id = k.grant_id WHERE k.key = ? AND k.grant_id <> ? AND a.status IN ('active','revoke_pending') LIMIT 1`,
       ).get(key, grant.grant_id) as { grant_id: number } | undefined;
-      if (other) throw new ProviderAccessError("grant_failed", `grant ${other.grant_id} already opened the same access (${scope.provider}, ${scope.grantee_ref}); wait until it ends`);
+      if (other) throw new ProviderAccessError("access_conflict", `grant ${other.grant_id} already opened the same access (${scope.provider}, ${scope.grantee_ref}); wait until it ends`);
     }
     let result: ProviderGrantResult;
     try {
@@ -224,7 +224,7 @@ export class ProviderAccessManager {
     } catch (error) {
       // a refusal that the adapter names itself (a vote kind that is not for rent) keeps its code
       if (error instanceof ProviderAccessError) throw error;
-      throw new ProviderAccessError("grant_failed", (error as Error).message);
+      throw new ProviderAccessError("provider_grant_failed", (error as Error).message);
     }
     if (adapter.nativeExpiry && (result.nativeExpiresAtMs === null || result.nativeExpiresAtMs > paidUntil)) {
       // do not leave an access that outlives the rent

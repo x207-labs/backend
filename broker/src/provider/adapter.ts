@@ -72,7 +72,7 @@ export interface ProviderAccessAdapter {
 }
 
 export type ProviderAccessErrorCode =
-  | "provider_unknown" | "hosted_mode_real_provider" | "grantee_ref_unverified" | "native_expiry_required" | "scope_invalid" | "cap_exceeded" | "access_not_found" | "grant_failed" | "vote_kind_forbidden" | "dao_unknown" | "delegation_not_scoped";
+  | "provider_unknown" | "hosted_mode_real_provider" | "grantee_ref_unverified" | "native_expiry_required" | "scope_invalid" | "cap_exceeded" | "access_not_found" | "access_conflict" | "provider_grant_failed" | "vote_kind_forbidden" | "dao_unknown" | "delegation_not_scoped";
 
 export class ProviderAccessError extends Error {
   constructor(readonly code: ProviderAccessErrorCode, message: string) {

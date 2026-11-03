@@ -133,7 +133,7 @@ describe("BE-061 limited rent of the vote of a DAO", () => {
     await expect(manager.grantAccess(input(DAO, "gauge_weight", 2))).rejects.toMatchObject({ code: "vote_kind_forbidden" });
     // a read API that lists a forbidden kind is not believed
     body = { items: [{ dao: DAO, rentable_vote_kinds: [{ kind: "treasury", contract: GAUGE }] }] };
-    await expect(manager.grantAccess(input(DAO, "gauge_weight", 3))).rejects.toMatchObject({ code: "grant_failed" });
+    await expect(manager.grantAccess(input(DAO, "gauge_weight", 3))).rejects.toMatchObject({ code: "provider_grant_failed" });
     await expect(fetchDaoRegistry({ readApiUrl: "http://api.test", circle: "x", fetch: (async () => new Response("", { status: 503 })) as unknown as typeof fetch })).rejects.toThrow(DaoRegistryError);
     expect(typeof daoRegistryFromFile).toBe("function");
     store.close();

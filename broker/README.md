@@ -90,8 +90,9 @@ Rules: the grant must be active on the chain; `limits.scope` must be a provider 
 | 404 | `access_not_found` | no access for this grant |
 | 404, 403 | `grant_not_found`, `grant_not_active`, `grant_revoked` | the grant on the chain (nothing is charged) |
 | 409 | `voucher_in_flight` | the same voucher is paying another request |
+| 409 | `access_conflict` | the access of this grant already ended (`revoked`, `expired`), or another grant already holds the same access (same provider and `grantee_ref`): nothing is charged; wait until it ends |
 | 501 | `provider_unknown`, `hosted_mode_real_provider`, `class_not_supported` | no adapter for the provider, a real provider in hosted mode, or routes not wired |
-| 502 | `native_expiry_required`, `grant_failed`, `provider_unavailable` | the provider failed or did not set its expiry; nothing is settled |
+| 502 | `native_expiry_required`, `provider_grant_failed`, `provider_unavailable` | the provider refused or failed to open the access (`provider_grant_failed`), or did not set its expiry; nothing is settled |
 
 ### Limited rent of the vote of a DAO (BE-061)
 `DaoVoteAdapter` (`provider: "dao-vote"`). The holder of the tokens (the grantor) delegates its voting power to the lessee for **one kind of vote** per grant; the scope is `{provider: "dao-vote", grantee_ref: <account of the delegate>, resource: <account of the DAO>, permission: <vote kind>}`.

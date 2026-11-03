@@ -183,7 +183,7 @@ describe("BE-059 fix B4-F1 and B4-F2: the handle keeps the invitation and the gr
     a.proveGranteeRef = async () => true;
     manager.register(a);
     await manager.grantAccess(input("github", "alice-dev", REPO, { permission: "pull" }, 1));
-    await expect(manager.grantAccess(input("github", "alice-dev", REPO, { permission: "pull" }, 2))).rejects.toMatchObject({ code: "grant_failed" });
+    await expect(manager.grantAccess(input("github", "alice-dev", REPO, { permission: "pull" }, 2))).rejects.toMatchObject({ code: "access_conflict" });
     await manager.grantAccess(input("github", "alice-dev", "x207-test-org/other", {}, 3)).catch(() => undefined); // another repository is another thing (no mock: it may fail on the API, not on the rule)
     clock.now = NOW + DAY + 1;
     await manager.sweep();

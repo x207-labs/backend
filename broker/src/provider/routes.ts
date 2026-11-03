@@ -36,7 +36,7 @@ export interface ProviderRoutesOptions {
 }
 
 export const ERROR_STATUS: Record<ProviderAccessErrorCode, number> = {
-  scope_invalid: 400, grantee_ref_unverified: 403, access_not_found: 404, cap_exceeded: 409, provider_unknown: 501, hosted_mode_real_provider: 501, native_expiry_required: 502, grant_failed: 502, vote_kind_forbidden: 403, dao_unknown: 403, delegation_not_scoped: 403,
+  scope_invalid: 400, grantee_ref_unverified: 403, access_not_found: 404, cap_exceeded: 409, provider_unknown: 501, hosted_mode_real_provider: 501, native_expiry_required: 502, access_conflict: 409, provider_grant_failed: 502, vote_kind_forbidden: 403, dao_unknown: 403, delegation_not_scoped: 403,
 };
 
 const json = (status: number, body: unknown): Response => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });

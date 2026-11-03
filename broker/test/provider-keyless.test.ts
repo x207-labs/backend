@@ -81,9 +81,9 @@ describe("BE-058 SSH adapter: authorized_keys with restrict, command= and expiry
       await expect(manager.grantAccess(grantInput("ssh", bad, "/bin/true")), bad).rejects.toMatchObject({ code: expect.stringMatching(/grantee_ref_unverified|scope_invalid/) });
     }
     for (const command of ['x" ,permitopen="*', "a\nb", "back\\slash", ""]) {
-      await expect(manager.grantAccess(grantInput("ssh", good, command)), command).rejects.toMatchObject({ code: expect.stringMatching(/grant_failed|scope_invalid/) });
+      await expect(manager.grantAccess(grantInput("ssh", good, command)), command).rejects.toMatchObject({ code: expect.stringMatching(/provider_grant_failed|scope_invalid/) });
     }
-    await expect(manager.grantAccess(grantInput("ssh", good, null))).rejects.toMatchObject({ code: "grant_failed" }); // no command: nothing opens
+    await expect(manager.grantAccess(grantInput("ssh", good, null))).rejects.toMatchObject({ code: "provider_grant_failed" }); // no command: nothing opens
     expect(file.text).toBe("");
     store.close();
   });
@@ -131,7 +131,7 @@ describe("BE-058 presigned S3 URL: signed locally, refused by the store after it
     const short = { grant_id: 4, limits: { scope: JSON.stringify({ provider: "s3-presigned", grantee_ref: "carol", resource: "a.txt" }), expires_at: NS(NOW + 3600_000) } };
     const { delivery } = await manager.grantAccess(short);
     expect(new URL(String(delivery.url)).searchParams.get("X-Amz-Expires")).toBe("3600");
-    await expect(manager.grantAccess(grantInput("s3-presigned", "carol", null, {}, 5))).rejects.toMatchObject({ code: "grant_failed" });
+    await expect(manager.grantAccess(grantInput("s3-presigned", "carol", null, {}, 5))).rejects.toMatchObject({ code: "provider_grant_failed" });
     await expect(manager.grantAccess(grantInput("s3-presigned", "bad ref", "a.txt", {}, 6))).rejects.toMatchObject({ code: "grantee_ref_unverified" });
     expect(() => presignUrl(opts, { key: "a", nowMs: NOW, expiresSeconds: 604_801 })).toThrow();
     expect(() => presignUrl(opts, { key: "/a", nowMs: NOW, expiresSeconds: 60 })).toThrow();
