@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type Database from "better-sqlite3";
 import { ContentHasher, LicenseError, checkCheatProof, httpsRefProblem, licenseResource, parseRawCid, verifyRelease, verifyVoucher, type CheatProof, type LicenseRelease, type UnsignedVoucher, type Voucher } from "@x207/core";
+import { assertOpenRoom, DEFAULT_OPEN, type OpenLimits } from "../api/abuse.js";
 import { ApiError, invalidRequest } from "../api/errors.js";
 import { row, rows } from "../api/format.js";
 import type { Route } from "../api/router.js";
@@ -66,6 +67,7 @@ export class Semaphore {
 }
 
 export interface PurchaseOptions {
+  openLimits?: Partial<OpenLimits>;
   disputeWindowSeconds?: number;
   /** Replace the list of `license_id`. */
   licenseIds?: ReadonlyArray<{ id: string; redistribute: boolean; note: string }>;
@@ -336,6 +338,7 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
           circle.circle_id, d.content_hash, d.exclusive ? 1 : 0,
         );
         if ((clash?.n ?? 0n) > 0n) throw new ApiError(409, "exclusive_taken", "Isi ini sudah punya lisensi eksklusif, atau lisensi lain yang menghalangi lisensi eksklusif", { contentHash: d.content_hash });
+        assertOpenRoom(db, "SELECT COUNT(*) AS n FROM purchases WHERE circle_id = ? AND buyer = ? AND status IN ('paid_held','cipher_posted','key_released','disputed')", [circle.circle_id, v.payer], options.openLimits?.purchases ?? DEFAULT_OPEN.purchases, "pembelian", v.payer);
         const id = db
           .prepare(
             `INSERT INTO purchases (circle_id, listing_hash, buyer, seller, content_hash, license_doc, license_id, exclusive, voucher_json, voucher_signature, created_at_ms)

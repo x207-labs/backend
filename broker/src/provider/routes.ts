@@ -11,6 +11,7 @@ import type { AccessGrant } from "@x207/core";
 import { DispatchError, type Dispatcher } from "../dispatcher.js";
 import { guardVoucher } from "../in-flight.js";
 import { ProviderAccessError, parseProviderScope, type ProviderAccessErrorCode } from "./adapter.js";
+import { DEFAULT_ACCESS_LIMITS, readCapped, WindowCounter, type AccessLimits } from "./limits.js";
 import type { ProviderAccessManager } from "./manager.js";
 
 export const ACCESS_PATH = /^\/grants\/(0|[1-9]\d*)\/access(\/stop|\/challenge)?$/;
@@ -30,6 +31,8 @@ export interface ProviderRoutesOptions {
   voucherKeyOf: (account: string) => Promise<string | null>;
   now?: () => number;
   fetch?: typeof fetch;
+  /** BE-066: rate per peer address and per grant, and the largest body. */
+  limits?: Partial<AccessLimits>;
 }
 
 export const ERROR_STATUS: Record<ProviderAccessErrorCode, number> = {
@@ -64,11 +67,27 @@ export function createProviderRoutes(options: ProviderRoutesOptions): (request: 
     };
   }
 
+  const limits: AccessLimits = { ...DEFAULT_ACCESS_LIMITS, ...options.limits };
+  const ipHits = new WindowCounter();
+  const grantHits = new WindowCounter();
+  const tooMany = (wait: number, scope: string): Response =>
+    new Response(JSON.stringify({ error: "rate_limited", message: `terlalu banyak permintaan (${scope})` }), { status: 429, headers: { "content-type": "application/json", "retry-after": String(wait) } });
+
   return async (request) => {
     const url = new URL(request.url);
     const match = ACCESS_PATH.exec(url.pathname);
     if (match === null) return json(404, { error: "not_found" });
     const grantId = Number(match[1]);
+    // the peer address is put in the request by `serve` (a header of the caller with that name is overwritten there)
+    const t = now();
+    const waitIp = ipHits.hit(request.headers.get("x-x207-peer") ?? "unknown", limits.ipPerMinute, t);
+    if (waitIp > 0) return tooMany(waitIp, "alamat");
+    const waitGrant = grantHits.hit(`grant:${grantId}`, limits.grantPerMinute, t);
+    if (waitGrant > 0) return tooMany(waitGrant, "grant");
+    if (request.method === "POST") {
+      const declared = Number(request.headers.get("content-length"));
+      if (Number.isFinite(declared) && declared > limits.maxBodyBytes) return json(413, { error: "payload_too_large", message: `body lebih dari ${limits.maxBodyBytes} byte` });
+    }
     const stop = match[2] === "/stop";
     const challengePath = match[2] === "/challenge";
 
@@ -109,7 +128,9 @@ export function createProviderRoutes(options: ProviderRoutesOptions): (request: 
       }
       let body: { notice?: { circle?: unknown; grant_id?: unknown; actor?: unknown; action?: unknown; at?: unknown }; signature?: unknown };
       try {
-        body = (await request.json()) as typeof body;
+        const text = await readCapped(request.clone(), limits.maxBodyBytes);
+        if (text === null) return json(413, { error: "payload_too_large", message: `body lebih dari ${limits.maxBodyBytes} byte` });
+        body = JSON.parse(text) as typeof body;
       } catch {
         return json(400, { error: "invalid_request", message: "body bukan JSON" });
       }
@@ -148,7 +169,9 @@ export function createProviderRoutes(options: ProviderRoutesOptions): (request: 
       }
       let body: { grantee_ref?: unknown; proof?: unknown };
       try {
-        body = (await request.clone().json()) as typeof body;
+        const text = await readCapped(request.clone(), limits.maxBodyBytes);
+        if (text === null) return json(413, { error: "payload_too_large", message: `body lebih dari ${limits.maxBodyBytes} byte` });
+        body = JSON.parse(text) as typeof body;
       } catch {
         return json(400, { error: "invalid_request", message: "body bukan JSON {grantee_ref, proof?}" });
       }

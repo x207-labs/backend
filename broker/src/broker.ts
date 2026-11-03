@@ -81,7 +81,7 @@ export async function startBroker(options: StartOptions): Promise<RunningBroker>
   const provider = new ProviderAccessManager({ store, now, circle: config.contractId, voucherKeyOf, mode: config.mode ?? "self-hosted", ...(options.log ? { log: options.log } : {}) });
   for (const adapter of options.providerAdapters ?? []) provider.register(adapter);
   const handler = createBrokerHandler({
-    provider: { manager: provider, contractId: config.contractId, voucherKeyOf, now },
+    provider: { manager: provider, contractId: config.contractId, voucherKeyOf, now, limits: config.accessLimits },
     dispatcher, classB, facilitatorUrl: config.facilitatorUrl, circleId: config.circleId, brokerAccount: config.brokerAccount, extra,
     ...(classCProviders.length > 0 ? { proxy: { classC, providers, chain, store, ...(audit ? { audit } : {}) } } : {}),
     ...(options.fetch ? { fetch: options.fetch } : {}),

@@ -109,6 +109,8 @@ export function serve(handler: (request: Request) => Promise<Response>, port = 0
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const headers = new Headers();
     for (const [name, value] of Object.entries(req.headers)) if (value !== undefined) headers.set(name, Array.isArray(value) ? value.join(", ") : value);
+    // the address of the peer for the rate limit; a header with this name sent by the caller is overwritten
+    headers.set("x-x207-peer", req.socket.remoteAddress ?? "unknown");
     const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url ?? "/"}`, {
       method: req.method ?? "GET", headers, ...(req.method === "GET" || req.method === "HEAD" ? {} : { body: Readable.toWeb(req) as never, duplex: "half" } as object),
     });

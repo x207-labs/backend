@@ -5,7 +5,7 @@ import { X207ExtraSource } from "@x207/scheme";
 import { Dispatcher } from "../src/dispatcher.js";
 import { ClassBAdapter } from "../src/keys/class-b.js";
 import { MockProviderAdapter, ProviderAccessManager, stopNoticeText } from "../src/provider/index.js";
-import { createBrokerHandler, creditPrice } from "../src/server.js";
+import { createBrokerHandler, creditPrice, serve } from "../src/server.js";
 import { BrokerStore } from "../src/store.js";
 import { BROKER, FakeChain, GRANTEE, GRANTOR, grant, NOW } from "./helpers.js";
 
@@ -32,7 +32,7 @@ function facilitator() {
 const scopeOf = (over: Record<string, unknown> = {}): string => JSON.stringify({ provider: "mock", grantee_ref: "alice-dev", resource: "repo-x", permission: "pull", ...over });
 const providerGrant = (over: Record<string, unknown> = {}, scope = scopeOf()) => grant({ limits: { scope, quota: null, expires_at: NS(NOW + 10 * DAY) }, ...over });
 
-function setup(adapterOptions: ConstructorParameters<typeof MockProviderAdapter>[0] = {}, withProvider = true) {
+function setup(adapterOptions: ConstructorParameters<typeof MockProviderAdapter>[0] = {}, withProvider = true, limits: Record<string, number> = {}) {
   const chain = new FakeChain();
   const store = new BrokerStore(":memory:");
   const classB = new ClassBAdapter({ chain, store, viewAccessKey: async () => null, now: () => chain.now });
@@ -43,7 +43,7 @@ function setup(adapterOptions: ConstructorParameters<typeof MockProviderAdapter>
   const f = facilitator();
   const handler = createBrokerHandler({
     dispatcher, classB, facilitatorUrl: "http://facilitator.test", circleId: "agents-main", brokerAccount: BROKER, fetch: f.fetchFn,
-    ...(withProvider ? { provider: { manager, contractId: CIRCLE, now: () => chain.now, voucherKeyOf: async (a: string) => (a === GRANTEE ? granteeKeys.publicKey : null) } } : {}),
+    ...(withProvider ? { provider: { manager, contractId: CIRCLE, now: () => chain.now, voucherKeyOf: async (a: string) => (a === GRANTEE ? granteeKeys.publicKey : null), limits } } : {}),
   });
   chain.grants.set(1, providerGrant());
   return { chain, store, handler, f, manager, adapter };
@@ -89,6 +89,33 @@ describe("BE-060 HTTP rent of a P2 access: pay, ask, look, stop", () => {
     expect(paid).toMatchObject({ proof: "not_applicable", warnings: ["grantee_unproven"] });
     const viewed = (await (await handler(new Request(url(1), { method: "GET" }))).json()) as any;
     expect(viewed).toMatchObject({ proof: "not_applicable", warnings: ["grantee_unproven"] });
+  });
+
+  it("TC-BE-066-10 the access routes: a grant that is asked too often gets 429 with Retry-After while another grant is not touched; a peer address too; a big body is 413", async () => {
+    const t = setup({}, true, { grantPerMinute: 3, ipPerMinute: 5, maxBodyBytes: 1024 });
+    t.chain.grants.set(2, providerGrant({ grant_id: 2 }, scopeOf()));
+    const get = (id: number, peer = "10.0.0.1") => t.handler(new Request(url(id), { method: "GET", headers: { "x-x207-peer": peer } }));
+    for (let i = 0; i < 3; i++) expect((await get(1)).status).toBe(404); // nothing to see yet, but counted
+    const limited = await get(1);
+    expect(limited.status).toBe(429);
+    expect(((await limited.json()) as any).error).toBe("rate_limited");
+    expect(Number(limited.headers.get("retry-after"))).toBeGreaterThanOrEqual(1);
+    expect((await get(2)).status).toBe(404); // the other grant: not limited
+    const byPeer = setup({}, true, { grantPerMinute: 100, ipPerMinute: 2 });
+    expect([(await byPeer.handler(new Request(url(1), { method: "GET", headers: { "x-x207-peer": "10.0.0.9" } }))).status, (await byPeer.handler(new Request(url(1), { method: "GET", headers: { "x-x207-peer": "10.0.0.9" } }))).status]).toEqual([404, 404]);
+    expect((await byPeer.handler(new Request(url(1), { method: "GET", headers: { "x-x207-peer": "10.0.0.9" } }))).status).toBe(429);
+    expect((await byPeer.handler(new Request(url(1), { method: "GET", headers: { "x-x207-peer": "10.0.0.10" } }))).status).toBe(404); // another peer
+    const big = await t.handler(new Request(url(2), { method: "POST", headers: { "x-x207-peer": "10.0.0.2", "content-length": "5000" }, body: JSON.stringify({ grantee_ref: "alice-dev", pad: "x".repeat(5000) }) }));
+    expect(big.status).toBe(413);
+    expect(((await big.json()) as any).error).toBe("payload_too_large");
+  });
+
+  it("TC-BE-066-11 serve puts the real peer address in x-x207-peer and overwrites the one a caller sends", async () => {
+    let seen = "";
+    const { server, url: base } = await serve(async (request) => ((seen = request.headers.get("x-x207-peer") ?? ""), new Response("{}")));
+    await fetch(`${base}/health`, { headers: { "x-x207-peer": "6.6.6.6" } });
+    server.close();
+    expect(seen).toMatch(/127\.0\.0\.1|::1/);
   });
 
   it("TC-BE-060-02 nothing is settled when the access cannot be opened: a ref other than the scope, a payer who is not the lessee, a ref the provider does not know", async () => {

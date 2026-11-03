@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type Database from "better-sqlite3";
+import { abuseFromEnv, accountOfBody, DEFAULT_LIMITS, rateLimited, WINDOW_MS, WindowCounter, type AbuseLimits } from "./abuse.js";
 import { ApiError, invalidRequest } from "./errors.js";
 import { row } from "./format.js";
 import { matchRoute, type CircleRow, type Route, type RouteResult } from "./router.js";
@@ -28,6 +29,8 @@ export interface ApiServerOptions {
   db: Database.Database;
   /** Permintaan per menit per IP; 0 atau kosong = tanpa batas. */
   rateLimitPerMinute?: number;
+  /** Batas penyalahgunaan (BE-066): rate tulis per IP dan per akun, ukuran body, ukuran halaman. Tanpa ini: hanya ukuran body 64 KiB dan halaman 200. */
+  abuse?: Partial<AbuseLimits>;
   now?: () => number;
   /** Route tambahan dari modul lain (laporan 207, settlement, dll.). */
   extraRoutes?: readonly Route[];
@@ -40,15 +43,16 @@ export interface ApiServerOptions {
   daoView?: ViewFunction;
 }
 
-const MAX_BODY_BYTES = 64 * 1024;
-
-/** Body JSON sebuah `POST`: objek apa pun yang muat di 64 KiB; selain itu 400 `invalid_request`. */
-async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+/** Body JSON sebuah `POST`: objek apa pun yang muat di `maxBytes`; lebih besar dari itu 413 `payload_too_large`, bukan JSON 400 `invalid_request`. */
+async function readJsonBody(req: IncomingMessage, maxBytes: number): Promise<unknown> {
+  const tooLarge = () => new ApiError(413, "payload_too_large", "Body terlalu besar", { maxBytes }, { Connection: "close" });
+  const declared = Number(req.headers["content-length"]);
+  if (Number.isFinite(declared) && declared > maxBytes) throw tooLarge();
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     size += (chunk as Buffer).length;
-    if (size > MAX_BODY_BYTES) throw invalidRequest("body terlalu besar", { maxBytes: MAX_BODY_BYTES });
+    if (size > maxBytes) throw tooLarge();
     chunks.push(chunk as Buffer);
   }
   try {
@@ -59,14 +63,11 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
 }
 
 const REQUIRED_TABLES = ["circles", "indexer_cursor", "members", "epochs"];
-const RATE_WINDOW_MS = 60_000;
 
 /** Variabel `.env`: `API_RATE_LIMIT_PER_MINUTE` (bilangan bulat ≥ 0). */
-export function apiOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): { rateLimitPerMinute: number } {
-  const raw = env.API_RATE_LIMIT_PER_MINUTE;
-  if (raw === undefined || raw === "") return { rateLimitPerMinute: 0 };
-  if (!/^\d+$/.test(raw)) throw new Error(`API_RATE_LIMIT_PER_MINUTE must be a non-negative integer, got "${raw}"`);
-  return { rateLimitPerMinute: Number(raw) };
+export function apiOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): { rateLimitPerMinute: number; abuse: AbuseLimits } {
+  const { limits } = abuseFromEnv(env);
+  return { rateLimitPerMinute: limits.ipPerMinute, abuse: limits };
 }
 
 function d9Ready(db: Database.Database): boolean {
@@ -97,29 +98,38 @@ export function createApiServer(options: ApiServerOptions): Server {
   const { db } = options;
   const now = options.now ?? Date.now;
   const limit = options.rateLimitPerMinute ?? 0;
+  const abuse: AbuseLimits = { ...DEFAULT_LIMITS, ipPerMinute: limit, writeIpPerMinute: 0, writeAccountPerMinute: 0, ...options.abuse };
   const routes: Route[] = [...healthRoutes, ...memberRoutes, ...limitRoutes, ...epochRoutes, ...obligationRoutes, ...settlementRoutes, ...paramRoutes, ...bundleRoutes, ...grantRoutes, ...intentRoutes, ...eventRoutes, ...metricRoutes, ...ruleRoutes, ...reportRoutes, ...workerRoutes(options.settlement), ...(options.daoView ? proposalRoutes(options.daoView) : []), ...(options.extraRoutes ?? [])];
-  const hits = new Map<string, { windowStart: number; count: number }>();
+  const ipHits = new WindowCounter();
+  const writeIpHits = new WindowCounter();
+  const accountHits = new WindowCounter();
 
-  function checkRate(ip: string): void {
-    if (limit <= 0) return;
-    const t = now();
-    let entry = hits.get(ip);
-    if (!entry || t - entry.windowStart >= RATE_WINDOW_MS) {
-      entry = { windowStart: t, count: 0 };
-      hits.set(ip, entry);
+  const callerOf = (req: IncomingMessage): string => {
+    if (abuse.trustProxy) {
+      const hops = String(req.headers["x-forwarded-for"] ?? "").split(",").map((h) => h.trim()).filter((h) => h !== "");
+      if (hops.length > 0) return hops[hops.length - 1] as string;
     }
-    entry.count += 1;
-    if (entry.count > limit) {
-      const retryAfter = Math.max(1, Math.ceil((entry.windowStart + RATE_WINDOW_MS - t) / 1000));
-      throw new ApiError(429, "rate_limited", "Terlalu banyak permintaan", { limitPerMinute: limit }, {
-        "Retry-After": String(retryAfter),
-      });
+    return req.socket.remoteAddress ?? "unknown";
+  };
+
+  function checkRate(ip: string, write: boolean): void {
+    const t = now();
+    if (abuse.ipPerMinute > 0) {
+      const wait = ipHits.wait(ip, abuse.ipPerMinute, t);
+      if (wait > 0) throw rateLimited("Terlalu banyak permintaan", { limitPerMinute: abuse.ipPerMinute }, wait);
+      ipHits.add(ip, t);
+    }
+    if (write && abuse.writeIpPerMinute > 0) {
+      const wait = writeIpHits.wait(ip, abuse.writeIpPerMinute, t);
+      if (wait > 0) throw rateLimited("Terlalu banyak permintaan tulis dari alamat ini", { scope: "ip_write", limitPerMinute: abuse.writeIpPerMinute }, wait);
+      writeIpHits.add(ip, t);
     }
   }
 
   async function handle(req: IncomingMessage): Promise<{ result: RouteResult; indexedBlock?: string }> {
-    checkRate(req.socket.remoteAddress ?? "unknown");
+    checkRate(callerOf(req), req.method === "POST");
     const url = new URL(req.url ?? "/", "http://localhost");
+
     const match = matchRoute(routes, req.method ?? "GET", url.pathname);
     if (!match) throw new ApiError(404, "not_found", "Endpoint tidak dikenal", { path: url.pathname });
 
@@ -139,8 +149,17 @@ export function createApiServer(options: ApiServerOptions): Server {
       indexedBlock = cursor.last_block_height.toString();
     }
     try {
-      const body = match.route.method === "POST" ? await readJsonBody(req) : undefined;
+      const asked = url.searchParams.get("limit");
+      if (asked !== null && /^\d+$/.test(asked) && Number(asked) > abuse.maxPageLimit) throw invalidRequest(`limit harus 1..${abuse.maxPageLimit}`, { limit: asked, max: abuse.maxPageLimit });
+      const body = match.route.method === "POST" ? await readJsonBody(req, abuse.maxBodyBytes) : undefined;
+      // a write is counted for its account only when it was accepted: a request that names someone else's account but fails its signature costs that account nothing
+      const account = abuse.writeAccountPerMinute > 0 && match.route.method === "POST" ? accountOfBody(body) : null;
+      if (account !== null) {
+        const wait = accountHits.wait(account, abuse.writeAccountPerMinute, now());
+        if (wait > 0) throw rateLimited(`Akun ${account} terlalu sering menulis`, { scope: "account_write", account, limitPerMinute: abuse.writeAccountPerMinute }, wait);
+      }
       const result = await match.route.handler({ db, params: match.params, query: url.searchParams, now, circle, body });
+      if (account !== null && result.status >= 200 && result.status < 300) accountHits.add(account, now());
       return indexedBlock === undefined ? { result } : { result, indexedBlock };
     } catch (err) {
       if (err instanceof ApiError && indexedBlock !== undefined) err.headers["X-X207-Indexed-Block"] = indexedBlock;

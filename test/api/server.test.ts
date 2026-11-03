@@ -68,8 +68,9 @@ describe("BE-014 server read API", () => {
   });
 
   it("apiOptionsFromEnv membaca API_RATE_LIMIT_PER_MINUTE", () => {
-    expect(apiOptionsFromEnv({ API_RATE_LIMIT_PER_MINUTE: "5" })).toEqual({ rateLimitPerMinute: 5 });
-    expect(apiOptionsFromEnv({})).toEqual({ rateLimitPerMinute: 0 });
+    expect(apiOptionsFromEnv({ API_RATE_LIMIT_PER_MINUTE: "5" }).rateLimitPerMinute).toBe(5);
+    expect(apiOptionsFromEnv({ API_RATE_LIMIT_PER_MINUTE: "0" }).rateLimitPerMinute).toBe(0);
+    expect(apiOptionsFromEnv({}).rateLimitPerMinute).toBe(600); // BE-066: on by default
     expect(() => apiOptionsFromEnv({ API_RATE_LIMIT_PER_MINUTE: "x" })).toThrow();
   });
 });

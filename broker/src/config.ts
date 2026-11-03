@@ -19,6 +19,8 @@ export interface BrokerConfig {
   providers: ProviderConfig[];
   /** `self-hosted` (default): the grantor runs this broker and the administrator tokens of the providers stay on its machine. `hosted`: demo only, mock providers only (BE-057, ADR-47). */
   mode: "self-hosted" | "hosted";
+  /** Limits of the access routes (BE-066); env `BROKER_ACCESS_RATE_PER_MINUTE_IP`, `BROKER_ACCESS_RATE_PER_MINUTE_GRANT`, `BROKER_MAX_BODY_BYTES`. */
+  accessLimits: { ipPerMinute: number; grantPerMinute: number; maxBodyBytes: number };
   /** JSON lines audit log of the class C calls (BK-011); empty = no file. */
   auditPath: string;
 }
@@ -63,5 +65,6 @@ export function readConfig(env: Record<string, string | undefined>): BrokerConfi
     providers: providersFromEnv(env),
     auditPath: env.BROKER_AUDIT_PATH ?? "",
     mode: mode(),
+    accessLimits: { ipPerMinute: int("BROKER_ACCESS_RATE_PER_MINUTE_IP", 120), grantPerMinute: int("BROKER_ACCESS_RATE_PER_MINUTE_GRANT", 60), maxBodyBytes: Math.max(1024, int("BROKER_MAX_BODY_BYTES", 16 * 1024)) },
   };
 }

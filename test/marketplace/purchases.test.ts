@@ -91,6 +91,22 @@ describe("BE-056 license handover: fair exchange with encryption", () => {
     return m.post(`/purchases/${id}`, { notice, signature: signNoticeJson(JSON.stringify(notice), CONTRACT, m.keys[who]!.secretKey) });
   };
 
+  it("TC-BE-066-05 a buyer with the cap of purchases that are not final gets 409 open_limit_reached; another buyer is not touched; a purchase cancelled by the seller frees a place", async () => {
+    files.clear();
+    const m = (market = await startMarket(["andi", "budi", "citra", "dewi"], [], undefined, { sourceFetch: { resolver, transport }, openLimits: { purchases: 2 } }));
+    openEpoch(m, 42);
+    const listings = [];
+    for (const n of ["x1", "x2", "x3"]) listings.push(await sell(m, { plain: `file ${n}`, nonce: n }));
+    const first = await buy(m, listings[0]!);
+    expect(first.status).toBe(201);
+    expect((await buy(m, listings[1]!)).status).toBe(201);
+    const refused = await buy(m, listings[2]!);
+    expect([refused.status, refused.json.error.code, refused.json.error.details]).toEqual([409, "open_limit_reached", { kind: "pembelian", limit: 2, account: acct("budi") }]);
+    expect((await buy(m, listings[2]!, "citra")).status).toBe(201); // another buyer
+    expect((await buyerNotice(m, first.json.purchase_id, "cancelled", "andi")).status).toBe(201); // the seller cancels
+    expect((await buy(m, listings[2]!)).status).toBe(201); // a place is free again
+  });
+
   it("TC-BE-056-01 a listing needs a license_id from the list; a preview with an email, a NIK or a card number is refused; a clean preview and a hash that does not match are checked", async () => {
     const m = await start();
     const ids = await m.get("/marketplace/license-ids");

@@ -11,6 +11,7 @@ import {
   InvoiceError, catchUpVoucher, installmentVoucher, invoiceHash, planInstallments, serializeInvoice, verifyVoucher, MAX_INSTALLMENTS,
   type InstallmentPlan, type InvoiceDocument, type InvoicePairState, type UnsignedVoucher, type Voucher,
 } from "@x207/core";
+import { assertOpenRoom, DEFAULT_OPEN, type OpenLimits } from "../api/abuse.js";
 import { ApiError, invalidRequest, type ApiErrorCode } from "../api/errors.js";
 import { row, rows } from "../api/format.js";
 import { decodeCursor, encodeCursor, parseLimit } from "../api/pagination.js";
@@ -249,6 +250,8 @@ function readNotice(body: unknown, now: () => number): { notice: InvoiceNotice; 
 }
 
 export interface InvoiceOptions {
+  /** BE-066: caps on open objects of one account (`orders`, `invoices`, `purchases`); defaults in `DEFAULT_OPEN`. */
+  openLimits?: Partial<OpenLimits>;
   /** Amount (smallest unit) at or above which an invoice needs the bond of CT-094. */
   bondThreshold?: bigint;
 }
@@ -294,6 +297,7 @@ export function invoiceRoutes(resolveOpenEpoch: OpenEpochResolver, options: Invo
         if (row(db, "SELECT 1 AS x FROM invoices WHERE circle_id = ? AND invoice_hash = ?", circle.circle_id, hash)) {
           throw new ApiError(409, "invoice_duplicate", "Invoice dengan hash ini sudah ada di lingkaran", { invoiceHash: hash });
         }
+        assertOpenRoom(db, "SELECT COUNT(*) AS n FROM invoices WHERE circle_id = ? AND issuer = ? AND status IN ('requested','approved')", [circle.circle_id, doc.issuer], options.openLimits?.invoices ?? DEFAULT_OPEN.invoices, "invoice", doc.issuer);
         db.transaction(() => {
           db.prepare(
             `INSERT INTO invoices (circle_id, invoice_hash, issuer, debtor, document_json, amount, installment_count, first_epoch, needs_bond, status, request_signature, created_at_ms)

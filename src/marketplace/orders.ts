@@ -8,6 +8,7 @@ import { resolveTxt } from "node:dns/promises";
 import type { ViewFunction } from "../settlement/intents.js";
 import type Database from "better-sqlite3";
 import { OrderError, ORDER_PATTERN, mandateHash, normalizeMandate, normalizeOrder, orderBudget, orderHash, serializeMandate, serializeOrder, type DelegateMandate, type NormalizedOrder, type OrderDocument } from "@x207/core";
+import { assertOpenRoom, DEFAULT_OPEN, type OpenLimits } from "../api/abuse.js";
 import { ApiError, invalidRequest, type ApiErrorCode } from "../api/errors.js";
 import { row, rows } from "../api/format.js";
 import { decodeCursor, encodeCursor, parseLimit } from "../api/pagination.js";
@@ -165,6 +166,7 @@ export function orderView(db: Database.Database, circleId: string, o: OrderRow) 
 
 // ---- routes -------------------------------------------------------------------------------------------------------------------------------------------------
 export interface OrderOptions {
+  openLimits?: Partial<OpenLimits>;
   /** View of the chain: `mandate.dao` of a delegate order must answer the Sputnik view `get_policy` (BE-055 fix, `order_bad_mandate` / `not_a_dao`); without a view a delegate order is refused 503. */
   chainView?: ViewFunction;
   /** Amount (smallest unit) at or above which an order needs the bond of CT-094 (ADR-45 point 2). */
@@ -289,6 +291,11 @@ export function orderRoutes(resolveOpenEpoch: OpenEpochResolver, options: OrderO
         const fresh = [...given.keys()].filter((a) => !have.has(a));
         if (existing && fresh.length === 0) throw new ApiError(409, "order_duplicate", "Pesanan dengan hash ini sudah ada dan tanda tangan ini sudah tercatat", { orderHash: hash });
         const open = await resolveOpenEpoch(db, circle);
+        if (!existing) {
+          for (const party of new Set([doc.buyer, doc.seller])) {
+            assertOpenRoom(db, "SELECT COUNT(*) AS n FROM orders WHERE circle_id = ? AND (buyer = ? OR seller = ?) AND status IN ('proposed','open')", [circle.circle_id, party, party], options.openLimits?.orders ?? DEFAULT_OPEN.orders, "pesanan", party);
+          }
+        }
         db.transaction(() => {
           if (!existing) {
             const pattern = ORDER_PATTERN[doc.kind];
