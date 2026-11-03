@@ -165,7 +165,7 @@ export function orderView(db: Database.Database, circleId: string, o: OrderRow) 
 
 // ---- routes -------------------------------------------------------------------------------------------------------------------------------------------------
 export interface OrderOptions {
-  /** View of the chain: with it, `mandate.dao` of a delegate order must answer the Sputnik view `get_policy` (BE-055 fix, `order_bad_mandate` / `not_a_dao`). */
+  /** View of the chain: `mandate.dao` of a delegate order must answer the Sputnik view `get_policy` (BE-055 fix, `order_bad_mandate` / `not_a_dao`); without a view a delegate order is refused 503. */
   chainView?: ViewFunction;
   /** Amount (smallest unit) at or above which an order needs the bond of CT-094 (ADR-45 point 2). */
   bondThreshold?: bigint;
@@ -271,7 +271,10 @@ export function orderRoutes(resolveOpenEpoch: OpenEpochResolver, options: OrderO
           return asApiError(error);
         }
         if (doc.circle !== circle.contract_id) throw invalidRequest("order.circle harus akun kontrak lingkaran", { expected: circle.contract_id, got: doc.circle });
-        if (daoToCheck !== null && options.chainView !== undefined) await assertDao(options.chainView, daoToCheck);
+        if (daoToCheck !== null) {
+          if (options.chainView === undefined) throw new ApiError(503, "claim_rpc_unavailable", "RPC untuk memeriksa mandate.dao belum dikonfigurasi", {});
+          await assertDao(options.chainView, daoToCheck);
+        }
         const keys = { [doc.buyer]: activeMemberKey(db, circle.circle_id, doc.buyer), [doc.seller]: activeMemberKey(db, circle.circle_id, doc.seller) };
         const given = new Map<string, string>();
         for (const s of signatures as Array<{ account?: unknown; signature?: unknown }>) {

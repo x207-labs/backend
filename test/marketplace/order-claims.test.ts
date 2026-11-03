@@ -180,8 +180,13 @@ describe("BE-055 fix: claims of the votes of a delegate order (SD-072)", () => {
     expect(c.reads.view).toBe(1);
   });
 
-  it("TC-BE-055-18 without a configured RPC the claim is refused, not accepted", async () => {
+  it("TC-BE-055-18 without a chain view a delegate order is 503; without a claim RPC the claim is 503, not accepted", async () => {
     market = await startMarket(["andi", "budi"]);
+    expect((await create(market)).res.status).toBe(503);
+    await market.srv.close();
+    market.db.close();
+    const c = chain();
+    market = await startMarket(["andi", "budi"], [], c.view);
     const { hash } = await create(market);
     expect(reason(await claim(market, hash, TX(17)))).toEqual([503, "claim_rpc_unavailable", undefined]);
   });
