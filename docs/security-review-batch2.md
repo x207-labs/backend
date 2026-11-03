@@ -48,7 +48,7 @@ Fix: an `OrderLedger` (or a `paid: number[]` argument that is required) that ref
 Fix: strip one trailing dot before the checks; document that a buyer must resolve the name and refuse non-public addresses when it connects (the guard of BE-054, `ssrf.ts`, can be moved into `core` for that).
 
 ## F7 (Low): `SellerJob.accept` ignores `resource`
-`job-escrow.ts:156` checks circle, payer, payee, epoch and unit, not `resource`. A voucher of the same pair for another purpose, with a cumulative that fits, is counted as the payment of the next chunk. Test `F8` below (named by its order in the file). Fix: require `resource === "job:<jobId>"` in the argument type and the check.
+`job-escrow.ts:156` checks circle, payer, payee, epoch and unit, not `resource`. A voucher of the same pair for another purpose, with a cumulative that fits, is counted as the payment of the next chunk. Test: `F8` in the reproduction file (its F7 test is finding F8 of this list, its F8 test is finding F7). Fix: require `resource === "job:<jobId>"` in the argument type and the check.
 
 ## F8 (Low): lax number parsing in the 402
 `BigInt(announcement.unit_price)` (`buyer-meter.ts:116`, `metering.ts:51`) takes `"0x10"`, `" 12 "` and `""`. A price in hex is read by the buyer and by `meterAmount` alike, but the facilitator or a seller written in another language reads it differently, and the check `announcedPrice > this.unitPrice` compares a different number. Fix: `/^[1-9]\d*$/` before `BigInt` (as `isAmount` in `order.ts`), a stable `meter_bad_count` otherwise.
