@@ -73,11 +73,11 @@ export type Resolver = (host: string) => Promise<string[]>;
 export const systemResolver: Resolver = async (host) => (await dnsLookup(host, { all: true, verbatim: true })).map((a) => a.address);
 
 export interface Transport {
-  (args: { host: string; address: string; path: string; timeoutMs: number }): Promise<{ status: number; body: Buffer; truncated: boolean }>;
+  (args: { host: string; address: string; path: string; timeoutMs: number; method?: "GET" | "HEAD"; maxBytes?: number }): Promise<{ status: number; body: Buffer; truncated: boolean }>;
 }
 
 /** The real transport: TLS to the address that was checked, with the name for SNI and certificate. The address is checked once more by the `lookup` hook of the socket. */
-export const httpsTransport = (resolver: Resolver, forbid: () => never): Transport => ({ host, address, path, timeoutMs }) =>
+export const httpsTransport = (resolver: Resolver, forbid: () => never): Transport => ({ host, address, path, timeoutMs, method = "GET", maxBytes = MAX_BODY_BYTES }) =>
   new Promise((resolve, reject) => {
     const lookup: LookupFunction = (_name, opts, cb) => {
       // the address at the moment of connecting must be the checked one, and still public
@@ -86,13 +86,13 @@ export const httpsTransport = (resolver: Resolver, forbid: () => never): Transpo
       if (!isPublicIp(address)) return cb(new Error("forbidden address"), "", 4);
       resolver(host).then((now) => (now.length > 0 && now.every(isPublicIp) ? answer() : cb(new Error("forbidden address"), "", 4)), (e: Error) => cb(e, "", 4));
     };
-    const req = request({ host, port: 443, path, method: "GET", lookup, servername: host, timeout: timeoutMs, headers: { "user-agent": "x207-check/1", accept: "text/plain,*/*" } }, (res) => {
+    const req = request({ host, port: 443, path, method, lookup, servername: host, timeout: timeoutMs, headers: { "user-agent": "x207-check/1", accept: "text/plain,*/*" } }, (res) => {
       const chunks: Buffer[] = [];
       let size = 0;
       let truncated = false;
       res.on("data", (c: Buffer) => {
         size += c.length;
-        if (size > MAX_BODY_BYTES) {
+        if (size > maxBytes) {
           truncated = true;
           req.destroy();
           resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks), truncated });
@@ -113,9 +113,14 @@ export interface GuardedOptions {
   transport?: Transport;
   /** Error code of a violation: `target_forbidden` (BE-054) or `source_forbidden` (BE-056). */
   code?: ApiErrorCode;
+  /** `HEAD` to learn only that the address answers (BE-056). */
+  method?: "GET" | "HEAD";
+  /** Largest body accepted; default 4 KB. BE-056 raises it to download a ciphertext. */
+  maxBytes?: number;
+  timeoutMs?: number;
 }
 
-export type GuardedResult = { reachable: false; reason: string } | { reachable: true; status: number; body: string };
+export type GuardedResult = { reachable: false; reason: string } | { reachable: true; status: number; body: string; bytes: Buffer };
 
 /**
  * Fetch `https://host/path` under the rules at the head of this file. Throws `ApiError(403, code)` on a violation; a host that is down, answers 4xx/5xx, or is not there
@@ -154,13 +159,14 @@ export async function guardedGet(rawUrl: string, options: GuardedOptions = {}): 
   const transport = options.transport ?? httpsTransport(resolver, () => forbid("Alamat berubah menjadi bukan IP publik saat koneksi", { host }));
   let res: { status: number; body: Buffer; truncated: boolean };
   try {
-    res = await transport({ host, address: addresses[0] as string, path: `${url.pathname}${url.search}`, timeoutMs: FETCH_TIMEOUT_MS });
+    res = await transport({ host, address: addresses[0] as string, path: `${url.pathname}${url.search}`, timeoutMs: options.timeoutMs ?? FETCH_TIMEOUT_MS, method: options.method ?? "GET", maxBytes: options.maxBytes ?? MAX_BODY_BYTES });
   } catch (error) {
     if (error instanceof ApiError) throw error;
     if (error instanceof Error && error.message === "timeout") return forbid("Batas waktu 5 detik terlewati", { host });
     return { reachable: false, reason: "connect" };
   }
   if (res.status >= 300 && res.status < 400) forbid("Redirect tidak diikuti", { status: res.status });
-  if (res.truncated || res.body.length > MAX_BODY_BYTES) forbid(`Isi lebih dari ${MAX_BODY_BYTES} byte`, { host });
-  return { reachable: true, status: res.status, body: res.body.toString("utf8") };
+  const cap = options.maxBytes ?? MAX_BODY_BYTES;
+  if (res.truncated || res.body.length > cap) forbid(`Isi lebih dari ${cap} byte`, { host });
+  return { reachable: true, status: res.status, body: res.body.toString("utf8"), bytes: res.body };
 }

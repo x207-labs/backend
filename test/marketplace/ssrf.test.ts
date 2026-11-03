@@ -47,7 +47,7 @@ describe("BE-054 SSRF guard", () => {
     expect(await code(guardedGet("https://a.example.com/x", { ...opt, transport: async () => { throw new Error("timeout"); } }))).toBe("403 target_forbidden");
     expect(await guardedGet("https://a.example.com/x", { ...opt, transport: async () => { throw new Error("ECONNREFUSED"); } })).toEqual({ reachable: false, reason: "connect" });
     expect(await guardedGet("https://a.example.com/x", { resolver: async () => { throw new Error("ENOTFOUND"); }, transport: ok })).toEqual({ reachable: false, reason: "dns" });
-    expect(await guardedGet("https://a.example.com/x", { ...opt, transport: ok })).toEqual({ reachable: true, status: 200, body: "hello" });
+    expect(await guardedGet("https://a.example.com/x", { ...opt, transport: ok })).toMatchObject({ reachable: true, status: 200, body: "hello" });
   });
 
   it("TC-BE-054-S5 the real transport checks the address again when it connects (a name that turns private after the first answer)", async () => {

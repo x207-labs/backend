@@ -374,6 +374,63 @@ CREATE TABLE order_notices (
 );
 `;
 
+// License purchases (BE-056, ADR-46): the voucher of the buyer is held here, the release of the key and the notices are kept, an exclusive license is recorded per content hash,
+// and a takedown is recorded per listing.
+const V1111_PURCHASES = `
+CREATE TABLE purchases (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  circle_id         TEXT    NOT NULL,
+  listing_hash      TEXT    NOT NULL,
+  buyer             TEXT    NOT NULL,
+  seller            TEXT    NOT NULL,
+  content_hash      TEXT    NOT NULL,
+  license_doc       TEXT    NOT NULL,
+  license_id        TEXT    NOT NULL,
+  exclusive         INTEGER NOT NULL,
+  voucher_json      TEXT    NOT NULL,
+  voucher_signature TEXT    NOT NULL,
+  status            TEXT    NOT NULL DEFAULT 'paid_held' CHECK (status IN ('paid_held','cipher_posted','key_released','confirmed','disputed','refuted','cancelled')),
+  source_kind       TEXT,
+  source_ref        TEXT,
+  cipher_hash       TEXT,
+  release_json      TEXT,
+  release_signature TEXT,
+  released_at       INTEGER,
+  dispute_until     INTEGER,
+  auto_confirmed    INTEGER NOT NULL DEFAULT 0,
+  dispute_reason    TEXT,
+  dispute_proof     TEXT,
+  created_at_ms     INTEGER NOT NULL,
+  closed_at_ms      INTEGER
+);
+CREATE INDEX idx_purchases_content ON purchases (circle_id, content_hash);
+CREATE INDEX idx_purchases_listing ON purchases (circle_id, listing_hash);
+CREATE TABLE purchase_notices (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  circle_id      TEXT    NOT NULL,
+  purchase_id    INTEGER NOT NULL REFERENCES purchases(id),
+  notice_hash    TEXT    NOT NULL,
+  actor          TEXT    NOT NULL,
+  action         TEXT    NOT NULL,
+  at_s           INTEGER NOT NULL,
+  signature      TEXT    NOT NULL,
+  recorded_at_ms INTEGER NOT NULL,
+  UNIQUE (circle_id, notice_hash)
+);
+CREATE TABLE takedowns (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  circle_id      TEXT    NOT NULL,
+  listing_hash   TEXT    NOT NULL,
+  claimant       TEXT    NOT NULL,
+  claim          TEXT    NOT NULL,
+  evidence_hash  TEXT    NOT NULL,
+  signature      TEXT    NOT NULL,
+  cancelled_purchases INTEGER NOT NULL,
+  recorded_at_ms INTEGER NOT NULL,
+  UNIQUE (circle_id, listing_hash)
+);
+`;
+
 export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1101, name: "m11_intents", sql: V1101_INTENTS },
   { version: 1102, name: "m11_listings", sql: V1102_LISTINGS },
@@ -385,4 +442,5 @@ export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1108, name: "m11_spot_checks", sql: V1108_SPOT_CHECKS },
   { version: 1109, name: "m11_invoices", sql: V1109_INVOICES },
   { version: 1110, name: "m11_orders", sql: V1110_ORDERS },
+  { version: 1111, name: "m11_purchases", sql: V1111_PURCHASES },
 ];
