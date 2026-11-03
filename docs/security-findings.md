@@ -76,10 +76,24 @@ Levels: **High** (a proof or money can be forged by the other party), **Medium**
 | B4-F9 | Info | backend | One on-chain vote pays one order of the circle; the status of the proposal is not read | info | Main C |
 | B4-F10 | Info | backend/broker | Two first requests at the same time on a provider with no challenge both call `grant` | info | Main C |
 
+## Batch 6 (one-time codes: SD-076, FE-032, AG-030)
+| ID | Level | Repo | Summary | Status | Owner |
+| --- | --- | --- | --- | --- | --- |
+| B6-F1 | High | backend, frontend | A dispute `other` without proof ends `disputed` (unpaid) for a buyer who holds a working code; a code works once | open (needs a decision) | Main C, Main B, coordinator |
+| B6-F2 | Medium | sdk, backend, frontend | `arbiter` is a name, not a bond: it lifts the 20 credit cap and the pages say "dengan jaminan" | open (needs a decision) | Main C, Main B |
+| B6-F3 | Medium | agents | The buyer agent confirms at once, without trying the code and giving up the one hour window | open | Main B |
+| B6-F4 | Low | sdk, frontend, agents | The delivery is not checked against the code document of the listing (`doc` not passed) | open | Main B |
+| B6-F5 | Low | sdk, backend | No bound on the size and characters of a code on the receiving side | backend fixed (`BE-069: fix`); SDK open | Main C fixed, Main B |
+| B6-F6 | Low | frontend | The public key of the seller is typed, not read from the contract | open | Main B |
+| B6-F7 | Low | frontend | The label says the code is sent nowhere; plain text field | open | Main B |
+| B6-F8 | Info | agents | The mock book differs from the real one | info | Main B |
+| B6-F9 | Info | agents, backend/broker | Redaction of the key is by exact string only | info | Main B, Main C |
+| B6-F10 | Info | frontend, backend | The seller seals the key to the buyer that the backend names | info | Main C |
+
 ## Found by the near-sandbox test
 | ID | Level | Repo | Summary | Status | Owner |
 | --- | --- | --- | --- | --- | --- |
 | BE-055-S1 | Medium | backend | `events_raw.data_json` is an array with one object on a real chain, and the queries of the proofs (`epoch`, `solver`), of the installments (`voucher_registered`) and of the intent book (`intent_posted`) read `$.field`: on a real chain the epoch of a proof was null, no solver proof was ever found, the event of an installment was never matched and the on-chain data of an intent was empty. Found only by the run on near-sandbox (the unit tests stored a bare object). Solver (A2) asked to check the same reading | fixed `6a2a6ef`, `7220eeb`, `1caffb0` (`event-data.ts` reads both shapes); confirmed on near-sandbox in run 4 | Main C |
 
 ## Counts
-Fixed: BE-055-S1, B2-F1 to F12 (F6 in the backend and in the SDK), B3-F1 to F9. Open: B5-F1 to B5-F3, B5-F5. Batch 4: B4-F1 to F7 fixed, B4-F8 to F10 info. Fixed also: C-1, C-6 to C-10 (contracts 0.0.12, A2). By design: C-2, C-3. Info (documented): C-4, C-5, C-11, C-12. Limits written in the table: B3-F2 (buyer account from the API, confirmed by fingerprint), B3-F4 (CSP not tried with a real wallet), B3-F7 (text only), B3-F9 (warning only).
+Fixed: BE-055-S1, B2-F1 to F12 (F6 in the backend and in the SDK), B3-F1 to F9. Open: B5-F1 to B5-F3, B5-F5. Batch 4: B4-F1 to F7 fixed, B4-F8 to F10 info. Batch 6: B6-F1 to F4, F6, F7 open, B6-F5 backend half fixed, F8 to F10 info. Fixed also: C-1, C-6 to C-10 (contracts 0.0.12, A2). By design: C-2, C-3. Info (documented): C-4, C-5, C-11, C-12. Limits written in the table: B3-F2 (buyer account from the API, confirmed by fingerprint), B3-F4 (CSP not tried with a real wallet), B3-F7 (text only), B3-F9 (warning only).
