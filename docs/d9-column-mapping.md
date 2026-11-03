@@ -2,7 +2,9 @@
 
 Every column of the D9 read model (migration `src/db/migrations.ts`) is traced to a storage field in the Data Model (D1 member registry, D2 obligation ledger, D3 voucher registry, D4 clearing log, D5 settlement record, D6 stake pool, D7 parameters) or marked `teknis` (technical: keys, block pointers, receipt proofs). Spec: D9 Schema Spec section 3. Checked by `TC-BE-004-09`.
 
-The infrastructure tables `events_raw`, `indexer_cursor`, and `settlement_jobs` are not projections of D1–D7 and are not mapped here.
+The infrastructure tables `events_raw`, `indexer_cursor`, `settlement_jobs` and `clearing_edges` are not projections of D1–D7 and are not mapped here.
+
+`clearing_edges` (migration D9 11, BE-077) keeps the cleared edges of an epoch that the indexer read from the view `list_obligations` for a `clearing_applied` summary of interface 0.0.13 (`edge_count`, `edges_hash`). The set is checked against `edges_hash` before the block is applied, and a rebuild replays the summary from it with no RPC. `epoch_committed` of 0.0.13 carries all positions (`positions_hash`, `position_count`) and is read from the event.
 
 | Table | Column | D field | Notes |
 | --- | --- | --- | --- |
@@ -52,7 +54,7 @@ The infrastructure tables `events_raw`, `indexer_cursor`, and `settlement_jobs` 
 | obligations | creditor | D2 `obligation` | |
 | obligations | seq | D3 `seq` | Last registered voucher |
 | obligations | cumulative_amount | D2 `obligation` | Obligation before clearing (ADR-17) |
-| obligations | cleared | D4 cleared value | NULL until `clearing_applied` |
+| obligations | cleared | D4 cleared value | NULL until `clearing_applied`; in 0.0.13 from `clearing_edges` (`list_obligations`) |
 | obligations | registration_mode | D3 `seq` | `cumulative`/`per_request` |
 | obligations | registered_block | teknis | |
 | obligations | receipt_id | teknis | |

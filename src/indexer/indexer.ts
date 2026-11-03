@@ -4,6 +4,7 @@ import type { BlockLog, BlockSource, SourceBlock } from "./block-source.js";
 import { IndexerHaltError } from "./errors.js";
 import { rawHandlers } from "./handlers/escrow.js";
 import { defaultHandlers, type HandlerContext, type HandlerMap } from "./handlers/index.js";
+import { prefetchClearingEdges, type FetchClearedEdges, type PrefetchOptions } from "./clearing-edges.js";
 import { assertAmountsInRange } from "./units.js";
 
 /** `events_raw.handled`: 0 belum/gagal diproses, 1 diproses (atau tanpa read model), 2 nama event tak dikenal. */
@@ -19,6 +20,10 @@ export interface IndexerOptions {
   handlers?: HandlerMap;
   /** Hasil view `get_params`, untuk baris awal tabel `params` saat bootstrap. */
   fetchParams?: () => Promise<ContractAbi.Params>;
+  /** BE-077: reads the cleared edges of an epoch (view `list_obligations`) for a `clearing_applied` summary; needed to apply interface 0.0.13. */
+  fetchClearedEdges?: FetchClearedEdges;
+  /** Retry of that read (tests make it fast). */
+  prefetch?: PrefetchOptions;
   now?: () => number;
 }
 
@@ -69,6 +74,8 @@ export class Indexer {
   readonly #handlers: HandlerMap;
   readonly #fetchParams: (() => Promise<ContractAbi.Params>) | undefined;
   readonly #now: () => number;
+  readonly #fetchEdges: FetchClearedEdges | undefined;
+  readonly #prefetch: PrefetchOptions;
   #head = 0;
 
   constructor(options: IndexerOptions) {
@@ -80,6 +87,8 @@ export class Indexer {
     this.#handlers = options.handlers ?? defaultHandlers;
     this.#fetchParams = options.fetchParams;
     this.#now = options.now ?? Date.now;
+    this.#fetchEdges = options.fetchClearedEdges;
+    this.#prefetch = options.prefetch ?? {};
   }
 
   /** Buat cursor dan baris awal `params` bila belum ada; aman dipanggil berulang. */
@@ -124,6 +133,8 @@ export class Indexer {
     }
 
     const block = await this.#source.getBlock(next);
+    // BE-077: what a handler needs from a view is read before the transaction of the block, never inside it
+    if (block) await prefetchClearingEdges(this.#db, this.#circleId, this.#contractId, block, this.#fetchEdges, this.#prefetch);
     const events = this.#commitBlock(next, block);
     return { kind: "processed", height: next, events };
   }

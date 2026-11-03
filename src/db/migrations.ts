@@ -448,6 +448,18 @@ ALTER TABLE member_limits_new RENAME TO member_limits;
 CREATE INDEX idx_limits_member ON member_limits (circle_id, account_id, id);
 `;
 
+// BE-077: the edges of an epoch read from the view `list_obligations` for a `clearing_applied` summary (interface 0.0.13). Not a read model table: a rebuild keeps it and replays from it, with no RPC.
+const V11_CLEARING_EDGES = `
+CREATE TABLE clearing_edges (
+  circle_id    TEXT    NOT NULL,
+  epoch        INTEGER NOT NULL,
+  edges_json   TEXT    NOT NULL,
+  edges_hash   TEXT    NOT NULL,
+  block_height INTEGER NOT NULL,
+  PRIMARY KEY (circle_id, epoch)
+);
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "d9_initial", sql: V1_D9_INITIAL },
   { version: 2, name: "d9_bundles", sql: V2_BUNDLES },
@@ -459,4 +471,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 8, name: "d9_event_caller", sql: V8_EVENT_CALLER },
   { version: 9, name: "d9_rules_0_0_12", sql: V9_RULES_0_0_12 },
   { version: 10, name: "d9_limit_reason_ruling", sql: V10_LIMIT_REASON_RULING },
+  { version: 11, name: "d9_clearing_edges", sql: V11_CLEARING_EDGES },
 ];
