@@ -152,7 +152,10 @@ export async function guardedGet(rawUrl: string, options: GuardedOptions = {}): 
   if (url.protocol !== "https:") forbid("Hanya https yang diperbolehkan", { scheme: url.protocol });
   if (url.username !== "" || url.password !== "") forbid("URL tidak boleh memuat kredensial");
   if (url.port !== "" && url.port !== "443") forbid("Hanya port 443 yang diperbolehkan", { port: url.port });
-  const host = url.hostname.replace(/^\[|\]$/g, "");
+  // `example.com.` is `example.com`: the dot is taken off before the name is resolved, checked and sent as SNI, and a name that is only dots is refused
+  const host = url.hostname.replace(/^\[|\]$/g, "").replace(/\.+$/, "");
+  if (host === "") return forbid("Nama host kosong", { url: rawUrl });
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) forbid("Nama host lokal ditolak", { host });
   if (isIP(host) !== 0 && !isPublicIp(host)) forbid("Alamat bukan IP publik", { host });
   const resolver = options.resolver ?? systemResolver;
   let addresses: string[];

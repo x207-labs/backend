@@ -71,4 +71,18 @@ describe("BE-054 SSRF guard", () => {
     expect(isPublicIp("64:ff9b:1::808:808")).toBe(false);
     expect(isPublicIp("64:ff9b::808:808")).toBe(true);
   });
+
+  it("TC-BE-054-S8 a name with a trailing dot is the same name: it is resolved, checked and sent without the dot; local names are refused", async () => {
+    const seen: Array<{ host: string; resolved: string }> = [];
+    const resolver = async (host: string) => (seen.push({ host, resolved: "" }), ["8.8.8.8"]);
+    let sentHost = "";
+    const transport: Transport = async ({ host }) => ((sentHost = host), { status: 200, body: Buffer.from("x"), truncated: false });
+    expect(await code(guardedGet("https://example.com./x", { resolver, transport }))).toBe("ok");
+    expect(seen.map((s) => s.host)).toEqual(["example.com"]);
+    expect(sentHost).toBe("example.com");
+    for (const url of ["https://localhost./x", "https://localhost../x", "https://a.localhost./x", "https://metadata.google.internal./x", "https://printer.local./x"]) {
+      expect(await code(guardedGet(url, { resolver, transport })), url).toBe("403 target_forbidden");
+    }
+    expect(seen).toHaveLength(1); // nothing was resolved for the local names
+  });
 });

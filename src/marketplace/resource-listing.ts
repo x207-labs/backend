@@ -32,6 +32,8 @@ const U128_MAX = 340282366920938463463374607431768211455n;
 const MAX_URL = 512;
 /** Query parameters that carry a credential: an endpoint must be reachable by the buyer without a secret in its address. */
 const SECRET_PARAM = /^(api[-_]?key|key|token|access[-_]?token|secret|password|passwd|pwd|auth|authorization|signature|sig|credential|session)$/i;
+/** Services whose names resolve to the address written in the name: a way to give a private address a public-looking name. */
+export const WILDCARD_DNS: readonly string[] = ["nip.io", "sslip.io", "xip.io", "localtest.me", "lvh.me", "traefik.me", "localhost.run", "vcap.me", "lacolhost.com"];
 const IPV4 = /^\d{1,3}(\.\d{1,3}){3}$/;
 
 const invalid = (message: string, details: Record<string, unknown> = {}): never => {
@@ -51,9 +53,12 @@ export function endpointProblem(endpoint: unknown): string | null {
   if (url.protocol !== "https:") return "endpoint harus https";
   if (url.username !== "" || url.password !== "") return "endpoint tidak boleh memuat nama pengguna atau kata sandi";
   if (url.hash !== "") return "endpoint tidak boleh memuat fragmen";
-  const host = url.hostname.toLowerCase();
+  // a name may end with a dot (`localhost.`, `metadata.google.internal.`): the dot is the same name, so it goes before the checks (BE-062 F6)
+  const host = url.hostname.toLowerCase().replace(/\.+$/, "");
   if (host.startsWith("[") || IPV4.test(host)) return "endpoint harus memakai nama host, bukan alamat IP";
   if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal") || !host.includes(".")) return "endpoint harus nama host publik";
+  // names that carry an address in themselves (`127.0.0.1.nip.io`, `10-0-0-5.sslip.io`) and services that answer with any address asked for
+  if (/(^|\.)\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(\.|$)/.test(host) || WILDCARD_DNS.some((d) => host === d || host.endsWith(`.${d}`))) return "endpoint tidak boleh memakai nama yang membawa alamat IP atau DNS wildcard";
   for (const name of url.searchParams.keys()) if (SECRET_PARAM.test(name)) return `endpoint tidak boleh memuat kredensial di query (${name})`;
   return null;
 }
