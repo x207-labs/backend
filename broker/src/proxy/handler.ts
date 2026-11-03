@@ -2,6 +2,7 @@ import { x207Middleware, X207ExtraSource } from "@x207/scheme";
 import type { AccessGrant } from "@x207/core";
 import type { AuditLog } from "../audit.js";
 import type { BrokerChain } from "../chain.js";
+import { guardVoucher } from "../in-flight.js";
 import { DispatchError, type Dispatcher } from "../dispatcher.js";
 import type { BrokerStore } from "../store.js";
 import type { ClassCAdapter } from "./class-c.js";
@@ -91,7 +92,7 @@ export function createProxyHandler(options: ProxyOptions): (request: Request, ta
       ...(options.fetch ? { fetch: options.fetch } : {}),
     });
     const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.clone().arrayBuffer();
-    return middleware(request, async (paid) => {
+    return guardVoucher(request, () => middleware(request, async (paid) => {
       const payer = payerOf(paid.headers.get("PAYMENT-SIGNATURE"));
       if (payer !== grant.grantee) options.audit?.record({ kind: "proxy_refused", grantId, assetType: grant.asset_type, method: request.method, path, status: 403, code: "payer_not_grantee" });
       if (payer !== grant.grantee) return json(403, { error: "payer_not_grantee", message: `grant ${grantId} is leased to ${grant.grantee}` });
@@ -135,7 +136,7 @@ export function createProxyHandler(options: ProxyOptions): (request: Request, ta
       }
       if (quota === undefined) options.store.countCall(grantId, epoch);
       return new Response(text, { status: upstream.status, headers: { "content-type": upstream.headers.get("content-type") ?? "application/octet-stream" } });
-    });
+    }));
   };
 }
 

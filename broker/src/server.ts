@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { Readable } from "node:stream";
 import { x207Middleware, X207ExtraSource, type X207Middleware } from "@x207/scheme";
 import type { AccessGrant } from "@x207/core";
+import { guardVoucher } from "./in-flight.js";
 import { DispatchError, type Dispatcher } from "./dispatcher.js";
 import type { ClassBAdapter } from "./keys/class-b.js";
 import { createProxyHandler, matchProxy, type ProxyOptions } from "./proxy/handler.js";
@@ -68,7 +69,7 @@ export function createBrokerHandler(options: BrokerServerOptions): (request: Req
       facilitatorUrl: options.facilitatorUrl, circleId: options.circleId, payTo: options.brokerAccount, extra,
       ...(options.fetch ? { fetch: options.fetch } : {}),
     });
-    return middleware(request, async (paid) => {
+    return guardVoucher(request, () => middleware(request, async (paid) => {
       // only the lessee pays for its own lease
       const payer = payerOf(paid.headers.get("PAYMENT-SIGNATURE"));
       if (payer !== grant.grantee) return json(403, { error: "payer_not_grantee", message: `grant ${grantId} is leased to ${grant.grantee}` });
@@ -79,7 +80,7 @@ export function createBrokerHandler(options: BrokerServerOptions): (request: Req
         if (error instanceof DispatchError) return json(error.status, { error: error.code, message: error.message });
         return json(502, { error: "delivery_failed", message: (error as Error).message });
       }
-    });
+    }));
   };
 }
 

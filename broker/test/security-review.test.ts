@@ -51,9 +51,10 @@ function setup(options: { quota?: string | null; provider?: (call: ProviderCall)
 }
 
 const X207 = { scheme: "batch-settlement", network: "x207:agents-main", amount: "20000", asset: "USD", payTo: GRANTOR, maxTimeoutSeconds: 60, extra: { circleContract: "x207-circle.near", unit: "credit", decimals: 6, epoch: 42, grantId: 1 } };
-const header = (payer = GRANTEE) => ({ "PAYMENT-SIGNATURE": Buffer.from(JSON.stringify({ x402Version: 2, accepted: X207, payload: { voucher: { payer }, signature: "ed25519:x" } })).toString("base64") });
-const call = (handler: ReturnType<typeof setup>["handler"], path: string, init: RequestInit = {}) =>
-  handler(new Request(`http://broker.test/grants/1/proxy${path}`, { method: "POST", body: "{}", ...init, headers: { ...header(), ...(init.headers as object | undefined) } }));
+const header = (payer = GRANTEE, seq = 0) => ({ "PAYMENT-SIGNATURE": Buffer.from(JSON.stringify({ x402Version: 2, accepted: X207, payload: { voucher: { payer, payee: GRANTOR, epoch: 42, seq }, signature: "ed25519:x" } })).toString("base64") });
+let seqCounter = 0;
+const call = (handler: ReturnType<typeof setup>["handler"], path: string, init: RequestInit = {}, seq?: number) =>
+  handler(new Request(`http://broker.test/grants/1/proxy${path}`, { method: "POST", body: "{}", ...init, headers: { ...header(GRANTEE, seq ?? (seqCounter += 1)), ...(init.headers as object | undefined) } }));
 
 describe("security review 2: class C proxy path and headers", () => {
   it("TC-SR2-B01 an encoded slash or backslash cannot walk out of the scope prefix", async () => {
@@ -117,14 +118,30 @@ describe("security review 2: quota under parallel requests", () => {
 });
 
 describe("security review 2: lease paid twice (GET /grants/{id}/lease)", () => {
-  const lease = (handler: ReturnType<typeof setup>["handler"]) => handler(new Request("http://broker.test/grants/2/lease", { headers: header() }));
+  const lease = (handler: ReturnType<typeof setup>["handler"], seq = 0) => handler(new Request("http://broker.test/grants/2/lease", { headers: header(GRANTEE, seq) }));
 
-  it("TC-SR2-B08 two parallel payments add the key once and each extends the rent by one day", async () => {
+  it("TC-SR2-B09 two parallel requests with ONE voucher get one lease day, the second is 409 voucher_in_flight", async () => {
+    const ctx = setup();
+    ctx.chain.grants.set(2, grant({ grant_id: 2 }));
+    const responses = await Promise.all([lease(ctx.handler), lease(ctx.handler)]);
+    expect(responses.map((r) => r.status).sort()).toEqual([200, 409]);
+    expect(ctx.store.lease(2)!.paidUntilMs).toBe(ctx.chain.now + 86_400_000);
+  });
+
+  it("TC-SR2-B10 six parallel proxy calls with ONE voucher reach the provider once", async () => {
+    const { handler, providerCalls, settles } = setup({ quota: null, provider: async () => { await new Promise((r) => setTimeout(r, 20)); return new Response("{}", { status: 200 }); } });
+    const responses = await Promise.all(Array.from({ length: 6 }, () => call(handler, "/v1/echo/ping", {}, 7)));
+    expect(responses.filter((r) => r.status === 200)).toHaveLength(1);
+    expect(providerCalls).toHaveLength(1);
+    expect(settles).toHaveLength(1);
+  });
+
+  it("TC-SR2-B08 two parallel payments with different vouchers add the key once and each extends the rent by one day", async () => {
     const ctx = setup();
     ctx.chain.grants.set(2, grant({ grant_id: 2 }));
     const slow = ctx.chain.addLeaseKey.bind(ctx.chain);
     ctx.chain.addLeaseKey = async (k: string, s: string) => { await new Promise((r) => setTimeout(r, 10)); return slow(k, s); };
-    const responses = await Promise.all([lease(ctx.handler), lease(ctx.handler)]);
+    const responses = await Promise.all([lease(ctx.handler, 1), lease(ctx.handler, 2)]);
     expect(responses.map((r) => r.status)).toEqual([200, 200]);
     expect(ctx.chain.calls.filter((c) => c.startsWith("addKey:"))).toHaveLength(1);
     expect(ctx.store.lease(2)!.paidUntilMs).toBe(ctx.chain.now + 2 * 86_400_000);
