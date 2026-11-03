@@ -7,8 +7,10 @@ import { marketplaceRoutes } from "../../src/marketplace/index.js";
 const FILE = new URL("../../docs/openapi.json", import.meta.url);
 const doc = JSON.parse(readFileSync(FILE, "utf8")) as any;
 const OPS = ["get", "post"] as const;
-const operations = (): Array<{ method: string; path: string; op: any }> =>
-  Object.entries(doc.paths as Record<string, any>).flatMap(([path, item]) => OPS.filter((m) => item[m]).map((m) => ({ method: m.toUpperCase(), path, op: item[m] })));
+const flatten = (paths: Record<string, any>): Array<{ method: string; path: string; op: any }> =>
+  Object.entries(paths).flatMap(([path, item]) => OPS.filter((m) => item[m]).map((m) => ({ method: m.toUpperCase(), path, op: item[m] })));
+/** The backend's operations are in `paths`; the broker's, another server with some of the same names, in `x-broker-paths`. */
+const operations = (): Array<{ method: string; path: string; op: any }> => [...flatten(doc.paths), ...flatten(doc["x-broker-paths"])];
 
 describe("BE-068 the OpenAPI document and the router say the same", () => {
   const db = openDatabase(":memory:");
@@ -17,7 +19,7 @@ describe("BE-068 the OpenAPI document and the router say the same", () => {
     daoView: async () => null,
     extraRoutes: marketplaceRoutes(db),
   });
-  const mine = operations().filter((o) => o.op["x-broker"] !== true);
+  const mine = flatten(doc.paths);
 
   it("TC-BE-068-01 every route of the router is in the document, and every route of the document is in the router", () => {
     const inRouter = routes.map((r) => `${r.method} ${r.pattern}`).sort();

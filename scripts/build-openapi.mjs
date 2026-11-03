@@ -137,12 +137,14 @@ export function buildOpenApi() {
   for (const { route, op } of operations.sort((a, b) => (a.route.pattern + a.route.method).localeCompare(b.route.pattern + b.route.method))) {
     (paths[route.pattern] ??= {})[route.method.toLowerCase()] = op;
   }
+  // the broker is another server: its paths (some have the names of the backend's, `/healthz`, `/metrics`) go under `x-broker-paths`, not in `paths`
+  const brokerPaths = {};
   for (const b of BROKER_ROUTES) {
     const responses = { [b.method === "GET" ? "200" : "200"]: { description: "OK.", content: { "application/json": { schema: { type: "object", additionalProperties: true } } } } };
     for (const [status, codes] of Object.entries({ ...b.errors, 429: ["rate_limited"] })) {
       responses[status] = { description: ERROR_STATUS_TEXT[status] ?? (status === "402" ? "Payment required (x402): the body lists the requirements." : "Error."), content: { "application/json": { schema: { $ref: "#/components/schemas/BrokerError" } } }, "x-error-codes": codes };
     }
-    (paths[b.path] ??= {})[b.method.toLowerCase()] = {
+    (brokerPaths[b.path] ??= {})[b.method.toLowerCase()] = {
       operationId: `broker_${b.method.toLowerCase()}_${b.path.replace(/[{}]/g, "").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "")}`,
       summary: b.summary, tags: ["broker"],
       parameters: [...b.path.matchAll(/\{(\w+)\}/g)].map((m) => ({ name: m[1], in: "path", required: true, schema: { type: "string" } })),
@@ -163,6 +165,7 @@ export function buildOpenApi() {
     servers: [{ url: "{api}", variables: { api: { default: "http://127.0.0.1:8080" } } }],
     tags: [{ name: "read-api" }, { name: "marketplace" }, { name: "settlement" }, { name: "broker" }],
     paths,
+    "x-broker-paths": brokerPaths,
     components: {
       schemas: {
         Error: { type: "object", required: ["error"], properties: { error: { type: "object", required: ["code", "message", "details"], properties: { code: { type: "string" }, message: { type: "string" }, details: { type: "object", additionalProperties: true } } } } },

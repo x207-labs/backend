@@ -32,10 +32,10 @@
   "paths": {
     "/healthz": {
       "get": {
-        "operationId": "broker_get_healthz",
-        "summary": "Health of the broker: database, and the revoke queues (class B leases past their paid day, provider accesses whose revoke failed); 503 when down (BE-071)",
+        "operationId": "get_healthz",
+        "summary": "Read  healthz",
         "tags": [
-          "broker"
+          "read-api"
         ],
         "parameters": [],
         "responses": {
@@ -52,60 +52,57 @@
           },
           "429": {
             "description": "Too many requests; see the header `Retry-After` (BE-066).",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BrokerError"
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "rate_limited",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
                 }
               }
             },
             "x-error-codes": [
               "rate_limited"
             ]
-          },
-          "503": {
-            "description": "A dependency is not ready.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BrokerError"
-                }
-              }
-            },
-            "x-error-codes": [
-              "down"
-            ]
           }
         },
-        "servers": [
-          {
-            "url": "{broker}",
-            "variables": {
-              "broker": {
-                "default": "http://127.0.0.1:8090"
-              }
-            }
-          }
-        ],
-        "x-broker": true
+        "x-source": "src/api/routes/ops.ts"
       }
     },
     "/metrics": {
       "get": {
-        "operationId": "broker_get_metrics",
-        "summary": "Prometheus text: requests by route name and status, 429, revoke queues (BE-071); bearer token when METRICS_TOKEN is set",
+        "operationId": "get_metrics",
+        "summary": "Read  metrics",
         "tags": [
-          "broker"
+          "read-api"
         ],
         "parameters": [],
         "responses": {
           "200": {
             "description": "OK.",
             "content": {
-              "application/json": {
+              "text/plain": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true
+                  "type": "string",
+                  "description": "Prometheus text format (BE-071)"
                 }
               }
             }
@@ -115,7 +112,18 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BrokerError"
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_signature",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
                 }
               }
             },
@@ -125,10 +133,30 @@
           },
           "429": {
             "description": "Too many requests; see the header `Retry-After` (BE-066).",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BrokerError"
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "rate_limited",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
                 }
               }
             },
@@ -137,17 +165,7 @@
             ]
           }
         },
-        "servers": [
-          {
-            "url": "{broker}",
-            "variables": {
-              "broker": {
-                "default": "http://127.0.0.1:8090"
-              }
-            }
-          }
-        ],
-        "x-broker": true
+        "x-source": "src/api/routes/ops.ts"
       }
     },
     "/x207/circles/{circle}/asset-contracts": {
@@ -15192,7 +15210,9 @@
           }
         }
       }
-    },
+    }
+  },
+  "x-broker-paths": {
     "/health": {
       "get": {
         "operationId": "broker_get_health",
@@ -15212,6 +15232,126 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Too many requests; see the header `Retry-After` (BE-066).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrokerError"
+                }
+              }
+            },
+            "x-error-codes": [
+              "rate_limited"
+            ]
+          }
+        },
+        "servers": [
+          {
+            "url": "{broker}",
+            "variables": {
+              "broker": {
+                "default": "http://127.0.0.1:8090"
+              }
+            }
+          }
+        ],
+        "x-broker": true
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "broker_get_healthz",
+        "summary": "Health of the broker: database, and the revoke queues (class B leases past their paid day, provider accesses whose revoke failed); 503 when down (BE-071)",
+        "tags": [
+          "broker"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests; see the header `Retry-After` (BE-066).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrokerError"
+                }
+              }
+            },
+            "x-error-codes": [
+              "rate_limited"
+            ]
+          },
+          "503": {
+            "description": "A dependency is not ready.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrokerError"
+                }
+              }
+            },
+            "x-error-codes": [
+              "down"
+            ]
+          }
+        },
+        "servers": [
+          {
+            "url": "{broker}",
+            "variables": {
+              "broker": {
+                "default": "http://127.0.0.1:8090"
+              }
+            }
+          }
+        ],
+        "x-broker": true
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "broker_get_metrics",
+        "summary": "Prometheus text: requests by route name and status, 429, revoke queues (BE-071); bearer token when METRICS_TOKEN is set",
+        "tags": [
+          "broker"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "A signature does not match the voucher key of the account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrokerError"
+                }
+              }
+            },
+            "x-error-codes": [
+              "invalid_signature"
+            ]
           },
           "429": {
             "description": "Too many requests; see the header `Retry-After` (BE-066).",

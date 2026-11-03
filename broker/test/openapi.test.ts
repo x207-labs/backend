@@ -4,7 +4,7 @@ import { ACCESS_PATH } from "../src/provider/routes.js";
 import { matchProxy } from "../src/proxy/handler.js";
 
 const doc = JSON.parse(readFileSync(new URL("../../docs/openapi.json", import.meta.url), "utf8")) as any;
-const brokerOps = Object.entries(doc.paths as Record<string, any>).flatMap(([path, item]) => Object.entries(item as Record<string, any>).filter(([, op]) => op["x-broker"] === true).map(([method]) => `${method.toUpperCase()} ${path}`));
+const brokerOps = Object.entries(doc["x-broker-paths"] as Record<string, any>).flatMap(([path, item]) => Object.keys(item as Record<string, any>).map((method) => `${method.toUpperCase()} ${path}`));
 
 describe("BE-068 the routes of the broker in docs/openapi.json", () => {
   it("TC-BE-068-06 the document lists the routes that the broker answers, no other, and the path patterns of the broker are the ones it knows", () => {
@@ -25,7 +25,7 @@ describe("BE-068 the routes of the broker in docs/openapi.json", () => {
 
   it("TC-BE-068-07 the documented error codes of the broker are the ones its routes send", () => {
     const sent = readFileSync(new URL("../src/provider/routes.ts", import.meta.url), "utf8") + readFileSync(new URL("../src/server.ts", import.meta.url), "utf8") + readFileSync(new URL("../src/proxy/handler.ts", import.meta.url), "utf8");
-    const access = doc.paths["/grants/{grantId}/access"].post.responses;
+    const access = doc["x-broker-paths"]["/grants/{grantId}/access"].post.responses;
     for (const code of access["403"]["x-error-codes"] as string[]) expect(sent, code).toContain(code);
     for (const code of ["payload_too_large", "rate_limited", "access_not_found", "not_grantee", "grant_quota_exceeded", "grant_scope_denied", "secret_hosted_forbidden", "secret_not_configured", "provider_redirect"]) expect(sent, code).toContain(code);
   });
