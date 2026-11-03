@@ -36,6 +36,11 @@ export interface ProviderAccessAdapter {
   readonly nativeExpiry: boolean;
   /** Does the reference name an account that exists on the provider? Called before every grant (ADR-47: a grantee that cannot be checked cannot be granted). */
   verifyGranteeRef(ref: string): Promise<{ ok: true } | { ok: false; reason: string }>;
+  /**
+   * Optional: does the lessee control the reference? Called with the `proof` the lessee sent when it asked for the access (a signed challenge, a gist, a code placed on the account).
+   * When an adapter has it, the first grant of an access needs a proof that passes; a grant cannot be pointed at an account the lessee only knows the name of.
+   */
+  proveGranteeRef?(ref: string, proof: string | null): Promise<boolean>;
   /** Open the access. Idempotent by `grantId`: a second call (the next day's rent) moves the expiry and returns the same `handle`. */
   grant(request: ProviderGrantRequest): Promise<ProviderGrantResult>;
   /** Close the access. Idempotent: an access that is already gone is a success. Throws when the provider could not be reached. */

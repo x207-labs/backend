@@ -7,3 +7,4 @@ export * from "./http.js";
 export * from "./github.js";
 export * from "./discord.js";
 export * from "./aws-sts.js";
+export * from "./routes.js";

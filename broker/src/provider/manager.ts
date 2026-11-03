@@ -141,12 +141,16 @@ export class ProviderAccessManager {
    * of the grant. A provider with native expiry must report the instant at which it closes the access, and it must not be later than the paid end: otherwise the grant is undone
    * and the call fails (`native_expiry_required`), because an access that the provider would keep open past the rent is not safe.
    */
-  async grantAccess(grant: ProviderGrantInput, days = 1): Promise<{ access: ProviderAccess; delivery: Record<string, unknown> }> {
+  async grantAccess(grant: ProviderGrantInput, days = 1, proof: string | null = null): Promise<{ access: ProviderAccess; delivery: Record<string, unknown> }> {
     const scope: ProviderScope = parseProviderScope(grant.limits.scope);
     const adapter = this.#adapter(scope.provider);
     const check = await adapter.verifyGranteeRef(scope.grantee_ref);
     if (!check.ok) throw new ProviderAccessError("grantee_ref_unverified", `${scope.grantee_ref}: ${check.reason}`);
     const existing = this.access(grant.grant_id);
+    // the proof is asked once, when the access is opened; the rent of the next days needs none
+    if (!existing && adapter.proveGranteeRef && !(await adapter.proveGranteeRef(scope.grantee_ref, proof))) {
+      throw new ProviderAccessError("grantee_ref_unverified", `${scope.grantee_ref}: bukti kepemilikan tidak lolos`);
+    }
     if (existing && existing.status !== "active") throw new ProviderAccessError("grant_failed", `akses grant ${grant.grant_id} sudah ${existing.status}`);
     const now = this.#now();
     const paidUntil = Math.min(Math.max(now, existing?.paidUntilMs ?? 0) + days * DAY_MS, nsToMs(grant.limits.expires_at));
@@ -224,6 +228,16 @@ export class ProviderAccessManager {
     this.#store.db.prepare("INSERT INTO provider_charges (grant_id, day, amount, over_cap) VALUES (?, ?, ?, ?)").run(grant.grant_id, day, amount.toString(), overCap ? 1 : 0);
     if (overCap && a.status === "active") await this.#tryRevoke(a, "cap_exceeded");
     return { amount, overCap };
+  }
+
+  /** The real cost since the start of today, not written down (the bill of the day is written by `settleDay` once the day is over). `null` for an access that costs nothing. */
+  async costSoFar(grantId: number): Promise<bigint | null> {
+    const a = this.access(grantId);
+    if (!a) return null;
+    const adapter = this.#adapter(a.provider);
+    if (!adapter.cost) return null;
+    const now = this.#now();
+    return adapter.cost(a.handle, Math.floor(now / DAY_MS) * DAY_MS, now);
   }
 
   /** The days that were billed, for the report of a grant. */

@@ -60,4 +60,32 @@ All three are `real`, so they are refused in `hosted` mode; the administrator cr
 - **`GithubAdapter`** (`github`): `resource` `owner/repo` + `permission` (`pull`, `triage`, `push`, `maintain`, `admin`) is a collaborator invitation; `org:<org>` is a seat. `allowedOwners` limits the broker to the accounts the grantor names. `verifyGranteeRef` looks the login up (`GET /users/{login}`).
 - **`DiscordAdapter`** (`discord`): `grantee_ref` is a user id that must already be a member of the guild; `resource` is the role id (`allowedRoleIds` names the roles the broker may give). A rate limit (429) is an error with `retryAfter`, retried by the manager.
 - **`AwsStsAdapter`** (`aws-sts`): `resource` is a role ARN in `allowedRoleArns`. `iam:GetRole` is read first and the role must carry the configured permissions boundary; the session (`AssumeRole`, at most 12 h, never under the STS floor of 900 s) gets a narrower session policy and ends by itself. Requests are signed with SigV4 (`signPost`). Limit: a session cannot be taken back before it ends.
-- Tests use a mock `fetch`. Two more run against the real accounts of the owner when EVERY variable they need is in the `.env` of the project root (otherwise they are skipped): `GITHUB_TEST_TOKEN`, `GITHUB_TEST_ORG`, `GITHUB_TEST_GRANTEE` (invites that user to the organization), and `DISCORD_TEST_BOT_TOKEN`, `DISCORD_TEST_GUILD_ID`, `DISCORD_TEST_GRANTEE_ID`, `DISCORD_TEST_ROLE_ID` (gives that role to that user). Access goes only to the grantee named there, is taken back at the end also when the test fails (`afterAll`), and no value is printed.
+- Tests use a mock `fetch`. Two more run against the real accounts of the owner when EVERY variable they need is in the `.env` of the project root (otherwise they are skipped): `GITHUB_TEST_TOKEN`, `GITHUB_TEST_ORG`, `GITHUB_TEST_REPO`, `GITHUB_TEST_GRANTEE` (invites that user to that repository as a collaborator, permission `pull`), and `DISCORD_TEST_BOT_TOKEN`, `DISCORD_TEST_GUILD_ID`, `DISCORD_TEST_GRANTEE_ID`, `DISCORD_TEST_ROLE_ID` (gives that role to that user). Access goes only to the grantee named there, is taken back at the end also when the test fails (`afterAll`), and no value is printed.
+
+### HTTP rent of a P2 access (BE-060)
+Routes on the same server as the lease of class B. `provider` must be given to `startBroker` (it always is); without it the paths answer `501 class_not_supported`. Errors are `{error, message}`.
+
+| Route | What |
+| --- | --- |
+| `POST /grants/{grantId}/access` | Body `{grantee_ref, proof?}`. Without a voucher: `402` for **one day**, `payTo` the grantor, `extra.grantId` (the same x402 flow as the lease). With the voucher of the lessee: the access is opened (or its end moved one day) and the voucher is settled only if that worked. `200`: the view below plus `delivery` (what the lessee needs to use the access; never a secret of the grantor). |
+| `GET /grants/{grantId}/access` | The view. `404 access_not_found` before the first payment. No authentication: nothing in it is secret. |
+| `POST /grants/{grantId}/access/stop` | Body `{notice, signature}`; notice is canonical JSON with keys `circle, grant_id, actor, action, at`, `action` is `stop`, `circle` is the account of the contract, `actor` the lessee, `at` unix seconds within 600 s of the broker clock. The signature is the NEP-413 style signature of the SDK over `nep413SigningHash(json, sha256(json), circle)` with the voucher key of the lessee (read from the read API). `200`: the view (`revoked`, or `revoke_pending` if the provider failed). Safe to repeat. |
+
+View: `{grantId, provider, granteeRef, status ("active"|"revoke_pending"|"revoked"), paidUntil, providerExpiresAt, reason, revokePending: null | {attempts, nextRetryAt, lastError}, today: {day, cost, billed}, unit: "credit", decimals: 6}`. `today.cost` is the real cost since 00:00 UTC in the smallest unit (`null` if the access costs nothing); `today.billed` is the bill written down for the day (after `settleDay`).
+
+Rules: the grant must be active on the chain; `limits.scope` must be a provider scope (JSON `{provider, grantee_ref, resource?, permission?, daily_cap?}`); `body.grantee_ref` must equal `scope.grantee_ref` (the reference is fixed on the chain, so an access cannot be moved to another account); the payer of the voucher must be the lessee; an adapter that has `proveGranteeRef` needs a `proof` that passes on the first day (not on the next days).
+
+| HTTP | `error` | When |
+| --- | --- | --- |
+| 400 | `invalid_request` | body or notice malformed, `at` too far from the clock |
+| 400 | `scope_invalid` | the scope of the grant is not a provider scope |
+| 401 | `invalid_signature` | `stop` not signed by the voucher key of the lessee |
+| 403 | `grantee_ref_mismatch` | `grantee_ref` differs from the scope |
+| 403 | `payer_not_grantee` | the voucher is from another account |
+| 403 | `grantee_ref_unverified` | the provider does not know the ref, or the proof failed |
+| 403 | `not_grantee` | `stop` from an account that is not the lessee |
+| 404 | `access_not_found` | no access for this grant |
+| 404, 403 | `grant_not_found`, `grant_not_active`, `grant_revoked` | the grant on the chain (nothing is charged) |
+| 409 | `voucher_in_flight` | the same voucher is paying another request |
+| 501 | `provider_unknown`, `hosted_mode_real_provider`, `class_not_supported` | no adapter for the provider, a real provider in hosted mode, or routes not wired |
+| 502 | `native_expiry_required`, `grant_failed`, `provider_unavailable` | the provider failed or did not set its expiry; nothing is settled |

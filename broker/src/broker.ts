@@ -74,15 +74,20 @@ export async function startBroker(options: StartOptions): Promise<RunningBroker>
   const extra = new X207ExtraSource({
     facilitatorUrl: config.facilitatorUrl, ...(options.fetch ? { fetch: options.fetch } : {}), ...(options.extraCacheMs === undefined ? {} : { cacheMs: options.extraCacheMs }),
   });
+  const provider = new ProviderAccessManager({ store, now, mode: config.mode ?? "self-hosted", ...(options.log ? { log: options.log } : {}) });
+  for (const adapter of options.providerAdapters ?? []) provider.register(adapter);
+  const voucherKeyOf = async (account: string): Promise<string | null> => {
+    const r = await (options.fetch ?? fetch)(`${config.readApiUrl.replace(/\/+$/, "")}/x207/circles/${encodeURIComponent(config.circleId)}/members/${encodeURIComponent(account)}`, { signal: AbortSignal.timeout(10_000) });
+    return r.ok ? ((await r.json()) as { pubkeyVoucher?: string }).pubkeyVoucher ?? null : null;
+  };
   const handler = createBrokerHandler({
+    provider: { manager: provider, contractId: config.contractId, voucherKeyOf, now },
     dispatcher, classB, facilitatorUrl: config.facilitatorUrl, circleId: config.circleId, brokerAccount: config.brokerAccount, extra,
     ...(classCProviders.length > 0 ? { proxy: { classC, providers, chain, store, ...(audit ? { audit } : {}) } } : {}),
     ...(options.fetch ? { fetch: options.fetch } : {}),
   });
   const { server, url } = await serve(handler, config.port);
 
-  const provider = new ProviderAccessManager({ store, now, mode: config.mode ?? "self-hosted", ...(options.log ? { log: options.log } : {}) });
-  for (const adapter of options.providerAdapters ?? []) provider.register(adapter);
   const activeIds = activeGrantIdsOf({ readApiUrl: config.readApiUrl, circle: config.circleId, ...(options.fetch ? { fetch: options.fetch } : {}) });
   /** The access at a provider closes with the grant: revoked on the contract, or its lessee defaulted. */
   const closeProviderAccess = async (event: WatchedEvent): Promise<void> => {

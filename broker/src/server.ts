@@ -5,6 +5,7 @@ import type { AccessGrant } from "@x207/core";
 import { guardVoucher } from "./in-flight.js";
 import { DispatchError, type Dispatcher } from "./dispatcher.js";
 import type { ClassBAdapter } from "./keys/class-b.js";
+import { ACCESS_PATH, createProviderRoutes, type ProviderRoutesOptions } from "./provider/routes.js";
 import { createProxyHandler, matchProxy, type ProxyOptions } from "./proxy/handler.js";
 
 export interface BrokerServerOptions {
@@ -17,6 +18,8 @@ export interface BrokerServerOptions {
   extra?: X207ExtraSource;
   fetch?: typeof fetch;
   /** Class C proxy (BK-008). Without it `/grants/{id}/proxy/*` is `class_not_supported`. */
+  /** P2 rent of an access at a provider (BE-060): `/grants/{id}/access`. Without it these paths are `class_not_supported`. */
+  provider?: Omit<ProviderRoutesOptions, "dispatcher" | "facilitatorUrl" | "circleId" | "brokerAccount" | "extra" | "creditPrice" | "fetch">;
   proxy?: Omit<ProxyOptions, "dispatcher" | "facilitatorUrl" | "circleId" | "brokerAccount" | "extra" | "creditPrice" | "fetch">;
 }
 
@@ -43,8 +46,15 @@ export function createBrokerHandler(options: BrokerServerOptions): (request: Req
         brokerAccount: options.brokerAccount, extra, creditPrice, ...(options.fetch ? { fetch: options.fetch } : {}),
       })
     : undefined;
+  const providerRoutes = options.provider
+    ? createProviderRoutes({
+        ...options.provider, dispatcher: options.dispatcher, facilitatorUrl: options.facilitatorUrl, circleId: options.circleId, brokerAccount: options.brokerAccount, extra, creditPrice,
+        ...(options.fetch ? { fetch: options.fetch } : {}),
+      })
+    : undefined;
   return async (request) => {
     const url = new URL(request.url);
+    if (ACCESS_PATH.test(url.pathname)) return providerRoutes ? providerRoutes(request) : json(501, { error: "class_not_supported" });
     if (url.pathname === "/health") return json(200, { ok: true });
     const target = matchProxy(url);
     if (target !== null) return proxy ? proxy(request, target) : json(501, { error: "class_not_supported" });
