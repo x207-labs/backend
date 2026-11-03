@@ -29,6 +29,7 @@ describe("BE-055 fix: claims of the votes of a delegate order (SD-072)", () => {
       blockTimestampNs: async (b) => BigInt(b.startsWith("old") ? NOW - 3_600_000 : NOW + 1000) * 1_000_000n,
     };
     const view = async (_c: string, method: string, args: Record<string, unknown>) => {
+      if (method === "get_policy") return _c === "notadao.near" ? (() => { throw new Error("MethodNotFound"); })() : _c === "down.near" ? (() => { throw new Error("fetch failed"); })() : { roles: [] };
       if (method !== "get_proposal") return null; // the open epoch of the circle
       reads.view++;
       return { id: args.id, kind: kinds.get(args.id as number) };
@@ -153,6 +154,17 @@ describe("BE-055 fix: claims of the votes of a delegate order (SD-072)", () => {
     expect((await create(m, delegate({ mandate_hash: "zz" }), { mandate })).res.json.error.code).toBe("order_bad_mandate");
     expect((await create(m, orderDoc("andi", "budi"), { mandate })).res.json.error.code).toBe("order_mandate_forbidden");
     expect((await create(m, delegate(), { mandate: { ...mandate, kinds: [...mandate.kinds].reverse() } })).res.status).toBe(201); // kinds are sorted, so the hash is the same
+  });
+
+  it("TC-BE-055-19 mandate.dao must answer get_policy: an account without the view is not_a_dao, a failing RPC is 503, not a verdict", async () => {
+    const { m } = await start();
+    const noDao = { ...mandate, dao: "notadao.near" };
+    const bad = await create(m, delegate({ mandate_hash: mandateHash(noDao) }), { mandate: noDao });
+    expect([bad.res.status, bad.res.json.error.code, bad.res.json.error.details.reason]).toEqual([400, "order_bad_mandate", "not_a_dao"]);
+    const down = { ...mandate, dao: "down.near" };
+    expect((await create(m, delegate({ mandate_hash: mandateHash(down) }), { mandate: down })).res.status).toBe(503);
+    expect((await m.get("/orders")).json.items).toEqual([]); // nothing was stored
+    expect((await create(m)).res.status).toBe(201);
   });
 
   it("TC-BE-055-17 the kind of a proposal is read once per proposal", async () => {

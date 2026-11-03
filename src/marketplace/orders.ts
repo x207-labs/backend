@@ -5,6 +5,7 @@
 // The backend never pays. A confirmed milestone is `paid` once the obligations of the pair (buyer, seller) since the order was made cover everything confirmed so far.
 // `loadtest`: the target must be proven (file or DNS TXT with the order hash) through `target-check`, behind the guard of ssrf.ts, before the seller can deliver.
 import { resolveTxt } from "node:dns/promises";
+import type { ViewFunction } from "../settlement/intents.js";
 import type Database from "better-sqlite3";
 import { OrderError, ORDER_PATTERN, mandateHash, normalizeMandate, normalizeOrder, orderBudget, orderHash, serializeMandate, serializeOrder, type DelegateMandate, type NormalizedOrder, type OrderDocument } from "@x207/core";
 import { ApiError, invalidRequest, type ApiErrorCode } from "../api/errors.js";
@@ -164,11 +165,27 @@ export function orderView(db: Database.Database, circleId: string, o: OrderRow) 
 
 // ---- routes -------------------------------------------------------------------------------------------------------------------------------------------------
 export interface OrderOptions {
+  /** View of the chain: with it, `mandate.dao` of a delegate order must answer the Sputnik view `get_policy` (BE-055 fix, `order_bad_mandate` / `not_a_dao`). */
+  chainView?: ViewFunction;
   /** Amount (smallest unit) at or above which an order needs the bond of CT-094 (ADR-45 point 2). */
   bondThreshold?: bigint;
   disputeWindowSeconds?: number;
   /** For `target-check`: replace the DNS resolver, the HTTPS transport, or the lookup of TXT records (tests). */
   targetCheck?: { resolver?: Resolver; transport?: Transport; txt?: (host: string) => Promise<string[][]> };
+}
+
+const NO_SUCH_VIEW = /MethodNotFound|CodeDoesNotExist|AccountDoesNotExist|does not exist|doesn't exist|not found/i;
+/** A Sputnik DAO answers `get_policy`; an account that does not, or that is not a contract, is refused. A failure of the RPC itself is not a verdict on the account (503). */
+async function assertDao(view: ViewFunction, dao: string): Promise<void> {
+  let policy: unknown;
+  try {
+    policy = await view(dao, "get_policy", {});
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (NO_SUCH_VIEW.test(message)) throw new ApiError(400, "order_bad_mandate", `mandate.dao ${dao} tidak punya view get_policy`, { reason: "not_a_dao", dao });
+    throw new ApiError(503, "claim_rpc_unavailable", "RPC tidak menjawab saat memeriksa mandate.dao", { dao });
+  }
+  if (policy === null || typeof policy !== "object") throw new ApiError(400, "order_bad_mandate", `mandate.dao ${dao} tidak menjawab get_policy dengan objek`, { reason: "not_a_dao", dao });
 }
 
 export function orderRoutes(resolveOpenEpoch: OpenEpochResolver, options: OrderOptions = {}): Route[] {
@@ -233,6 +250,7 @@ export function orderRoutes(resolveOpenEpoch: OpenEpochResolver, options: OrderO
         if (!Array.isArray(signatures) || signatures.length === 0) throw invalidRequest("signatures wajib array berisi {account, signature}");
         let doc: NormalizedOrder;
         let mandateJson: string | null = null;
+        let daoToCheck: string | null = null;
         let hash: string;
         let json: string;
         try {
@@ -245,6 +263,7 @@ export function orderRoutes(resolveOpenEpoch: OpenEpochResolver, options: OrderO
             if (mandateHash(m) !== doc.mandate_hash) throw new OrderError("order_bad_mandate", "sha256 dari mandate tidak sama dengan order.mandate_hash");
             if (m.circle !== circle.contract_id) throw new OrderError("order_bad_mandate", "mandate.circle harus akun kontrak lingkaran");
             mandateJson = serializeMandate(m);
+            daoToCheck = m.dao;
           } else if (mandate !== undefined && mandate !== null) {
             throw new OrderError("order_mandate_forbidden", "mandate hanya untuk pesanan delegate");
           }
@@ -252,6 +271,7 @@ export function orderRoutes(resolveOpenEpoch: OpenEpochResolver, options: OrderO
           return asApiError(error);
         }
         if (doc.circle !== circle.contract_id) throw invalidRequest("order.circle harus akun kontrak lingkaran", { expected: circle.contract_id, got: doc.circle });
+        if (daoToCheck !== null && options.chainView !== undefined) await assertDao(options.chainView, daoToCheck);
         const keys = { [doc.buyer]: activeMemberKey(db, circle.circle_id, doc.buyer), [doc.seller]: activeMemberKey(db, circle.circle_id, doc.seller) };
         const given = new Map<string, string>();
         for (const s of signatures as Array<{ account?: unknown; signature?: unknown }>) {
