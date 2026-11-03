@@ -367,6 +367,63 @@ ALTER TABLE events_raw ADD COLUMN signer_id   TEXT;
 ALTER TABLE events_raw ADD COLUMN method_name TEXT;
 `;
 
+// BE-065 (interface 0.0.12): the deals with a bond, the freezes of members and the official contracts per asset type, as the events tell them. `deals` is one row per bundle with a bond:
+// the parties come from the two `bond_locked`, the dispute from `deal_disputed`, the arbiter from `deal_ruled`; `get_deal` of the contract adds the arbiter and `confirm_by` of a deal that is open.
+const V9_RULES_0_0_12 = `
+CREATE TABLE deals (
+  circle_id       TEXT    NOT NULL REFERENCES circles(circle_id),
+  bundle_id       INTEGER NOT NULL,
+  party_a         TEXT    NOT NULL,
+  party_b         TEXT,
+  bond_each       INTEGER NOT NULL,
+  locked_a        INTEGER NOT NULL DEFAULT 1,
+  locked_b        INTEGER NOT NULL DEFAULT 0,
+  state           TEXT    NOT NULL DEFAULT 'open' CHECK (state IN ('open','disputed','closed')),
+  complainant     TEXT,
+  accused         TEXT,
+  evidence_hash   TEXT,
+  disputed_at_ns  INTEGER,
+  arbiter         TEXT,
+  verdict         TEXT,
+  opened_block    INTEGER NOT NULL,
+  closed_block    INTEGER,
+  PRIMARY KEY (circle_id, bundle_id)
+);
+CREATE INDEX idx_deals_a ON deals (circle_id, party_a, state);
+CREATE INDEX idx_deals_b ON deals (circle_id, party_b, state);
+CREATE TABLE deal_events (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  circle_id     TEXT    NOT NULL,
+  bundle_id     INTEGER NOT NULL,
+  event         TEXT    NOT NULL,
+  account_id    TEXT,
+  amount        INTEGER,
+  detail        TEXT,
+  block_height  INTEGER NOT NULL,
+  receipt_id    TEXT    NOT NULL,
+  log_index     INTEGER NOT NULL,
+  UNIQUE (receipt_id, log_index, event, account_id)
+);
+CREATE INDEX idx_deal_events ON deal_events (circle_id, bundle_id, id);
+CREATE TABLE member_freezes (
+  circle_id     TEXT    NOT NULL REFERENCES circles(circle_id),
+  account_id    TEXT    NOT NULL,
+  state         TEXT    NOT NULL CHECK (state IN ('pending','frozen')),
+  eta_ns        INTEGER,
+  reason_hash   TEXT,
+  from_epoch    INTEGER,
+  block_height  INTEGER NOT NULL,
+  PRIMARY KEY (circle_id, account_id)
+);
+CREATE TABLE official_contracts (
+  circle_id     TEXT    NOT NULL REFERENCES circles(circle_id),
+  asset_type    TEXT    NOT NULL,
+  contracts     TEXT    NOT NULL,
+  block_height  INTEGER NOT NULL,
+  PRIMARY KEY (circle_id, asset_type)
+);
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "d9_initial", sql: V1_D9_INITIAL },
   { version: 2, name: "d9_bundles", sql: V2_BUNDLES },
@@ -376,4 +433,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 6, name: "d9_ft_escrows", sql: V6_FT_ESCROWS },
   { version: 7, name: "d9_mt_escrows", sql: V7_MT_ESCROWS },
   { version: 8, name: "d9_event_caller", sql: V8_EVENT_CALLER },
+  { version: 9, name: "d9_rules_0_0_12", sql: V9_RULES_0_0_12 },
 ];

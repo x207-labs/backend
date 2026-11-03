@@ -37,6 +37,7 @@ export type ApiErrorCode =
   | "referral_not_found"
   | "referral_refused"
   | "referral_not_open"
+  | "deal_not_found"
   | InvoiceApiErrorCode
   | OrderApiErrorCode
   | PurchaseApiErrorCode;

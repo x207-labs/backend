@@ -3,7 +3,7 @@ import { defaultHandlers, type HandlerMap } from "./handlers/index.js";
 import { dispatchEventRow, type EventRow } from "./indexer.js";
 
 /** Tabel read model yang dikosongkan saat rebuild; `circles`, `settlement_jobs`, `events_raw`, dan cursor tetap. */
-const READ_MODEL_TABLES = ["intent_withdrawals", "intent_book", "escrows", "grants", "asset_classes", "bundle_legs", "bundles", "member_limits", "settlements", "clearing_log", "obligations", "epochs", "members"] as const;
+const READ_MODEL_TABLES = ["official_contracts", "member_freezes", "deal_events", "deals", "intent_withdrawals", "intent_book", "escrows", "grants", "asset_classes", "bundle_legs", "bundles", "member_limits", "settlements", "clearing_log", "obligations", "epochs", "members"] as const;
 
 /**
  * Rebuild penuh tanpa RPC (Spec Skema D9 5.3): kosongkan read model, setel `handled = 0`, lalu putar ulang
@@ -15,7 +15,7 @@ export function rebuildReadModel(db: Database.Database, circleId: string, handle
     for (const table of READ_MODEL_TABLES) db.exec(`DELETE FROM ${table}`);
     db.prepare("DELETE FROM params WHERE circle_id = ? AND receipt_id NOT LIKE 'init:%'").run(circleId);
     // Urutan id AUTOINCREMENT (urutan riwayat) dimulai ulang agar hasil rebuild identik dengan run awal.
-    db.exec("DELETE FROM sqlite_sequence WHERE name = 'member_limits'");
+    db.exec("DELETE FROM sqlite_sequence WHERE name IN ('member_limits', 'deal_events')");
     db.exec("UPDATE sqlite_sequence SET seq = (SELECT COALESCE(MAX(id), 0) FROM params) WHERE name = 'params'");
     db.exec("UPDATE events_raw SET handled = 0");
 

@@ -1,5 +1,6 @@
 import { IndexerHaltError } from "../errors.js";
 import { units } from "../units.js";
+import { ruleRawHandlers } from "./rules.js";
 import type { HandlerContext } from "./context.js";
 
 /**
@@ -58,6 +59,7 @@ function earlierRegistrations(ctx: HandlerContext, epoch: number, payer: string,
 }
 
 export const rawHandlers: Record<string, RawHandler> = {
+  ...ruleRawHandlers,
   escrow_held(ctx, data) {
     ctx.db
       .prepare(
