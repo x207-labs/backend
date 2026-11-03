@@ -34,7 +34,7 @@ Levels: **High** (a proof or money can be forged by the other party), **Medium**
 | B3-F8 | Low | agents | `loadIdentity` reads the key file without checking mode or owner | fixed `694d38d` | Main B |
 | B3-F9 | Info | frontend | The file key of the seller lives only in the page (lost on refresh) | fixed `c87b465`; limit: a warning only (the key is still lost with the page) | Main B |
 
-## Contract 0.0.12 (part 1: CT-095, CT-096)
+## Contract 0.0.12 (CT-094, CT-095, CT-096; `security-review-0.0.12.md`)
 | ID | Level | Repo | Summary | Status | Owner |
 | --- | --- | --- | --- | --- | --- |
 | C-1 | Medium | contracts | `complete_escrow` does not ask `is_official`: a token already escrowed when the list is set stays for sale | open | A2 |
@@ -42,7 +42,13 @@ Levels: **High** (a proof or money can be forged by the other party), **Medium**
 | C-3 | Low | contracts | The freeze record is not removed when the member exits | by design | A2 |
 | C-4 | Info | contracts | A pending freeze blocks nothing and is not seen by `register_with` | info | A2 |
 | C-5 | Info | contracts | An empty list of official contracts means any contract; clearing it has no timelock | info | A2 |
-| C-094 | - | contracts | CT-094 (bonds, deals, arbiter): not reviewed yet, the code is not committed (list of checks in the report) | pending | Main C |
+| C-6 | Medium | contracts | `charge_fees` (`commit.rs:71`) cuts the limit to `stake`, not `stake - bond_locked`: the invariant of the bond breaks after a fee charge | open | A2 |
+| C-7 | Medium | contracts | A default takes `due.min(stake)` from the whole stake, bonds included; then `slash_bond` panics (`checked_sub(...).expect`) and `rule_deal` cannot run: a guilty verdict can be dodged by defaulting | open | A2 |
+| C-8 | Medium | contracts | `dispute_deal` does not require the complainant's own bond to be locked: after the other party confirmed, a false complaint costs nothing | open | A2 |
+| C-9 | Low | contracts, sdk, backend | `rule_deal` changes limits with no `limits_updated`; the events of CT-094 are not in the SDK and the indexer, so stake and limit in the read model stay old after `bond_slashed` | open | A2 (event), Main B (SDK), Main C (indexer) |
+| C-10 | Low | contracts | At `now == confirm_by` both `dispute_deal` and `settle_deal` are valid | open | A2 |
+| C-11 | Info | contracts | The bond is avoided by splitting a swap below the threshold or by a ring of three | info | A2 |
+| C-12 | Info | contracts | Nothing ends by itself: `settle_deal` must be called to free a bond and the exit | info | A2 |
 
 ## Found by the near-sandbox test
 | ID | Level | Repo | Summary | Status | Owner |
@@ -50,4 +56,4 @@ Levels: **High** (a proof or money can be forged by the other party), **Medium**
 | BE-055-S1 | Medium | backend | `events_raw.data_json` is an array with one object on a real chain, and the queries of the proofs (`epoch`, `solver`), of the installments (`voucher_registered`) and of the intent book (`intent_posted`) read `$.field`: on a real chain the epoch of a proof was null, no solver proof was ever found, the event of an installment was never matched and the on-chain data of an intent was empty. Found only by the run on near-sandbox (the unit tests stored a bare object). Solver (A2) asked to check the same reading | fixed `6a2a6ef`, `7220eeb`, `1caffb0` (`event-data.ts` reads both shapes); confirmed on near-sandbox in run 4 | Main C |
 
 ## Counts
-Fixed: BE-055-S1, B2-F1 to F12 (F6 in the backend and in the SDK), B3-F1 to F9. Open: C-1. By design: C-2, C-3. Info: C-4, C-5. Pending: C-094. Limits written in the table: B3-F2 (buyer account from the API, confirmed by fingerprint), B3-F4 (CSP not tried with a real wallet), B3-F7 (text only), B3-F9 (warning only).
+Fixed: BE-055-S1, B2-F1 to F12 (F6 in the backend and in the SDK), B3-F1 to F9. Open: C-1, C-6 to C-10. By design: C-2, C-3. Info: C-4, C-5, C-11, C-12. Limits written in the table: B3-F2 (buyer account from the API, confirmed by fingerprint), B3-F4 (CSP not tried with a real wallet), B3-F7 (text only), B3-F9 (warning only).

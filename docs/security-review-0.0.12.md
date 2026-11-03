@@ -1,6 +1,6 @@
 # Security review of the contract 0.0.12 (BE-064)
 
-**Status: part 1 of 2.** Reviewed so far: CT-095 (`freeze_member`, commit `f4c0d22`, `x207-circle/src/freeze.rs` and its call sites) and CT-096 (official contracts per asset type, commit `11d8968`, `asset_contracts.rs` and its call sites). **CT-094 (bonds, deals, arbiter) is not committed yet** (the working tree of `contracts/` holds unfinished work of Main A2, which this review does not touch), so its part is a list of what will be checked, drawn from the design note `docs/rules-0.0.12.md`. Read only: nothing in `repos/x207/contracts` was changed. No test was run for this part: the findings come from reading the code at the commits above; each has the steps of a scenario that can be turned into a test in `tests/` or a unit test in the module. Levels as in `security-review-batch2.md`.
+**Status: complete (parts 1 and 2).** Reviewed: CT-095 (`freeze_member`, commit `f4c0d22`, `x207-circle/src/freeze.rs` and its call sites), CT-096 (official contracts per asset type, commit `11d8968`, `asset_contracts.rs` and its call sites) and CT-094 (bonds, deals, arbiter, commit `dff27e4`: `deal.rs`, and its changes in `bundle.rs`, `stake.rs`, `settlement.rs`, `commit.rs`, `member.rs`, `params.rs`, `state.rs`). Read only: nothing in `repos/x207/contracts` was changed. No test was run for this part: the findings come from reading the code at the commits above; each has the steps of a scenario that can be turned into a test in `tests/` or a unit test in the module. Levels as in `security-review-batch2.md`.
 
 ## Summary of part 1
 | # | Level | Where | Finding |
@@ -32,13 +32,51 @@ Fix: remove the record when the member reaches `Exited`, or check the record aga
 ## C5 (Info): empty list means no protection
 `is_official` returns `true` when the list is empty (`asset_contracts.rs:28`). That is the requested behaviour (the old one) and the tests keep it. Note for the DAO: a list that is cleared by mistake (`set_asset_contracts(type, [])`) switches the protection off at once and without a timelock, unlike `freeze_member`. Consider the same 24-hour delay for clearing a list, or an event that the backend shows (the event `asset_contracts_set` already exists with the new list).
 
-## CT-094 (bonds, deals, arbiter): to be reviewed when it is committed
-From `docs/rules-0.0.12.md`, the points that will be checked against the code, in the order of the request of the coordinator:
-1. `limit <= stake - bond_locked`: every place that changes `limit`, `stake` or `bond_locked`: `commit_bundle` (lock, with the slack), `confirm_deal`, `settle_deal`, `rule_deal`, `finalize_epoch` (limit growth and default cuts), `set_params`/`compute_limit`, `request_exit`, `withdraw_stake` (`ERR_BOND_LOCKED`), `add_stake`, the failure path of `on_withdraw_resolved` (limit restored), `stake.rs` slashing for a default, and the freeze interplay.
-2. `rule_deal`: `accused_guilty` (bond of the accused to the stake of the complainant, the complainant's bond released) and `complaint_false` (as the working tree says, a half? the design note says the whole bond): amounts, rounding, the limit of the loser lowered to the new stake (`limits_updated`), `total_stake` unchanged, and the stake of the winner cannot be pushed over a cap.
-3. The arbiter is silent: `settle_deal` after `disputed_at + 7 days` releases both bonds; a ruling after that must fail; a ruling and a settle in the same block.
-4. The limit of 8 open deals per member: counted on commit, freed on close; a deal that is never closed (no `confirm_by` path) cannot hold the slot; the bound of `confirm_by` (1 hour to 14 days).
-5. Freeze: a voucher of the freeze epoch registers (CT-095 `assert_not_frozen_for_voucher`), including `register_in_bundle` of a bundle committed before the freeze.
-6. An empty list of official contracts is the old behaviour (CT-096 C5), and a bundle without the new fields hashes as before (`terms_hash` unchanged).
-7. Migration 0.0.11 to 0.0.12: `Params` is Borsh in a raw key; the two new fields (`bond_threshold`, `bond_bps`) must be read from a 0.0.11 record (test in the style of `ct083_upgrade_from_0_0_7`), `Member` is read unchanged, `StorageKey` bytes not reused (`b'd'` for `Deals`, `b'w'` already used by `AssetContracts`: check that no other key uses `b'd'`).
-8. Things that I will also try: the arbiter is a sybil of a party (no pool loss expected, because a bond sits outside the credit it covers); a deal whose parties are the same economic owner (stake moves between two accounts, no gain expected); a bond slashed from a member that has a pending default; a deal with a participant that exits at the same epoch; rounding of `V * bond_bps / 10_000` for the largest `V`; `u128` overflow of `bond_locked` sums.
+## Part 2: CT-094 (bonds, deals, arbiter), commit `dff27e4`
+
+### Summary of part 2
+| # | Level | Where | Finding |
+| --- | --- | --- | --- |
+| C-6 | Medium | `commit.rs:69-71` (`charge_fees`) | The limit is cut to `stake`, not to `stake - bond_locked`: a fee charge breaks the invariant that the whole design stands on |
+| C-7 | Medium | `settlement.rs:206-222` (`default_debtor`), `deal.rs:205-209` (`slash_bond`) | A default takes `due.min(stake)` from the whole stake, bonds included; then `rule_deal` panics on `checked_sub(...).expect(...)` and the verdict is lost: an accused can dodge a guilty verdict by defaulting |
+| C-8 | Medium | `deal.rs:263-277`, `deal.rs:299-304` | A dispute costs nothing once the complainant's own bond is released: after A confirms that C delivered, C can accuse A at no risk |
+| C-9 | Low | `deal.rs:219-225`, `events.rs` | `rule_deal` lowers limits without a `limits_updated` event, and the new events are not known to the SDK or to the indexer: the read model keeps the old stake and limit after `bond_slashed` |
+| C-10 | Low | `deal.rs:268`, `deal.rs:323` | At `now == confirm_by` both `dispute_deal` (`<=`) and `settle_deal` (`>=`) are allowed: the order of the transactions decides |
+| C-11 | Info | `bundle.rs` (`ERR_BOND_REQUIRED`) | The bond is avoided by splitting a swap below `bond_threshold`, or by a ring of three: by design, to be said in the guide |
+| C-12 | Info | `deal.rs:319` | Nothing ends "by itself": a bond stays locked (and the exit with it) until somebody calls `settle_deal`; the member itself can |
+
+### C-6 (Medium): `charge_fees` breaks `limit <= stake - bond_locked`
+The note says "at all times `limit(m) <= stake(m) - bond_locked(m)`". Every place that sets a limit now goes through `bound_limit` (`member.rs:67`, `stake.rs:56,280`, `settlement.rs:263`), except `charge_fees` (`commit.rs:69-71`): it takes the P1 fees from the stake of the debtors of cleared edges and then does `member.limit = member.limit.min(member.stake)`.
+Scenario: stake 1000, limit 800, one bond of 200 (slack 200 at the lock). Fees of 100 are charged: stake 900, limit stays 800, but `stake - bond_locked` is 700. The invariant is now false, and a default of 800 later takes the stake below the bond (C-7). Needs a circle with `clearing_fee_bps` or `solver_fee_bps` above 0.
+Fix: `member.limit = bound_limit(member.limit, member.stake, &account)` there; test: a fee charge with a locked bond keeps `limit <= stake - bond_locked`.
+
+### C-7 (Medium): a default can eat a bond, and then the verdict panics
+`default_debtor` (`settlement.rs:206-222`) takes `from_stake = due.min(stake)` from the whole stake and does not look at `bond_locked`. The note's argument ("because `outstanding_debt <= limit <= stake - bond_locked`, a default never touches a bond") fails when the limit was lowered below the debt (decay, new params, C-6) or when the debt is above the limit for another reason. After such a default `stake` can be below `bond_locked`. Then `rule_deal` with `accused_guilty` calls `slash_bond`, which does `f.stake.checked_sub(amount).expect("a bond is always inside the stake")` (`deal.rs:208`): it panics, the arbiter cannot rule, and after 7 days `settle_deal` releases both bonds.
+Attack (a party that is going to default anyway): A is accused by C. Before the ruling, A lets a position default so that `stake < bond`. The arbiter's `rule_deal(accused_guilty)` panics for good; C loses the bond that was the protection of the swap. The panic is the weak point: a ruling must never be impossible.
+Fix: (1) `slash_bond` takes `amount.min(stake)` and emits what it moved, never panics; (2) in `default_debtor`, a locked bond is paid out first to the deal it belongs to or the default takes only `stake - bond_locked` and leaves the rest as a claim; the simpler rule is (1) plus C-6 and a test that a default of a member with a locked bond keeps the verdict possible.
+
+### C-8 (Medium): a complaint with no risk
+`dispute_deal` requires the bond of the ACCUSED to be still locked (`deal.locked[1 - me]`), but not that of the complainant. A bond is released by the confirmation of the OTHER party. If A confirms that C delivered (`confirm_deal` by A releases the bond of C), C's bond is gone; C may then dispute A. If the arbiter rules `complaint_false`, `if deal.locked[c]` is false and nothing is slashed (`deal.rs:299-301`): the false complaint is free. It also locks A's bond for up to the dispute window plus 7 days, and A cannot confirm any more once the deal is disputed.
+Fix: require `deal.locked[me]` in `dispute_deal` (a party that has no bond at risk cannot accuse), or let a released complainant lose the right to dispute.
+
+### C-9 (Low): limits and events
+The note promises `limits_updated` for the loser; `bound_member_limit` (`deal.rs:220-225`) changes the limit and emits nothing. The events `bond_locked`, `deal_confirmed`, `deal_disputed`, `deal_ruled`, `bond_slashed`, `bond_released` are not in `X207EventMap` of the SDK nor in the handlers of the indexer (`backend/src/indexer/indexer.ts`): they are stored as unknown events and `stake` and `credit_limit` of the read model stay at their old values after a slash. Fix: SDK events (Main B) and handlers `bond_slashed` (stake of both), plus `limits_updated` from the contract (A2); until then the read API is wrong for a member that won or lost a bond.
+
+### C-10 (Low): the boundary of the window
+`dispute_deal` allows `now <= confirm_by` (`deal.rs:268`), `settle_deal` allows `now >= confirm_by` (`deal.rs:323`). In the block of `confirm_by` both are valid; whoever is first wins, and a settle there ends the right to dispute. Fix: `dispute_deal` requires `now < confirm_by`.
+
+### C-11 and C-12 (Info)
+- C-11: a swap is bonded only with exactly two participants and a value at or above `bond_threshold` (`bundle.rs`). Two swaps of 60 credit instead of one of 120, or a ring of three, carry no bond. The threshold is a rule for the large swap, not a guarantee; the note says so for rings (open question 1), not for splitting.
+- C-12: `settle_deal` is permissionless but nobody is paid for it. The note says the deals "end by themselves"; they end when someone calls it. The member who wants to leave can.
+
+### Checked and sound (CT-094)
+- The invariant is kept by `bound_limit` at join (`member.rs:67`), `add_stake` (`stake.rs:56`), the restore after a failed withdraw (`stake.rs:280`) and the growth at `finalize_epoch` (`settlement.rs:263`); `request_exit` and `withdraw_stake` refuse while a bond is locked (`stake.rs:202,218`, `ERR_BOND_LOCKED`).
+- `open_deal` checks everything before it writes: arbiter not the owner, the circle or a party; the window between 1 hour and 14 days; the slack (`stake - limit - locked`) for both parties; at most 8 open deals per member.
+- The bond is `value * bond_bps / 10_000` with an overflow fallback, and a bond that rounds to 0 is refused; `bond_threshold` 10 to 1,000,000 credit and `bond_bps` 500 to 5000 are validated.
+- `terms_hash` of a bundle without an arbiter is unchanged (the three keys are appended only when present), and `confirm_by` is a string in the terms.
+- The money moves only between the stakes of the two parties (`total_stake` is unchanged), by the verdict of the arbiter named in the signed terms; `no_fault` and the silence of the arbiter release both bonds; a verdict after 7 days is refused (`ERR_RULING_WINDOW`).
+- `StorageKey::Deals = b'd'` is a new byte (no reuse); the two rules are in a raw key `x207_rules` that reads as the defaults when absent, so a state of 0.0.11 reads as before (the test `ct094_upgrade_from_0_0_11` of A2 covers the upgrade); the join deposit went to 0.35 NEAR to pay for 8 open deals and a freeze record.
+- Freeze: a frozen member still `confirm_deal`, `dispute_deal` and `settle_deal`; the voucher of the freeze epoch still registers (`freeze.rs:73`, see C-2).
+- An empty list of official contracts is the old behaviour (see C-5).
+
+Scenarios were written from the code and have not been run; C-6 and C-7 are the first to turn into unit tests in `deal.rs` / `commit.rs`.
