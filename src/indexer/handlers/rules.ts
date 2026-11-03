@@ -10,14 +10,14 @@ import type { RawHandler } from "./escrow.js";
 
 const str = (d: Record<string, unknown>, k: string): string => {
   const v = d[k];
-  if (typeof v !== "string") throw new IndexerHaltError(`event 0.0.12: field ${k} harus string`);
+  if (typeof v !== "string") throw new IndexerHaltError(`event 0.0.12: field ${k} must be a string`);
   return v;
 };
 const opt = (d: Record<string, unknown>, k: string): string | null => (typeof d[k] === "string" ? (d[k] as string) : null);
 const int = (d: Record<string, unknown>, k: string): number => {
   const v = d[k];
   const n = typeof v === "string" ? Number(v) : v;
-  if (typeof n !== "number" || !Number.isSafeInteger(n) || n < 0) throw new IndexerHaltError(`event 0.0.12: field ${k} harus integer >= 0`);
+  if (typeof n !== "number" || !Number.isSafeInteger(n) || n < 0) throw new IndexerHaltError(`event 0.0.12: field ${k} must be an integer >= 0`);
   return n;
 };
 
@@ -77,7 +77,7 @@ export const ruleRawHandlers: Record<string, RawHandler> = {
     const amount = units(str(d, "amount"), "amount");
     const setStake = ctx.db.prepare("UPDATE members SET stake = ?, updated_block = ? WHERE circle_id = ? AND account_id = ?");
     for (const [account, stake, key] of [[from, str(d, "from_stake"), "from_stake"], [to, str(d, "to_stake"), "to_stake"]] as const) {
-      if (setStake.run(units(stake, key), ctx.block.height, ctx.circleId, account).changes === 0) throw new IndexerHaltError(`anggota ${account} tidak ditemukan di D9`);
+      if (setStake.run(units(stake, key), ctx.block.height, ctx.circleId, account).changes === 0) throw new IndexerHaltError(`member ${account} not found in D9`);
     }
     // the whole bond leaves the lock of the loser (`slash_then_release`)
     unlock(ctx, bundleId, from);
@@ -116,7 +116,7 @@ export const ruleRawHandlers: Record<string, RawHandler> = {
 
   asset_contracts_set(ctx, d) {
     const contracts = d.contracts;
-    if (!Array.isArray(contracts) || contracts.some((c) => typeof c !== "string")) throw new IndexerHaltError("event asset_contracts_set: contracts harus daftar akun");
+    if (!Array.isArray(contracts) || contracts.some((c) => typeof c !== "string")) throw new IndexerHaltError("event asset_contracts_set: contracts must be a list of accounts");
     const assetType = str(d, "asset_type");
     if (contracts.length === 0) {
       ctx.db.prepare("DELETE FROM official_contracts WHERE circle_id = ? AND asset_type = ?").run(ctx.circleId, assetType);

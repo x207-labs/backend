@@ -113,5 +113,5 @@ export function accountOfBody(body: unknown): string | null {
 export function assertOpenRoom(db: Database.Database, sql: string, args: unknown[], limit: number, kind: string, account: string): void {
   if (limit <= 0) return;
   const n = row<{ n: bigint }>(db, sql, ...args)?.n ?? 0n;
-  if (n >= BigInt(limit)) throw new ApiError(409, "open_limit_reached", `Akun ${account} sudah punya ${limit} ${kind} yang terbuka; selesaikan salah satunya dulu`, { kind, limit, account });
+  if (n >= BigInt(limit)) throw new ApiError(409, "open_limit_reached", `Account ${account} already has ${limit} open ${kind}; settle one of them first`, { kind, limit, account });
 }

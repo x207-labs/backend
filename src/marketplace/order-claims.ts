@@ -79,37 +79,37 @@ export function orderClaimRoutes(chainView: ViewFunction | undefined, options: C
       handler: async ({ db, circle, params, body, now }) => {
         syncOrders(db, circle.circle_id, nowSeconds(now()));
         const o = findOrder(db, circle.circle_id, params.hash as string);
-        if (o.kind !== "delegate" || o.mandate_json === null) throw new ApiError(409, "order_not_proof_kind", `pesanan ${o.kind} tidak punya klaim suara`, { kind: o.kind });
-        if (body === null || typeof body !== "object") throw invalidRequest("body harus objek");
+        if (o.kind !== "delegate" || o.mandate_json === null) throw new ApiError(409, "order_not_proof_kind", `${o.kind} order has no vote claim`, { kind: o.kind });
+        if (body === null || typeof body !== "object") throw invalidRequest("body must be an object");
         const { tx_hash: txHashField, notice, signature } = body as { tx_hash?: unknown; notice?: unknown; signature?: unknown };
-        if (typeof signature !== "string") throw invalidRequest("signature wajib string");
-        if (notice === null || typeof notice !== "object") throw invalidRequest("notice wajib objek");
+        if (typeof signature !== "string") throw invalidRequest("signature must be a string");
+        if (notice === null || typeof notice !== "object") throw invalidRequest("notice must be an object");
         const n = notice as OrderClaimNotice;
         let canonical: OrderClaimNotice;
         try {
-          if (n.action !== "claim") throw new OrderError("order_bad_state", "action notice klaim harus claim");
+          if (n.action !== "claim") throw new OrderError("order_bad_state", "claim notice action must be claim");
           canonical = orderClaimNotice({ circle: n.circle, orderHash: n.order_hash, actor: n.actor, at: n.at, txHash: n.tx_hash });
         } catch (error) {
           return asApiError(error);
         }
-        if (typeof txHashField === "string" && txHashField !== canonical.tx_hash) throw invalidRequest("tx_hash harus sama dengan notice.tx_hash");
-        if (canonical.circle !== circle.contract_id) throw invalidRequest("notice.circle harus akun kontrak lingkaran", { expected: circle.contract_id, got: canonical.circle });
-        if (canonical.order_hash !== o.order_hash) throw invalidRequest("notice.order_hash harus hash pesanan ini");
+        if (typeof txHashField === "string" && txHashField !== canonical.tx_hash) throw invalidRequest("tx_hash must equal notice.tx_hash");
+        if (canonical.circle !== circle.contract_id) throw invalidRequest("notice.circle must be the circle contract account", { expected: circle.contract_id, got: canonical.circle });
+        if (canonical.order_hash !== o.order_hash) throw invalidRequest("notice.order_hash must be this order's hash");
         const nowS = nowSeconds(now());
-        if (Math.abs(canonical.at - nowS) > NOTICE_SKEW_SECONDS) throw invalidRequest(`notice.at menyimpang lebih dari ${NOTICE_SKEW_SECONDS} detik dari jam server`, { at: canonical.at, now: nowS });
-        if (canonical.actor !== o.seller) throw new ApiError(403, "order_not_party", "Hanya penjual (delegate) yang mengklaim suara", { actor: canonical.actor });
+        if (Math.abs(canonical.at - nowS) > NOTICE_SKEW_SECONDS) throw invalidRequest(`notice.at is more than ${NOTICE_SKEW_SECONDS} seconds off the server clock`, { at: canonical.at, now: nowS });
+        if (canonical.actor !== o.seller) throw new ApiError(403, "order_not_party", "Only the seller (delegate) claims a vote", { actor: canonical.actor });
         const json = JSON.stringify(canonical);
         if (!verifyNoticeJson(json, circle.contract_id, signature, activeMemberKey(db, circle.circle_id, canonical.actor))) {
-          throw new ApiError(401, "invalid_signature", "Tanda tangan notice tidak cocok dengan kunci voucher anggota", { account: canonical.actor });
+          throw new ApiError(401, "invalid_signature", "Notice signature does not match the member's voucher key", { account: canonical.actor });
         }
-        if (o.status !== "open") throw new ApiError(409, "order_bad_state", `pesanan belum terbuka (keadaan ${o.status}): kedua pihak harus menandatangani`, { status: o.status });
+        if (o.status !== "open") throw new ApiError(409, "order_bad_state", `order is not open yet (state ${o.status}): both parties must sign`, { status: o.status });
         const rpc = options.claimRpc;
-        if (rpc === undefined) throw new ApiError(503, "claim_rpc_unavailable", "RPC untuk memeriksa klaim belum dikonfigurasi", {});
+        if (rpc === undefined) throw new ApiError(503, "claim_rpc_unavailable", "RPC to check the claim is not configured", {});
         const mandate = JSON.parse(o.mandate_json) as DelegateMandate;
         const order = JSON.parse(o.order_json) as { proof: { method: string } };
         const txHash = canonical.tx_hash;
 
-        if (row(db, "SELECT 1 AS x FROM order_claims WHERE circle_id = ? AND tx_hash = ?", circle.circle_id, txHash) !== undefined) invalid("already_claimed", "transaksi ini sudah diklaim", { tx_hash: txHash });
+        if (row(db, "SELECT 1 AS x FROM order_claims WHERE circle_id = ? AND tx_hash = ?", circle.circle_id, txHash) !== undefined) invalid("already_claimed", "this transaction is already claimed", { tx_hash: txHash });
 
         // 1. the transaction exists and every step of it succeeded
         const tx = (await rpc.tx(txHash, o.seller)) as {
@@ -118,45 +118,45 @@ export function orderClaimRoutes(chainView: ViewFunction | undefined, options: C
           transaction_outcome?: { block_hash?: string };
           receipts_outcome?: Array<{ outcome?: { status?: unknown } }>;
         } | null;
-        if (tx === null || tx === undefined || typeof tx !== "object" || tx.transaction === undefined) return invalid("tx_not_found", "transaksi tidak dikenal oleh RPC", { tx_hash: txHash });
-        if (typeof tx.status === "string") return invalid("tx_not_found", "transaksi belum final di RPC; coba lagi nanti", { tx_hash: txHash, status: tx.status });
-        if (isFailure(tx.status) || (tx.receipts_outcome ?? []).some((r) => isFailure(r.outcome?.status)) || !isSuccess(tx.status)) invalid("tx_failed", "transaksi gagal", { tx_hash: txHash });
+        if (tx === null || tx === undefined || typeof tx !== "object" || tx.transaction === undefined) return invalid("tx_not_found", "transaction is unknown to the RPC", { tx_hash: txHash });
+        if (typeof tx.status === "string") return invalid("tx_not_found", "transaction is not final on the RPC yet; try again later", { tx_hash: txHash, status: tx.status });
+        if (isFailure(tx.status) || (tx.receipts_outcome ?? []).some((r) => isFailure(r.outcome?.status)) || !isSuccess(tx.status)) invalid("tx_failed", "transaction failed", { tx_hash: txHash });
         // 2. signer and receiver
-        if (tx.transaction.signer_id !== o.seller) invalid("wrong_signer", "transaksi tidak ditandatangani penjual", { signer: tx.transaction.signer_id ?? null });
-        if (tx.transaction.receiver_id !== mandate.dao) invalid("wrong_receiver", "transaksi tidak ke DAO dalam mandat", { receiver: tx.transaction.receiver_id ?? null, dao: mandate.dao });
+        if (tx.transaction.signer_id !== o.seller) invalid("wrong_signer", "transaction was not signed by the seller", { signer: tx.transaction.signer_id ?? null });
+        if (tx.transaction.receiver_id !== mandate.dao) invalid("wrong_receiver", "transaction is not to the DAO in the mandate", { receiver: tx.transaction.receiver_id ?? null, dao: mandate.dao });
         // 3. one act_proposal that is a vote
         const actions = tx.transaction.actions ?? [];
         const call = actions.length === 1 ? actions[0]?.FunctionCall : undefined;
-        if (call === undefined || call.method_name !== order.proof.method) invalid("not_a_vote", "transaksi bukan satu panggilan ke method suara pesanan ini", { method: call?.method_name ?? null });
+        if (call === undefined || call.method_name !== order.proof.method) invalid("not_a_vote", "transaction is not a single call to this order's vote method", { method: call?.method_name ?? null });
         let args: { id?: unknown; action?: unknown };
         try {
           args = JSON.parse(Buffer.from(call!.args ?? "", "base64").toString("utf8")) as { id?: unknown; action?: unknown };
         } catch {
-          return invalid("not_a_vote", "argumen panggilan bukan JSON");
+          return invalid("not_a_vote", "call arguments are not JSON");
         }
         if (typeof args.action !== "string" || !DELEGATE_VOTE_ACTIONS.includes(args.action) || !Number.isSafeInteger(args.id) || (args.id as number) < 0) {
-          invalid("not_a_vote", "hanya VoteApprove dan VoteReject yang dibayar", { action: typeof args.action === "string" ? args.action : null });
+          invalid("not_a_vote", "only VoteApprove and VoteReject are paid", { action: typeof args.action === "string" ? args.action : null });
         }
         const proposalId = args.id as number;
         const action = args.action as string;
         // 4. after the order was made
         const created = row<{ ms: bigint }>(db, "SELECT created_at_ms AS ms FROM orders WHERE id = ?", o.id)?.ms ?? 0n;
         const blockHash = tx.transaction_outcome?.block_hash;
-        if (typeof blockHash !== "string") return invalid("tx_not_found", "RPC tidak memberi blok transaksi", { tx_hash: txHash });
-        if ((await rpc.blockTimestampNs(blockHash)) < created * 1_000_000n) invalid("before_order", "suara ini diberikan sebelum pesanan dibuat", { tx_hash: txHash });
+        if (typeof blockHash !== "string") return invalid("tx_not_found", "RPC did not return the transaction block", { tx_hash: txHash });
+        if ((await rpc.blockTimestampNs(blockHash)) < created * 1_000_000n) invalid("before_order", "this vote was cast before the order was created", { tx_hash: txHash });
         // 5. the proposal is of a kind of the mandate (the kind never changes, so it is read once)
         if (row(db, "SELECT 1 AS x FROM order_claims WHERE circle_id = ? AND order_hash = ? AND proposal_id = ?", circle.circle_id, o.order_hash, proposalId) !== undefined) {
-          invalid("already_claimed", "proposal ini sudah diklaim untuk pesanan ini", { proposal_id: proposalId });
+          invalid("already_claimed", "this proposal is already claimed for this order", { proposal_id: proposalId });
         }
         let kind = row<{ kind: string }>(db, "SELECT kind FROM order_proposal_kinds WHERE dao = ? AND proposal_id = ?", mandate.dao, proposalId)?.kind ?? null;
         if (kind === null) {
-          if (chainView === undefined) throw new ApiError(503, "claim_rpc_unavailable", "view RPC untuk jenis proposal belum dikonfigurasi", {});
+          if (chainView === undefined) throw new ApiError(503, "claim_rpc_unavailable", "RPC view for the proposal kind is not configured", {});
           const proposal = (await chainView(mandate.dao, "get_proposal", { id: proposalId })) as { kind?: unknown } | null;
           kind = proposalKindName(proposal?.kind);
-          if (kind === null) return invalid("kind_not_in_mandate", "jenis proposal tidak terbaca", { proposal_id: proposalId });
+          if (kind === null) return invalid("kind_not_in_mandate", "proposal kind could not be read", { proposal_id: proposalId });
           db.prepare("INSERT OR IGNORE INTO order_proposal_kinds (dao, proposal_id, kind) VALUES (?, ?, ?)").run(mandate.dao, proposalId, kind);
         }
-        if (!mandate.kinds.includes(kind)) invalid("kind_not_in_mandate", "jenis proposal di luar mandat", { proposal_id: proposalId, proposal_kind: kind, allowed: mandate.kinds });
+        if (!mandate.kinds.includes(kind)) invalid("kind_not_in_mandate", "proposal kind is outside the mandate", { proposal_id: proposalId, proposal_kind: kind, allowed: mandate.kinds });
 
         // the checks above wait on the RPC; two claims for one proposal can pass them together, and then the key of the table decides (B4-F4)
         try {
@@ -165,7 +165,7 @@ export function orderClaimRoutes(chainView: ViewFunction | undefined, options: C
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           ).run(circle.circle_id, o.order_hash, proposalId, txHash, o.seller, mandate.dao, action, kind, json, signature, now());
         } catch (error) {
-          if ((error as { code?: string }).code?.startsWith("SQLITE_CONSTRAINT")) return invalid("already_claimed", "proposal atau transaksi ini sudah diklaim", { proposal_id: proposalId, tx_hash: txHash });
+          if ((error as { code?: string }).code?.startsWith("SQLITE_CONSTRAINT")) return invalid("already_claimed", "this proposal or transaction is already claimed", { proposal_id: proposalId, tx_hash: txHash });
           throw error;
         }
         return { status: 201, body: { orderHash: o.order_hash, txHash, method: order.proof.method, signer: o.seller, receiver: mandate.dao, proposalId, action, proposalKind: kind } };

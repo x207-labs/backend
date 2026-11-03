@@ -78,7 +78,7 @@ export const grantRoutes: Route[] = [
     circleScoped: true,
     handler: ({ db, circle, query }) => {
       const status = query.get("status");
-      if (status !== null && !(STATUSES as readonly string[]).includes(status)) throw invalidRequest("status tidak dikenal", { status, allowed: STATUSES });
+      if (status !== null && !(STATUSES as readonly string[]).includes(status)) throw invalidRequest("unknown status", { status, allowed: STATUSES });
       const grantee = query.get("grantee");
       const grantor = query.get("grantor");
       const limit = parseLimit(query);
@@ -112,9 +112,9 @@ export const grantRoutes: Route[] = [
     circleScoped: true,
     handler: ({ db, circle, params }) => {
       const id = Number(params.grantId);
-      if (!Number.isSafeInteger(id) || id < 1) throw invalidRequest("grantId harus bilangan bulat positif", { grantId: params.grantId as string });
+      if (!Number.isSafeInteger(id) || id < 1) throw invalidRequest("grantId must be a positive integer", { grantId: params.grantId as string });
       const found = row<GrantRow>(db, `SELECT ${COLUMNS} FROM grants WHERE circle_id = ? AND grant_id = ?`, circle.circle_id, id);
-      if (!found) throw new ApiError(404, "grant_not_found", `Grant ${id} tidak ada`, { grantId: id });
+      if (!found) throw new ApiError(404, "grant_not_found", `Grant ${id} not found`, { grantId: id });
       return { status: 200, body: { circle: circle.circle_id, decimals: DECIMALS, ...view(found, escrowsOf(db, circle.circle_id, [found.grant_id]).get(found.grant_id)) } };
     },
   },

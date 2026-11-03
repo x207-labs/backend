@@ -96,8 +96,8 @@ const same = (a: string, b: string): boolean => {
 export function healthz(o: BrokerOps): Response {
   const q = queues(o);
   const problems: string[] = [];
-  if (q.leasesOverdue > 0) problems.push(`${q.leasesOverdue} sewa kelas B lewat hari bayar dan belum ditutup`);
-  if (q.providerRetryOverdue > 0) problems.push(`${q.providerRetryOverdue} akses penyedia menunggu pencabutan yang lewat waktu coba lagi`);
+  if (q.leasesOverdue > 0) problems.push(`${q.leasesOverdue} class B leases are past their pay day and not yet closed`);
+  if (q.providerRetryOverdue > 0) problems.push(`${q.providerRetryOverdue} provider accesses awaiting revocation are past their retry time`);
   const status = !q.dbOk ? "down" : problems.length > 0 ? "degraded" : "ok";
   return json(status === "down" ? 503 : 200, { status, time: new Date(o.now()).toISOString(), uptimeSeconds: Math.round((o.now() - o.telemetry.startedAtMs) / 1000), db: { ok: q.dbOk }, revokeQueue: { leasesOverdue: q.leasesOverdue, providerRevokePending: q.providerRevokePending }, problems });
 }
@@ -106,7 +106,7 @@ export function healthz(o: BrokerOps): Response {
 export function metrics(o: BrokerOps, request: Request): Response {
   if (o.metricsToken) {
     const given = (request.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "");
-    if (!same(given, o.metricsToken)) return json(401, { error: "invalid_signature", message: "metrics butuh Authorization: Bearer <token>" });
+    if (!same(given, o.metricsToken)) return json(401, { error: "invalid_signature", message: "metrics needs Authorization: Bearer <token>" });
   }
   const q = queues(o);
   const lines = [

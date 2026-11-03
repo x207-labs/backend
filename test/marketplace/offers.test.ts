@@ -52,7 +52,7 @@ describe("BE-041 negosiasi: penawaran dan penawaran balik", () => {
   it("aturan ronde: pemasang tak menawar sendiri, lawan tak membalas dirinya, ronde naik satu, satu utas per lawan", async () => {
     const { m, l, hash } = await withListing();
     const own = bid(m, "andi", l);
-    expect((await m.post(`/listings/${hash}/offers`, own)).json.error.message).toContain("tidak menawar listingnya sendiri");
+    expect((await m.post(`/listings/${hash}/offers`, own)).json.error.message).toContain("cannot make an offer on their own listing");
     const first = bid(m, "budi", l);
     const r1 = await m.post(`/listings/${hash}/offers`, first);
     expect((await m.post(`/listings/${hash}/offers`, bid(m, "budi", l, { value: "1" }))).json.error.code).toBe("already_exists");
@@ -60,7 +60,7 @@ describe("BE-041 negosiasi: penawaran dan penawaran balik", () => {
     const reply = bid(m, "andi", l, { previous: first.offer });
     expect((await m.post(`/listings/${hash}/offers`, reply)).status).toBe(400);
     const sameSide = bid(m, "budi", l, { round: 2 });
-    expect((await m.post(`/listings/${hash}/offers`, { ...sameSide, inReplyTo: r1.json.offerHash })).json.error.message).toContain("pihak lawan");
+    expect((await m.post(`/listings/${hash}/offers`, { ...sameSide, inReplyTo: r1.json.offerHash })).json.error.message).toContain("the other party");
     expect((await m.post(`/listings/${hash}/offers`, { ...reply, inReplyTo: "f".repeat(64) })).json.error.code).toBe("offer_not_found");
     expect((await m.post(`/listings/${hash}/offers`, { ...reply, inReplyTo: r1.json.offerHash })).status).toBe(201);
     // penawaran yang sudah dibalas tidak bisa dibalas lagi

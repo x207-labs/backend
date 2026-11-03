@@ -102,7 +102,7 @@ export const epochHandlers: HandlerMap = {
         ctx.circleId, e.epoch, p.account_id, p.role, signedUnits(p.net, "net"), units(p.amount, "amount"),
         ctx.circleId, e.epoch, p.account_id, p.status, p.role === "debtor" ? deadline : null, ctx.block.height,
       );
-      requireChange(debt.run(units(p.outstanding_debt, "outstanding_debt"), ctx.block.height, ctx.circleId, p.account_id).changes, `anggota ${p.account_id}`);
+      requireChange(debt.run(units(p.outstanding_debt, "outstanding_debt"), ctx.block.height, ctx.circleId, p.account_id).changes, `member ${p.account_id}`);
     }
   },
 };

@@ -59,7 +59,7 @@ export const paramRoutes: Route[] = [
       const limit = parseLimit(query);
       const cursor = decodeCursor(query);
       const before = cursor && typeof cursor.a === "number" ? cursor.a : null;
-      if (cursor && before === null) throw invalidRequest("cursor tidak valid");
+      if (cursor && before === null) throw invalidRequest("invalid cursor");
       const found = rows<ParamRow>(
         db,
         `SELECT id, field, old_value, new_value, effective_epoch, block_height FROM params

@@ -91,9 +91,9 @@ function proposalView(db: Database.Database, circleId: string, p: ProposalRow) {
 }
 
 function findProposal(db: Database.Database, circleId: string, hash: string): ProposalRow {
-  if (!HASH.test(hash)) throw invalidRequest("terms_hash harus 64 karakter heksadesimal huruf kecil", { termsHash: hash });
+  if (!HASH.test(hash)) throw invalidRequest("terms_hash must be 64 lowercase hex characters", { termsHash: hash });
   const found = row<ProposalRow>(db, "SELECT * FROM bundle_proposals WHERE circle_id = ? AND terms_hash = ?", circleId, hash);
-  if (!found) throw new ApiError(404, "proposal_not_found", `Usulan bundle ${hash} tidak ada`, { termsHash: hash });
+  if (!found) throw new ApiError(404, "proposal_not_found", `Bundle proposal ${hash} not found`, { termsHash: hash });
   return found;
 }
 
@@ -148,17 +148,17 @@ async function planAccept(
   openEpoch: OpenEpochResolver,
 ) {
   const open = await openEpoch(db, circle);
-  if (open === null) throw new ApiError(409, "epoch_not_open", "Tidak ada epoch open");
-  if (input.epoch !== undefined && input.epoch !== open) throw new ApiError(409, "epoch_not_open", "Bundle harus untuk epoch open saat ini", { expected: open, got: input.epoch as number });
-  if (input.searcher !== undefined && typeof input.searcher !== "string") throw invalidRequest("searcher harus string");
-  if (input.searcherShareBps !== undefined && !Number.isSafeInteger(input.searcherShareBps)) throw invalidRequest("searcherShareBps harus integer");
+  if (open === null) throw new ApiError(409, "epoch_not_open", "No epoch is open");
+  if (input.epoch !== undefined && input.epoch !== open) throw new ApiError(409, "epoch_not_open", "Bundle must be for the current open epoch", { expected: open, got: input.epoch as number });
+  if (input.searcher !== undefined && typeof input.searcher !== "string") throw invalidRequest("searcher must be a string");
+  if (input.searcherShareBps !== undefined && !Number.isSafeInteger(input.searcherShareBps)) throw invalidRequest("searcherShareBps must be an integer");
   // Tanpa pencari di body, ajakan yang melekat pada utas (BE-044) menentukan pencari dan jatahnya
   const referral = input.searcher === undefined ? threadReferral(db, circle.circle_id, offerRow) : undefined;
   const searcher = (input.searcher as string | undefined) ?? referral?.seeker;
   const shareBps = referral ? (input.searcherShareBps as number | undefined) ?? Number(referral.searcher_share_bps) : (input.searcherShareBps as number | undefined);
   if (searcher !== undefined) {
     activeMemberKey(db, circle.circle_id, searcher);
-    if (searcher === listingRow.account_id || searcher === offerRow.counterparty) throw invalidRequest("pencari harus akun di luar kedua pihak");
+    if (searcher === listingRow.account_id || searcher === offerRow.counterparty) throw invalidRequest("the searcher must be an account outside the two parties");
   }
 
   const listing = listingFromRow(circle.contract_id, listingRow);
@@ -186,25 +186,25 @@ export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver(),
     handler: async ({ db, circle, params, body, now }) => {
       const listingRow = findListing(db, circle.circle_id, params.hash as string);
       const offerRow = findOffer(db, circle.circle_id, listingRow.listing_hash, params.offerHash as string);
-      if (body === null || typeof body !== "object") throw invalidRequest("body harus objek");
+      if (body === null || typeof body !== "object") throw invalidRequest("body must be an object");
       const input = body as { account?: unknown; signature?: unknown; epoch?: unknown; searcher?: unknown; searcherShareBps?: unknown };
-      if (typeof input.account !== "string") throw invalidRequest("account wajib string");
-      if (input.account !== offerRow.awaiting) throw invalidRequest("hanya pihak yang ditunggu jawabannya boleh menerima", { expected: offerRow.awaiting });
+      if (typeof input.account !== "string") throw invalidRequest("account must be a string");
+      if (input.account !== offerRow.awaiting) throw invalidRequest("only the party whose answer is awaited may accept", { expected: offerRow.awaiting });
       const nowS = nowSeconds(now());
       const listingStatus = effectiveStatus(listingRow, nowS);
-      if (listingStatus !== "open") throw new ApiError(409, "listing_not_open", `Listing berstatus ${listingStatus}`, { listingHash: listingRow.listing_hash, status: listingStatus });
-      if (offerRow.status !== "pending") throw new ApiError(409, "offer_not_open", `Penawaran berstatus ${offerRow.status}`, { offerHash: offerRow.offer_hash, status: offerRow.status });
+      if (listingStatus !== "open") throw new ApiError(409, "listing_not_open", `Listing is ${listingStatus}`, { listingHash: listingRow.listing_hash, status: listingStatus });
+      if (offerRow.status !== "pending") throw new ApiError(409, "offer_not_open", `Offer is ${offerRow.status}`, { offerHash: offerRow.offer_hash, status: offerRow.status });
 
       const { open, searcher, plan } = await planAccept(db, circle, listingRow, offerRow, input, openEpoch);
 
       let signature: string | null = null;
       if (plan.kind === "bundle") {
-        if (typeof input.signature !== "string") throw invalidRequest("signature (tanda tangan terms_hash) wajib untuk bundle");
+        if (typeof input.signature !== "string") throw invalidRequest("signature (signature over terms_hash) is required for a bundle");
         const pubkey = activeMemberKey(db, circle.circle_id, input.account);
         if (!verifyBundleSignature(plan.terms, input.signature, pubkey)) {
-          throw new ApiError(401, "invalid_signature", "Tanda tangan bundle tidak cocok dengan terms_hash hasil hitung", { account: input.account, termsHash: plan.terms_hash });
+          throw new ApiError(401, "invalid_signature", "Bundle signature does not match the computed terms_hash", { account: input.account, termsHash: plan.terms_hash });
         }
-        if (!bundleParticipants(plan.terms).includes(input.account)) throw invalidRequest("akun penerima bukan peserta bundle");
+        if (!bundleParticipants(plan.terms).includes(input.account)) throw invalidRequest("the accepting account is not a bundle participant");
         signature = input.signature;
       } else {
         activeMemberKey(db, circle.circle_id, input.account);
@@ -234,7 +234,7 @@ export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver(),
           const inserted = db
             .prepare("INSERT OR IGNORE INTO bundle_proposals (circle_id, terms_hash, match_id, epoch, terms_json, created_at_ms) VALUES (?, ?, ?, ?, ?, ?)")
             .run(circle.circle_id, plan.terms_hash, matchId, open, JSON.stringify(plan.terms), now());
-          if (inserted.changes === 0) throw new ApiError(409, "already_exists", "Bundle dengan terms_hash ini sudah diusulkan", { termsHash: plan.terms_hash });
+          if (inserted.changes === 0) throw new ApiError(409, "already_exists", "A bundle with this terms_hash is already proposed", { termsHash: plan.terms_hash });
           db.prepare("INSERT INTO bundle_signatures (circle_id, terms_hash, account_id, signature, signed_at_ms) VALUES (?, ?, ?, ?, ?)")
             .run(circle.circle_id, plan.terms_hash, input.account as string, signature, now());
           refreshStatus(db, circle.circle_id, findProposal(db, circle.circle_id, plan.terms_hash));
@@ -261,13 +261,13 @@ export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver(),
     handler: async ({ db, circle, params, body, now }) => {
       const listingRow = findListing(db, circle.circle_id, params.hash as string);
       const offerRow = findOffer(db, circle.circle_id, listingRow.listing_hash, params.offerHash as string);
-      if (body === null || typeof body !== "object") throw invalidRequest("body harus objek");
+      if (body === null || typeof body !== "object") throw invalidRequest("body must be an object");
       const input = body as AcceptInput & { account?: unknown };
-      if (typeof input.account !== "string") throw invalidRequest("account wajib string");
-      if (input.account !== offerRow.awaiting) throw invalidRequest("hanya pihak yang ditunggu jawabannya boleh menerima", { expected: offerRow.awaiting });
+      if (typeof input.account !== "string") throw invalidRequest("account must be a string");
+      if (input.account !== offerRow.awaiting) throw invalidRequest("only the party whose answer is awaited may accept", { expected: offerRow.awaiting });
       const listingStatus = effectiveStatus(listingRow, nowSeconds(now()));
-      if (listingStatus !== "open") throw new ApiError(409, "listing_not_open", `Listing berstatus ${listingStatus}`, { listingHash: listingRow.listing_hash, status: listingStatus });
-      if (offerRow.status !== "pending") throw new ApiError(409, "offer_not_open", `Penawaran berstatus ${offerRow.status}`, { offerHash: offerRow.offer_hash, status: offerRow.status });
+      if (listingStatus !== "open") throw new ApiError(409, "listing_not_open", `Listing is ${listingStatus}`, { listingHash: listingRow.listing_hash, status: listingStatus });
+      if (offerRow.status !== "pending") throw new ApiError(409, "offer_not_open", `Offer is ${offerRow.status}`, { offerHash: offerRow.offer_hash, status: offerRow.status });
       const { open, searcher, shareBps: effectiveShare, plan } = await planAccept(db, circle, listingRow, offerRow, input, openEpoch);
       const shareBps = searcher === undefined ? 0 : (effectiveShare ?? 0);
       const quick = { value: offerRow.value, discountBps: Number(listingRow.discount_bps), searcherShareBps: shareBps };
@@ -297,9 +297,9 @@ export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver(),
     pattern: "/x207/circles/{circle}/bundle-proposals",
     circleScoped: true,
     handler: async ({ db, circle, body, now }) => {
-      if (body === null || typeof body !== "object") throw invalidRequest("body harus objek");
+      if (body === null || typeof body !== "object") throw invalidRequest("body must be an object");
       const { terms, termsHash: claimed, searcher } = body as { terms?: unknown; termsHash?: unknown; searcher?: unknown };
-      if (terms === null || typeof terms !== "object") throw invalidRequest("terms wajib objek");
+      if (terms === null || typeof terms !== "object") throw invalidRequest("terms must be an object");
       const candidate = terms as BundleTerms;
       try {
         validateBundleTerms(candidate);
@@ -309,15 +309,15 @@ export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver(),
       }
       // A bundle that pays a seeker must name that leg, or max_search_share_bps would not apply to it (CT-082)
       if (searcher !== undefined) {
-        if (typeof searcher !== "string") throw invalidRequest("searcher harus string");
-        if (!candidate.legs.some((l) => l.payee === searcher)) throw invalidRequest("searcher bukan penerima leg mana pun di terms", { searcher });
-        if (candidate.search_leg?.payee !== searcher) throw invalidRequest("search_leg wajib ada dan menunjuk leg pencari", { searcher });
+        if (typeof searcher !== "string") throw invalidRequest("searcher must be a string");
+        if (!candidate.legs.some((l) => l.payee === searcher)) throw invalidRequest("searcher is not the payee of any leg in terms", { searcher });
+        if (candidate.search_leg?.payee !== searcher) throw invalidRequest("search_leg is required and must point to the searcher's leg", { searcher });
       }
-      if (candidate.circle !== circle.contract_id) throw invalidRequest("terms.circle harus akun kontrak lingkaran", { expected: circle.contract_id, got: candidate.circle });
+      if (candidate.circle !== circle.contract_id) throw invalidRequest("terms.circle must be the circle contract account", { expected: circle.contract_id, got: candidate.circle });
       const hash = termsHash(candidate);
-      if (claimed !== undefined && claimed !== hash) throw invalidRequest("termsHash tidak sama dengan hasil hitung syarat", { computed: hash });
+      if (claimed !== undefined && claimed !== hash) throw invalidRequest("termsHash does not match the computed hash of the terms", { computed: hash });
       const open = await openEpoch(db, circle);
-      if (open === null || candidate.epoch !== open) throw new ApiError(409, "epoch_not_open", "Bundle harus untuk epoch open saat ini", { expected: open, got: candidate.epoch });
+      if (open === null || candidate.epoch !== open) throw new ApiError(409, "epoch_not_open", "Bundle must be for the current open epoch", { expected: open, got: candidate.epoch });
       for (const account of bundleParticipants(candidate)) activeMemberKey(db, circle.circle_id, account);
 
       const existing = row<ProposalRow>(db, "SELECT * FROM bundle_proposals WHERE circle_id = ? AND terms_hash = ?", circle.circle_id, hash);
@@ -334,7 +334,7 @@ export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver(),
     handler: ({ db, circle, query, now }) => {
       settleDeliveries(db, circle.circle_id, now());
       const status = query.get("status") ?? "all";
-      if (!(PROPOSAL_STATUSES as readonly string[]).includes(status)) throw invalidRequest("status tidak dikenal", { status, allowed: PROPOSAL_STATUSES });
+      if (!(PROPOSAL_STATUSES as readonly string[]).includes(status)) throw invalidRequest("status is not recognized", { status, allowed: PROPOSAL_STATUSES });
       const found = rows<ProposalRow>(
         db,
         `SELECT * FROM bundle_proposals WHERE circle_id = ? ${status === "all" ? "" : "AND status = ?"} ORDER BY id`,
@@ -365,22 +365,22 @@ export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver(),
     handler: async ({ db, circle, params, body, now }) => {
       settleDeliveries(db, circle.circle_id, now());
       const proposal = findProposal(db, circle.circle_id, params.termsHash as string);
-      if (body === null || typeof body !== "object") throw invalidRequest("body harus objek");
+      if (body === null || typeof body !== "object") throw invalidRequest("body must be an object");
       const { account, signature } = body as { account?: unknown; signature?: unknown };
-      if (typeof account !== "string") throw invalidRequest("account wajib string");
-      if (typeof signature !== "string") throw invalidRequest("signature wajib string");
+      if (typeof account !== "string") throw invalidRequest("account must be a string");
+      if (typeof signature !== "string") throw invalidRequest("signature must be a string");
       const terms = JSON.parse(proposal.terms_json) as BundleTerms;
-      if (!bundleParticipants(terms).includes(account)) throw invalidRequest("akun bukan peserta bundle", { account });
+      if (!bundleParticipants(terms).includes(account)) throw invalidRequest("account is not a bundle participant", { account });
       const open = await openEpoch(db, circle);
-      if (open !== Number(proposal.epoch)) throw new ApiError(409, "epoch_not_open", "Epoch bundle ini bukan epoch open lagi", { bundleEpoch: Number(proposal.epoch), open });
+      if (open !== Number(proposal.epoch)) throw new ApiError(409, "epoch_not_open", "This bundle's epoch is no longer the open epoch", { bundleEpoch: Number(proposal.epoch), open });
       const pubkey = activeMemberKey(db, circle.circle_id, account);
       if (!verifyBundleSignature(terms, signature, pubkey)) {
-        throw new ApiError(401, "invalid_signature", "Tanda tangan tidak cocok dengan terms_hash", { account, termsHash: proposal.terms_hash });
+        throw new ApiError(401, "invalid_signature", "Signature does not match terms_hash", { account, termsHash: proposal.terms_hash });
       }
       const inserted = db
         .prepare("INSERT OR IGNORE INTO bundle_signatures (circle_id, terms_hash, account_id, signature, signed_at_ms) VALUES (?, ?, ?, ?, ?)")
         .run(circle.circle_id, proposal.terms_hash, account, signature, now());
-      if (inserted.changes === 0) throw new ApiError(409, "already_exists", "Akun ini sudah menandatangani bundle", { account });
+      if (inserted.changes === 0) throw new ApiError(409, "already_exists", "This account has already signed the bundle", { account });
       refreshStatus(db, circle.circle_id, proposal);
       return { status: 201, body: proposalView(db, circle.circle_id, findProposal(db, circle.circle_id, proposal.terms_hash)) };
     },

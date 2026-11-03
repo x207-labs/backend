@@ -70,13 +70,13 @@ export function evaluateWithdrawThreshold(input: WithdrawThresholdInput): Withdr
 
   // Chain selain Base: biaya tetap > 1% nominal butuh persetujuan eksplisit.
   if (fee * 100n > amount * HIGH_FEE_PCT_NUM) {
-    const message = `Biaya tetap pencairan ke ${chain} ${usd(fee)} USD, estimasi kerugian ${pct(estimatedLossPct)} dari ${usd(amount)} USD`;
+    const message = `Fixed withdrawal fee to ${chain} is ${usd(fee)} USD, estimated loss ${pct(estimatedLossPct)} of ${usd(amount)} USD`;
     if (!input.acceptHighFee) {
       return {
         ok: false,
         error: {
           code: "high_fee_requires_ack",
-          message: `${message}; setujui dengan acceptHighFee`,
+          message: `${message}; approve with acceptHighFee`,
           details: { chain, amount: input.amount, withdrawFee: input.withdrawFee, estimatedLossPct },
         },
       };

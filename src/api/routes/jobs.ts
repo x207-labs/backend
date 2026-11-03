@@ -16,7 +16,7 @@ export function jobRoutes(client: OneClickClient): Route[] {
       handler: async ({ db, params, now }) => {
         const jobId = params.jobId as string;
         const found = getJob(db, jobId);
-        if (!found) throw new ApiError(404, "job_not_found", `Job ${jobId} tidak dikenal`, { jobId });
+        if (!found) throw new ApiError(404, "job_not_found", `Unknown job ${jobId}`, { jobId });
         let job = found;
         try {
           job = await refreshJob({ db, client, now }, found);

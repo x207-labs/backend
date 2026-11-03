@@ -154,16 +154,16 @@ export async function guardedGet(rawUrl: string, options: GuardedOptions = {}): 
   try {
     url = new URL(rawUrl);
   } catch {
-    return forbid("URL tidak sah", { url: rawUrl });
+    return forbid("URL is invalid", { url: rawUrl });
   }
-  if (url.protocol !== "https:") forbid("Hanya https yang diperbolehkan", { scheme: url.protocol });
-  if (url.username !== "" || url.password !== "") forbid("URL tidak boleh memuat kredensial");
-  if (url.port !== "" && url.port !== "443") forbid("Hanya port 443 yang diperbolehkan", { port: url.port });
+  if (url.protocol !== "https:") forbid("Only https is allowed", { scheme: url.protocol });
+  if (url.username !== "" || url.password !== "") forbid("URL must not contain credentials");
+  if (url.port !== "" && url.port !== "443") forbid("Only port 443 is allowed", { port: url.port });
   // `example.com.` is `example.com`: the dot is taken off before the name is resolved, checked and sent as SNI, and a name that is only dots is refused
   const host = url.hostname.replace(/^\[|\]$/g, "").replace(/\.+$/, "");
-  if (host === "") return forbid("Nama host kosong", { url: rawUrl });
-  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) forbid("Nama host lokal ditolak", { host });
-  if (isIP(host) !== 0 && !isPublicIp(host)) forbid("Alamat bukan IP publik", { host });
+  if (host === "") return forbid("Host name is empty", { url: rawUrl });
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) forbid("Local host name rejected", { host });
+  if (isIP(host) !== 0 && !isPublicIp(host)) forbid("Address is not a public IP", { host });
   const resolver = options.resolver ?? systemResolver;
   let addresses: string[];
   if (isIP(host) !== 0) addresses = [host];
@@ -177,8 +177,8 @@ export async function guardedGet(rawUrl: string, options: GuardedOptions = {}): 
   if (addresses.length === 0) return { reachable: false, reason: "dns" };
   // one private answer among public ones is enough to refuse: the connection could be sent there
   const bad = addresses.find((a) => !isPublicIp(a));
-  if (bad !== undefined) forbid("Nama diresolve ke alamat yang bukan IP publik", { host });
-  const transport = options.transport ?? httpsTransport(resolver, () => forbid("Alamat berubah menjadi bukan IP publik saat koneksi", { host }));
+  if (bad !== undefined) forbid("Name resolves to an address that is not a public IP", { host });
+  const transport = options.transport ?? httpsTransport(resolver, () => forbid("Address changed to a non-public IP at connection time", { host }));
   let res: { status: number; body: Buffer; truncated: boolean };
   const total = options.timeoutMs ?? FETCH_TIMEOUT_MS;
   let timer: NodeJS.Timeout | undefined;
@@ -194,11 +194,11 @@ export async function guardedGet(rawUrl: string, options: GuardedOptions = {}): 
   } catch (error) {
     clearTimeout(timer);
     if (error instanceof GuardedFetchError) throw error;
-    if (error instanceof Error && error.message === "timeout") return forbid("Batas waktu 5 detik terlewati", { host });
+    if (error instanceof Error && error.message === "timeout") return forbid("5 second time limit exceeded", { host });
     return { reachable: false, reason: "connect" };
   }
-  if (res.status >= 300 && res.status < 400) forbid("Redirect tidak diikuti", { status: res.status });
+  if (res.status >= 300 && res.status < 400) forbid("Redirect not followed", { status: res.status });
   const cap = options.maxBytes ?? MAX_BODY_BYTES;
-  if (res.truncated || res.body.length > cap) forbid(`Isi lebih dari ${cap} byte`, { host });
+  if (res.truncated || res.body.length > cap) forbid(`Content is larger than ${cap} bytes`, { host });
   return { reachable: true, status: res.status, body: res.body.toString("utf8"), bytes: res.body };
 }

@@ -40,7 +40,7 @@ export const orderProofRoutes: Route[] = [
       syncOrders(db, circle.circle_id, nowSeconds(now()));
       const o = findOrder(db, circle.circle_id, params.hash as string);
       const doc = JSON.parse(o.order_json) as { proof: { method: string; amount_per_tx: string } | null };
-      if (o.pattern !== "proof" || doc.proof === null) throw new ApiError(409, "order_not_proof_kind", `pesanan ${o.kind} tidak dibayar per bukti on-chain`, { kind: o.kind });
+      if (o.pattern !== "proof" || doc.proof === null) throw new ApiError(409, "order_not_proof_kind", `order ${o.kind} is not paid by on-chain proof`, { kind: o.kind });
       if (o.kind === "delegate") {
         const claims = rows<{ tx_hash: string; signer: string; receiver: string; proposal_id: bigint; action: string; proposal_kind: string; created_at_ms: bigint }>(
           db, "SELECT tx_hash, signer, receiver, proposal_id, action, proposal_kind, created_at_ms FROM order_claims WHERE circle_id = ? AND order_hash = ? ORDER BY created_at_ms, proposal_id", circle.circle_id, o.order_hash,

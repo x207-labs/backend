@@ -29,7 +29,7 @@ export const bundleRoutes: Route[] = [
     circleScoped: true,
     handler: ({ db, circle, query }) => {
       const status = query.get("status") ?? "active";
-      if (!(STATUSES as readonly string[]).includes(status)) throw invalidRequest("status tidak dikenal", { status, allowed: STATUSES });
+      if (!(STATUSES as readonly string[]).includes(status)) throw invalidRequest("unknown status", { status, allowed: STATUSES });
       const limit = parseLimit(query);
       const cursor = decodeCursor(query);
       const after = cursor === null ? Number.MAX_SAFE_INTEGER : Number((cursor as { id?: number }).id ?? Number.MAX_SAFE_INTEGER);

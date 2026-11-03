@@ -28,7 +28,7 @@ export const eventRoutes: Route[] = [
     circleScoped: true,
     handler: ({ db, circle, query }) => {
       const names = (query.get("event") ?? "").split(",").filter((n) => n !== "");
-      for (const n of names) if (!NAME.test(n)) throw invalidRequest("nama event tidak sah", { event: n });
+      for (const n of names) if (!NAME.test(n)) throw invalidRequest("invalid event name", { event: n });
       const limit = parseLimit(query);
       const cursor = decodeCursor(query) as { h?: number; r?: string; i?: number } | null;
       const h = cursor?.h ?? -1;

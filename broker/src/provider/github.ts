@@ -25,14 +25,14 @@ export interface GithubOptions {
 type Target = { kind: "repo"; owner: string; repo: string } | { kind: "org"; owner: string };
 
 function parseTarget(resource: string | null, allowed: readonly string[]): Target {
-  if (resource === null) throw new Error("grant GitHub wajib menamai resource (owner/repo atau org:<org>)");
+  if (resource === null) throw new Error("GitHub grant must name a resource (owner/repo or org:<org>)");
   const org = /^org:(.+)$/.exec(resource);
   const t: Target | null = org ? (LOGIN.test(org[1] as string) ? { kind: "org", owner: org[1] as string } : null) : (() => {
     const [owner, repo, extra] = resource.split("/");
     return owner !== undefined && repo !== undefined && extra === undefined && LOGIN.test(owner) && SLUG.test(repo) && repo !== "." && repo !== ".." ? { kind: "repo", owner, repo } : null;
   })();
-  if (t === null) throw new Error(`resource ${JSON.stringify(resource.slice(0, 80))} tidak sah`);
-  if (!allowed.some((a) => a.toLowerCase() === t.owner.toLowerCase())) throw new Error(`pemilik ${t.owner} tidak ada di allowedOwners broker ini`);
+  if (t === null) throw new Error(`resource ${JSON.stringify(resource.slice(0, 80))} is invalid`);
+  if (!allowed.some((a) => a.toLowerCase() === t.owner.toLowerCase())) throw new Error(`owner ${t.owner} is not in this broker's allowedOwners`);
   return t;
 }
 
@@ -54,7 +54,7 @@ function decodeHandle(handle: string): Handle {
   if (org) return { target: { kind: "org", owner: org[1] as string }, login: org[2] as string, ...common };
   const repo = /^gh:([^/:]+)\/([^:]+):([^:]+)$/.exec(base);
   if (repo) return { target: { kind: "repo", owner: repo[1] as string, repo: repo[2] as string }, login: repo[3] as string, ...common };
-  throw new Error("handle GitHub tidak dikenal");
+  throw new Error("unknown GitHub handle");
 }
 
 export class GithubAdapter implements ProviderAccessAdapter {
@@ -77,12 +77,12 @@ export class GithubAdapter implements ProviderAccessAdapter {
   }
 
   async verifyGranteeRef(ref: string): Promise<{ ok: true } | { ok: false; reason: string }> {
-    if (!LOGIN.test(ref)) return { ok: false, reason: "bukan login GitHub" };
+    if (!LOGIN.test(ref)) return { ok: false, reason: "not a GitHub login" };
     try {
       await call(this.#fetch, this.#base, this.#headers(), { method: "GET", path: `/users/${ref}` }, [200]);
       return { ok: true };
     } catch (error) {
-      if (error instanceof ProviderHttpError && error.status === 404) return { ok: false, reason: "pengguna GitHub tidak ada" };
+      if (error instanceof ProviderHttpError && error.status === 404) return { ok: false, reason: "GitHub user does not exist" };
       throw error;
     }
   }
@@ -102,10 +102,10 @@ export class GithubAdapter implements ProviderAccessAdapter {
       proof, challenge: args.challenge, voucherPublicKey: args.voucherPublicKey,
       fetchGist: async () => {
         const res = await guardedGet(`https://api.github.com/gists/${id}`, { ...(this.#o.gistFetch?.resolver ? { resolver: this.#o.gistFetch.resolver } : {}), ...(this.#o.gistFetch?.transport ? { transport: this.#o.gistFetch.transport } : {}), maxBytes: 262_144, headers: { authorization: `Bearer ${this.#o.token}`, accept: "application/vnd.github+json", "x-github-api-version": "2022-11-28" } });
-        if (!res.reachable || res.status !== 200) throw new Error(`GitHub menjawab ${res.reachable ? res.status : "tidak terjangkau"}`);
+        if (!res.reachable || res.status !== 200) throw new Error(`GitHub responded ${res.reachable ? res.status : "unreachable"}`);
         const gist = JSON.parse(res.body) as { owner?: { login?: string }; files?: Record<string, { content?: string; truncated?: boolean }> };
         const owner = gist.owner?.login;
-        if (typeof owner !== "string") throw new Error("gist tanpa pemilik");
+        if (typeof owner !== "string") throw new Error("gist has no owner");
         return { owner, files: Object.values(gist.files ?? {}).filter((f) => f.truncated !== true && typeof f.content === "string").map((f) => f.content as string) };
       },
     });
@@ -123,7 +123,7 @@ export class GithubAdapter implements ProviderAccessAdapter {
     const same = before !== null && before.grantId === request.grantId && before.login === login ? before : null;
     if (target.kind === "repo") {
       const permission = request.permission ?? "pull";
-      if (!(GITHUB_PERMISSIONS as readonly string[]).includes(permission)) throw new Error(`permission ${permission} tidak dikenal`);
+      if (!(GITHUB_PERMISSIONS as readonly string[]).includes(permission)) throw new Error(`unknown permission ${permission}`);
       const r = await call(this.#fetch, this.#base, this.#headers(), { method: "PUT", path: `/repos/${target.owner}/${target.repo}/collaborators/${login}`, body: JSON.stringify({ permission }) });
       // 201 = a new invitation; 204 = the login is a collaborator already. At the first call that means it was there before this grant (never removed at the end); at a renewal, it is what this grant gave
       const invitationId = r.status === 201 ? (JSON.parse(r.text) as { id?: number }).id ?? null : same?.invitationId ?? null;

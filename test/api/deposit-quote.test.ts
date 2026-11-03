@@ -58,7 +58,7 @@ describe("BE-027 POST /x207/settlement/deposit/quote", () => {
       depositAddress: "mock-deposit-address", paymentDeadline: null,
     });
     expect(json.quoteDeadline).toMatch(/^2026-11-09T/);
-    expect(json.nextSteps.join("\n")).toContain("ft_withdraw dari intents.near ke akun NEAR tanpa msg");
+    expect(json.nextSteps.join("\n")).toContain("ft_withdraw from intents.near to the NEAR account without msg");
     expect(json.nextSteps.join("\n")).toContain('{"action":"stake"}');
     const sent = (transport as Recording).quotes[0] as QuoteRequest;
     expect(sent.swapType).toBe(QuoteRequest.swapType.EXACT_OUTPUT);

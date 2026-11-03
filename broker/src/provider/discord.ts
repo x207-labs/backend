@@ -22,10 +22,10 @@ export function discordIdentify(options: { baseUrl?: string; fetch?: FetchLike }
   const base = options.baseUrl ?? "https://discord.com/api/v10";
   const doFetch = options.fetch ?? ((input, init) => fetch(input, init));
   return async (provider, token) => {
-    if (provider !== "discord") throw new Error(`penyedia OAuth ${provider} bukan discord`);
+    if (provider !== "discord") throw new Error(`OAuth provider ${provider} is not discord`);
     const r = await call(doFetch, base, { authorization: `Bearer ${token}`, "user-agent": "x207-broker" }, { method: "GET", path: "/users/@me" }, [200]);
     const id = (JSON.parse(r.text) as { id?: unknown }).id;
-    if (typeof id !== "string") throw new Error("jawaban Discord tanpa id");
+    if (typeof id !== "string") throw new Error("Discord response has no id");
     return { subject: id };
   };
 }
@@ -39,7 +39,7 @@ export class DiscordAdapter implements ProviderAccessAdapter {
   readonly #fetch: FetchLike;
 
   constructor(options: DiscordOptions) {
-    if (!SNOWFLAKE.test(options.guildId)) throw new Error("guildId bukan snowflake");
+    if (!SNOWFLAKE.test(options.guildId)) throw new Error("guildId is not a snowflake");
     this.#o = options;
     this.#base = options.baseUrl ?? "https://discord.com/api/v10";
     this.#fetch = options.fetch ?? ((input, init) => fetch(input, init));
@@ -50,19 +50,19 @@ export class DiscordAdapter implements ProviderAccessAdapter {
   }
 
   async verifyGranteeRef(ref: string): Promise<{ ok: true } | { ok: false; reason: string }> {
-    if (!SNOWFLAKE.test(ref)) return { ok: false, reason: "bukan id pengguna Discord" };
+    if (!SNOWFLAKE.test(ref)) return { ok: false, reason: "not a Discord user id" };
     try {
       await call(this.#fetch, this.#base, this.#headers(), { method: "GET", path: `/guilds/${this.#o.guildId}/members/${ref}` }, [200]);
       return { ok: true };
     } catch (error) {
-      if (error instanceof ProviderHttpError && error.status === 404) return { ok: false, reason: "pengguna bukan anggota server ini" };
+      if (error instanceof ProviderHttpError && error.status === 404) return { ok: false, reason: "user is not a member of this server" };
       throw error;
     }
   }
 
   /** `oauth` (SD-071): the user id that Discord reports for the token must be the reference. With no verifier the reference cannot be proven: the grant goes on with a warning. */
   async proveGranteeRef(args: ProveGranteeArgs): Promise<boolean | { unproven: string }> {
-    if (this.#o.oauth === undefined) return { unproven: "Discord OAuth tidak dipasang di broker ini: grantee_ref hanya dicek ada di server, bukan milik penyewa" };
+    if (this.#o.oauth === undefined) return { unproven: "Discord OAuth is not set up on this broker: grantee_ref is only checked to exist on the server, not to belong to the renter" };
     if (args.proof === null) return false;
     const proof = parseGranteeProof(args.proof);
     if (proof.kind !== "oauth") return false;
@@ -70,8 +70,8 @@ export class DiscordAdapter implements ProviderAccessAdapter {
   }
 
   #role(resource: string | null): string {
-    if (resource === null || !SNOWFLAKE.test(resource)) throw new Error("resource harus id role Discord");
-    if (this.#o.allowedRoleIds && this.#o.allowedRoleIds.length > 0 && !this.#o.allowedRoleIds.includes(resource)) throw new Error("role tidak ada di allowedRoleIds broker ini");
+    if (resource === null || !SNOWFLAKE.test(resource)) throw new Error("resource must be a Discord role id");
+    if (this.#o.allowedRoleIds && this.#o.allowedRoleIds.length > 0 && !this.#o.allowedRoleIds.includes(resource)) throw new Error("role is not in this broker's allowedRoleIds");
     return resource;
   }
 
@@ -83,7 +83,7 @@ export class DiscordAdapter implements ProviderAccessAdapter {
 
   #decode(handle: string): { user: string; role: string } {
     const m = /^discord:(\d+):(\d+):(\d+)$/.exec(handle);
-    if (!m || m[1] !== this.#o.guildId) throw new Error("handle Discord tidak dikenal");
+    if (!m || m[1] !== this.#o.guildId) throw new Error("unknown Discord handle");
     return { user: m[2] as string, role: m[3] as string };
   }
 

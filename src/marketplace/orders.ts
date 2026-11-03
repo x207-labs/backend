@@ -42,15 +42,15 @@ export interface MilestoneNotice {
 }
 
 export function validateMilestoneNotice(n: MilestoneNotice): void {
-  if (typeof n.circle !== "string" || !ACCOUNT.test(n.circle) || typeof n.actor !== "string" || !ACCOUNT.test(n.actor)) badNotice("circle dan actor harus account id");
-  if (!HASH.test(String(n.order_hash))) badNotice("order_hash harus 64 heksadesimal huruf kecil");
-  if (!Number.isSafeInteger(n.milestone) || n.milestone < 1) badNotice("milestone harus bilangan bulat >= 1");
-  if (![...MILESTONE_ACTIONS, ...OUTCOME_ACTIONS].includes(n.action)) badNotice("action tidak dikenal");
-  if (!Number.isSafeInteger(n.at) || n.at < 1) badNotice("at harus detik unix bulat");
+  if (typeof n.circle !== "string" || !ACCOUNT.test(n.circle) || typeof n.actor !== "string" || !ACCOUNT.test(n.actor)) badNotice("circle and actor must be account ids");
+  if (!HASH.test(String(n.order_hash))) badNotice("order_hash must be 64 lowercase hex characters");
+  if (!Number.isSafeInteger(n.milestone) || n.milestone < 1) badNotice("milestone must be an integer >= 1");
+  if (![...MILESTONE_ACTIONS, ...OUTCOME_ACTIONS].includes(n.action)) badNotice("action is not recognized");
+  if (!Number.isSafeInteger(n.at) || n.at < 1) badNotice("at must be whole unix seconds");
   const needsHash = n.action === "delivered" || n.action === "proposed";
-  if (needsHash ? !HASH.test(String(n.deliverable_hash)) : n.deliverable_hash !== null) badNotice("deliverable_hash wajib (64 heksadesimal) untuk delivered dan proposed, dan tidak untuk yang lain");
+  if (needsHash ? !HASH.test(String(n.deliverable_hash)) : n.deliverable_hash !== null) badNotice("deliverable_hash is required (64 hex) for delivered and proposed, and not allowed otherwise");
   if (n.action === "disputed" ? !(DISPUTE_REASONS as readonly string[]).includes(String(n.reason)) : n.action === "rejected" ? n.reason !== null && (typeof n.reason !== "string" || n.reason.length > 256) : n.reason !== null) {
-    badNotice("reason wajib untuk disputed (not_received, not_as_described, other), opsional untuk rejected, dan tidak untuk yang lain");
+    badNotice("reason is required for disputed (not_received, not_as_described, other), optional for rejected, and not allowed otherwise");
   }
 }
 
@@ -109,9 +109,9 @@ const milestonesOf = (db: Database.Database, circleId: string, hash: string): Mi
   rows<MilestoneRow>(db, "SELECT * FROM order_milestones WHERE circle_id = ? AND order_hash = ? ORDER BY idx", circleId, hash);
 
 export function findOrder(db: Database.Database, circleId: string, hash: string): OrderRow {
-  if (!HASH.test(hash)) throw invalidRequest("hash pesanan harus 64 heksadesimal huruf kecil", { hash });
+  if (!HASH.test(hash)) throw invalidRequest("order hash must be 64 lowercase hex characters", { hash });
   const found = row<OrderRow>(db, "SELECT * FROM orders WHERE circle_id = ? AND order_hash = ?", circleId, hash);
-  if (!found) throw new ApiError(404, "order_not_found", `Pesanan ${hash} tidak ada`, { orderHash: hash });
+  if (!found) throw new ApiError(404, "order_not_found", `Order ${hash} not found`, { orderHash: hash });
   return found;
 }
 
@@ -184,10 +184,10 @@ async function assertDao(view: ViewFunction, dao: string): Promise<void> {
     policy = await view(dao, "get_policy", {});
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (NO_SUCH_VIEW.test(message)) throw new ApiError(400, "order_bad_mandate", `mandate.dao ${dao} tidak punya view get_policy`, { reason: "not_a_dao", dao });
-    throw new ApiError(503, "claim_rpc_unavailable", "RPC tidak menjawab saat memeriksa mandate.dao", { dao });
+    if (NO_SUCH_VIEW.test(message)) throw new ApiError(400, "order_bad_mandate", `mandate.dao ${dao} has no get_policy view`, { reason: "not_a_dao", dao });
+    throw new ApiError(503, "claim_rpc_unavailable", "RPC did not answer while checking mandate.dao", { dao });
   }
-  if (policy === null || typeof policy !== "object") throw new ApiError(400, "order_bad_mandate", `mandate.dao ${dao} tidak menjawab get_policy dengan objek`, { reason: "not_a_dao", dao });
+  if (policy === null || typeof policy !== "object") throw new ApiError(400, "order_bad_mandate", `mandate.dao ${dao} did not answer get_policy with an object`, { reason: "not_a_dao", dao });
 }
 
 export function orderRoutes(resolveOpenEpoch: OpenEpochResolver, options: OrderOptions = {}): Route[] {
@@ -197,24 +197,24 @@ export function orderRoutes(resolveOpenEpoch: OpenEpochResolver, options: OrderO
 
   /** Verify the notice of a body for an order: format, circle, clock, signature of an active member. */
   function readNotice(db: Database.Database, circle: { circle_id: string; contract_id: string }, o: OrderRow, body: unknown, now: () => number, index?: number) {
-    if (body === null || typeof body !== "object") throw invalidRequest("body harus objek");
+    if (body === null || typeof body !== "object") throw invalidRequest("body must be an object");
     const { notice, signature } = body as { notice?: unknown; signature?: unknown };
-    if (typeof signature !== "string") throw invalidRequest("signature wajib string");
-    if (notice === null || typeof notice !== "object") throw invalidRequest("notice wajib objek");
+    if (typeof signature !== "string") throw invalidRequest("signature must be a string");
+    if (notice === null || typeof notice !== "object") throw invalidRequest("notice must be an object");
     const n = notice as MilestoneNotice;
     try {
       validateMilestoneNotice(n);
     } catch (error) {
       asApiError(error);
     }
-    if (n.circle !== circle.contract_id) throw invalidRequest("notice.circle harus akun kontrak lingkaran", { expected: circle.contract_id, got: n.circle });
-    if (n.order_hash !== o.order_hash) throw invalidRequest("notice.order_hash harus hash pesanan ini");
-    if (index !== undefined && n.milestone !== index) throw invalidRequest("notice.milestone harus sama dengan index di path", { index, got: n.milestone });
+    if (n.circle !== circle.contract_id) throw invalidRequest("notice.circle must be the circle contract account", { expected: circle.contract_id, got: n.circle });
+    if (n.order_hash !== o.order_hash) throw invalidRequest("notice.order_hash must be this order's hash");
+    if (index !== undefined && n.milestone !== index) throw invalidRequest("notice.milestone must equal the index in the path", { index, got: n.milestone });
     const nowS = nowSeconds(now());
-    if (Math.abs(n.at - nowS) > NOTICE_SKEW_SECONDS) throw invalidRequest(`notice.at menyimpang lebih dari ${NOTICE_SKEW_SECONDS} detik dari jam server`, { at: n.at, now: nowS });
-    if (n.actor !== o.buyer && n.actor !== o.seller) throw new ApiError(403, "order_not_party", "Hanya pembeli atau penjual pesanan ini yang boleh mengirim notice", { actor: n.actor });
+    if (Math.abs(n.at - nowS) > NOTICE_SKEW_SECONDS) throw invalidRequest(`notice.at is more than ${NOTICE_SKEW_SECONDS} seconds off the server clock`, { at: n.at, now: nowS });
+    if (n.actor !== o.buyer && n.actor !== o.seller) throw new ApiError(403, "order_not_party", "Only the buyer or seller of this order may send a notice", { actor: n.actor });
     if (!verifyNoticeJson(serializeMilestoneNotice(n), circle.contract_id, signature, activeMemberKey(db, circle.circle_id, n.actor))) {
-      throw new ApiError(401, "invalid_signature", "Tanda tangan notice tidak cocok dengan kunci voucher anggota", { account: n.actor });
+      throw new ApiError(401, "invalid_signature", "Notice signature does not match the member's voucher key", { account: n.actor });
     }
     return { n, signature, nowS };
   }
@@ -226,12 +226,12 @@ export function orderRoutes(resolveOpenEpoch: OpenEpochResolver, options: OrderO
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(circleId, n.order_hash, n.milestone, milestoneNoticeHash(n), n.actor, n.action, n.at, n.deliverable_hash, n.reason, signature, nowMs);
-    if (inserted.changes === 0) throw new ApiError(409, "already_exists", "Notice ini sudah tercatat", {});
+    if (inserted.changes === 0) throw new ApiError(409, "already_exists", "This notice is already recorded", {});
   }
 
   function milestoneOf(db: Database.Database, circleId: string, hash: string, index: number): MilestoneRow {
     const m = row<MilestoneRow>(db, "SELECT * FROM order_milestones WHERE circle_id = ? AND order_hash = ? AND idx = ?", circleId, hash, index);
-    if (!m) throw new ApiError(404, "milestone_not_found", `Tonggak ${index} tidak ada`, { index });
+    if (!m) throw new ApiError(404, "milestone_not_found", `Milestone ${index} not found`, { index });
     return m;
   }
 
@@ -246,10 +246,10 @@ export function orderRoutes(resolveOpenEpoch: OpenEpochResolver, options: OrderO
       circleScoped: true,
       handler: async ({ db, circle, body, now }) => {
         syncOrders(db, circle.circle_id, nowSeconds(now()));
-        if (body === null || typeof body !== "object") throw invalidRequest("body harus objek");
+        if (body === null || typeof body !== "object") throw invalidRequest("body must be an object");
         const { order, signatures, mandate } = body as { order?: unknown; signatures?: unknown; mandate?: unknown };
-        if (order === null || typeof order !== "object") throw invalidRequest("order wajib objek");
-        if (!Array.isArray(signatures) || signatures.length === 0) throw invalidRequest("signatures wajib array berisi {account, signature}");
+        if (order === null || typeof order !== "object") throw invalidRequest("order must be an object");
+        if (!Array.isArray(signatures) || signatures.length === 0) throw invalidRequest("signatures must be an array of {account, signature}");
         let doc: NormalizedOrder;
         let mandateJson: string | null = null;
         let daoToCheck: string | null = null;
@@ -260,40 +260,40 @@ export function orderRoutes(resolveOpenEpoch: OpenEpochResolver, options: OrderO
           json = serializeOrder(doc);
           hash = orderHash(doc);
           if (doc.kind === "delegate") {
-            if (mandate === null || typeof mandate !== "object") throw new OrderError("order_mandate_required", "pesanan delegate wajib membawa dokumen mandate {circle, dao, kinds, rules_hash}");
+            if (mandate === null || typeof mandate !== "object") throw new OrderError("order_mandate_required", "a delegate order must carry a mandate document {circle, dao, kinds, rules_hash}");
             const m = normalizeMandate(mandate as DelegateMandate);
-            if (mandateHash(m) !== doc.mandate_hash) throw new OrderError("order_bad_mandate", "sha256 dari mandate tidak sama dengan order.mandate_hash");
-            if (m.circle !== circle.contract_id) throw new OrderError("order_bad_mandate", "mandate.circle harus akun kontrak lingkaran");
+            if (mandateHash(m) !== doc.mandate_hash) throw new OrderError("order_bad_mandate", "sha256 of the mandate does not equal order.mandate_hash");
+            if (m.circle !== circle.contract_id) throw new OrderError("order_bad_mandate", "mandate.circle must be the circle contract account");
             mandateJson = serializeMandate(m);
             daoToCheck = m.dao;
           } else if (mandate !== undefined && mandate !== null) {
-            throw new OrderError("order_mandate_forbidden", "mandate hanya untuk pesanan delegate");
+            throw new OrderError("order_mandate_forbidden", "mandate is only for delegate orders");
           }
         } catch (error) {
           return asApiError(error);
         }
-        if (doc.circle !== circle.contract_id) throw invalidRequest("order.circle harus akun kontrak lingkaran", { expected: circle.contract_id, got: doc.circle });
+        if (doc.circle !== circle.contract_id) throw invalidRequest("order.circle must be the circle contract account", { expected: circle.contract_id, got: doc.circle });
         if (daoToCheck !== null) {
-          if (options.chainView === undefined) throw new ApiError(503, "claim_rpc_unavailable", "RPC untuk memeriksa mandate.dao belum dikonfigurasi", {});
+          if (options.chainView === undefined) throw new ApiError(503, "claim_rpc_unavailable", "RPC to check mandate.dao is not configured", {});
           await assertDao(options.chainView, daoToCheck);
         }
         const keys = { [doc.buyer]: activeMemberKey(db, circle.circle_id, doc.buyer), [doc.seller]: activeMemberKey(db, circle.circle_id, doc.seller) };
         const given = new Map<string, string>();
         for (const s of signatures as Array<{ account?: unknown; signature?: unknown }>) {
-          if (typeof s?.account !== "string" || typeof s.signature !== "string") throw invalidRequest("tiap signature wajib {account, signature}");
+          if (typeof s?.account !== "string" || typeof s.signature !== "string") throw invalidRequest("each signature must be {account, signature}");
           const key = keys[s.account];
-          if (key === undefined) throw new ApiError(403, "order_not_party", "Hanya pembeli dan penjual yang menandatangani pesanan", { account: s.account });
-          if (!verifyNoticeJson(json, circle.contract_id, s.signature, key)) throw new ApiError(401, "invalid_signature", "Tanda tangan tidak cocok dengan kunci voucher anggota", { account: s.account });
+          if (key === undefined) throw new ApiError(403, "order_not_party", "Only the buyer and seller sign an order", { account: s.account });
+          if (!verifyNoticeJson(json, circle.contract_id, s.signature, key)) throw new ApiError(401, "invalid_signature", "Signature does not match the member's voucher key", { account: s.account });
           given.set(s.account, s.signature);
         }
         const existing = row<OrderRow>(db, "SELECT * FROM orders WHERE circle_id = ? AND order_hash = ?", circle.circle_id, hash);
         const have = new Set(rows<{ account: string }>(db, "SELECT account FROM order_signatures WHERE circle_id = ? AND order_hash = ?", circle.circle_id, hash).map((r) => r.account));
         const fresh = [...given.keys()].filter((a) => !have.has(a));
-        if (existing && fresh.length === 0) throw new ApiError(409, "order_duplicate", "Pesanan dengan hash ini sudah ada dan tanda tangan ini sudah tercatat", { orderHash: hash });
+        if (existing && fresh.length === 0) throw new ApiError(409, "order_duplicate", "An order with this hash already exists and this signature is already recorded", { orderHash: hash });
         const open = await resolveOpenEpoch(db, circle);
         if (!existing) {
           for (const party of new Set([doc.buyer, doc.seller])) {
-            assertOpenRoom(db, "SELECT COUNT(*) AS n FROM orders WHERE circle_id = ? AND (buyer = ? OR seller = ?) AND status IN ('proposed','open')", [circle.circle_id, party, party], options.openLimits?.orders ?? DEFAULT_OPEN.orders, "pesanan", party);
+            assertOpenRoom(db, "SELECT COUNT(*) AS n FROM orders WHERE circle_id = ? AND (buyer = ? OR seller = ?) AND status IN ('proposed','open')", [circle.circle_id, party, party], options.openLimits?.orders ?? DEFAULT_OPEN.orders, "order", party);
           }
         }
         db.transaction(() => {
@@ -323,11 +323,11 @@ export function orderRoutes(resolveOpenEpoch: OpenEpochResolver, options: OrderO
         const cursor = decodeCursor(query);
         const party = query.get("party");
         const status = query.get("status");
-        if (party !== null && !ACCOUNT.test(party)) throw invalidRequest("party bukan account id", { party });
-        if (status !== null && !(ORDER_STATUSES as readonly string[]).includes(status)) throw invalidRequest("status tidak dikenal", { status });
+        if (party !== null && !ACCOUNT.test(party)) throw invalidRequest("party is not an account id", { party });
+        if (status !== null && !(ORDER_STATUSES as readonly string[]).includes(status)) throw invalidRequest("status is not recognized", { status });
         let after = Number.MAX_SAFE_INTEGER;
         if (cursor) {
-          if (typeof cursor.a !== "number" || !Number.isSafeInteger(cursor.a)) throw invalidRequest("cursor tidak valid");
+          if (typeof cursor.a !== "number" || !Number.isSafeInteger(cursor.a)) throw invalidRequest("cursor is not valid");
           after = cursor.a;
         }
         const list = rows<OrderRow>(
@@ -359,13 +359,13 @@ export function orderRoutes(resolveOpenEpoch: OpenEpochResolver, options: OrderO
       handler: ({ db, circle, params, body, now }) => {
         syncOrders(db, circle.circle_id, nowSeconds(now()));
         const o = findOrder(db, circle.circle_id, params.hash as string);
-        if (!/^[1-9]\d*$/.test(params.index as string)) throw invalidRequest("index tonggak harus bilangan bulat >= 1", { index: params.index });
+        if (!/^[1-9]\d*$/.test(params.index as string)) throw invalidRequest("milestone index must be an integer >= 1", { index: params.index });
         const index = Number(params.index);
         const m = milestoneOf(db, circle.circle_id, o.order_hash, index);
         const { n, signature, nowS } = readNotice(db, circle, o, body, now, index);
-        if (!(MILESTONE_ACTIONS as readonly string[]).includes(n.action)) throw invalidRequest("action untuk tonggak: delivered, confirmed, disputed, atau cancelled; hasil dikirim ke outcomes");
-        if (o.pattern !== "milestone") refuse(`pesanan ${o.kind} tidak dibayar per tonggak`, { kind: o.kind });
-        if (o.status !== "open") refuse(`pesanan belum terbuka (keadaan ${o.status}): kedua pihak harus menandatangani`, { status: o.status });
+        if (!(MILESTONE_ACTIONS as readonly string[]).includes(n.action)) throw invalidRequest("action for a milestone: delivered, confirmed, disputed, or cancelled; outcomes go to the outcomes route");
+        if (o.pattern !== "milestone") refuse(`${o.kind} order is not paid per milestone`, { kind: o.kind });
+        if (o.status !== "open") refuse(`order is not open yet (state ${o.status}): both parties must sign`, { status: o.status });
         const isSeller = n.actor === o.seller;
         const bad = (message: string): never => refuse(message, { state: m.status, action: n.action });
         const notParty = (message: string): never => {
@@ -375,32 +375,32 @@ export function orderRoutes(resolveOpenEpoch: OpenEpochResolver, options: OrderO
         let args: unknown[];
         switch (n.action) {
           case "delivered":
-            if (!isSeller) notParty("Hanya penjual yang menandai terkirim");
-            if (m.status !== "open") bad(`delivered hanya dari open, keadaan sekarang ${m.status}`);
-            if (o.kind === "loadtest" && o.target_verified !== 1n) throw new ApiError(409, "target_unverified", "Kepemilikan target belum terbukti: jalankan target-check dulu", { target: o.target });
+            if (!isSeller) notParty("Only the seller marks it delivered");
+            if (m.status !== "open") bad(`delivered only from open, current state ${m.status}`);
+            if (o.kind === "loadtest" && o.target_verified !== 1n) throw new ApiError(409, "target_unverified", "Target ownership is not proven yet: run target-check first", { target: o.target });
             update = "status = 'delivered', deliverable_hash = ?, delivered_at = ?, confirm_by = ?, at_s = ?";
             args = [n.deliverable_hash, n.at, n.at + window, n.at];
             break;
           case "confirmed":
-            if (isSeller) notParty("Hanya pembeli yang mengonfirmasi");
-            if (m.status !== "delivered") bad(`confirmed hanya dari delivered, keadaan sekarang ${m.status}`);
+            if (isSeller) notParty("Only the buyer confirms");
+            if (m.status !== "delivered") bad(`confirmed only from delivered, current state ${m.status}`);
             update = "status = 'confirmed', confirmed_at = ?, at_s = ?";
             args = [n.at, n.at];
             break;
           case "disputed":
-            if (isSeller) notParty("Hanya pembeli yang menyengketakan");
-            if (m.status !== "delivered") bad(`disputed hanya dari delivered, keadaan sekarang ${m.status}`);
-            if (n.at > Number(m.confirm_by)) bad("jendela sengketa sudah lewat");
+            if (isSeller) notParty("Only the buyer disputes");
+            if (m.status !== "delivered") bad(`disputed only from delivered, current state ${m.status}`);
+            if (n.at > Number(m.confirm_by)) bad("the dispute window has passed");
             update = "status = 'disputed', dispute_reason = ?, at_s = ?";
             args = [n.reason, n.at];
             break;
           default:
             // the seller may withdraw until the buyer confirms; the buyer may cancel only a milestone that is still open after its due date
             if (isSeller) {
-              if (m.status !== "open" && m.status !== "delivered") bad(`cancelled dari penjual hanya dari open atau delivered, keadaan sekarang ${m.status}`);
+              if (m.status !== "open" && m.status !== "delivered") bad(`cancelled by the seller only from open or delivered, current state ${m.status}`);
             } else {
-              if (m.status !== "open") bad(`cancelled dari pembeli hanya dari open, keadaan sekarang ${m.status}`);
-              if (nowS <= Number(m.due_at)) bad("pembeli baru boleh membatalkan setelah due_at");
+              if (m.status !== "open") bad(`cancelled by the buyer only from open, current state ${m.status}`);
+              if (nowS <= Number(m.due_at)) bad("the buyer may cancel only after due_at");
             }
             update = "status = 'cancelled', at_s = ?";
             args = [n.at];
@@ -421,9 +421,9 @@ export function orderRoutes(resolveOpenEpoch: OpenEpochResolver, options: OrderO
         syncOrders(db, circle.circle_id, nowSeconds(now()));
         const o = findOrder(db, circle.circle_id, params.hash as string);
         const { n, signature, nowS } = readNotice(db, circle, o, body, now);
-        if (!(OUTCOME_ACTIONS as readonly string[]).includes(n.action)) throw invalidRequest("action untuk hasil: proposed, accepted, atau rejected");
-        if (o.pattern !== "outcome") refuse(`pesanan ${o.kind} tidak dibayar per hasil`, { kind: o.kind });
-        if (o.status !== "open") refuse(`pesanan belum terbuka (keadaan ${o.status}): kedua pihak harus menandatangani`, { status: o.status });
+        if (!(OUTCOME_ACTIONS as readonly string[]).includes(n.action)) throw invalidRequest("action for an outcome: proposed, accepted, or rejected");
+        if (o.pattern !== "outcome") refuse(`${o.kind} order is not paid per outcome`, { kind: o.kind });
+        if (o.status !== "open") refuse(`order is not open yet (state ${o.status}): both parties must sign`, { status: o.status });
         const m = milestoneOf(db, circle.circle_id, o.order_hash, n.milestone);
         const isSeller = n.actor === o.seller;
         const bad = (message: string): never => refuse(message, { state: m.status, action: n.action });
@@ -433,15 +433,15 @@ export function orderRoutes(resolveOpenEpoch: OpenEpochResolver, options: OrderO
         let update: string;
         let args: unknown[];
         if (n.action === "proposed") {
-          if (!isSeller) notParty("Hanya penjual yang mengajukan hasil");
-          if (m.status !== "open") bad(`proposed hanya dari open, keadaan sekarang ${m.status}`);
+          if (!isSeller) notParty("Only the seller proposes an outcome");
+          if (m.status !== "open") bad(`proposed only from open, current state ${m.status}`);
           // the same result cannot fill two places: one conversion or one bug is paid once
-          if (row(db, "SELECT 1 AS x FROM order_milestones WHERE circle_id = ? AND order_hash = ? AND deliverable_hash = ?", circle.circle_id, o.order_hash, n.deliverable_hash)) bad("outcome_hash ini sudah diajukan untuk tempat lain");
+          if (row(db, "SELECT 1 AS x FROM order_milestones WHERE circle_id = ? AND order_hash = ? AND deliverable_hash = ?", circle.circle_id, o.order_hash, n.deliverable_hash)) bad("this outcome_hash was already proposed elsewhere");
           update = "status = 'delivered', deliverable_hash = ?, delivered_at = ?, at_s = ?";
           args = [n.deliverable_hash, n.at, n.at];
         } else {
-          if (isSeller) notParty("Hanya pembeli yang menerima atau menolak hasil");
-          if (m.status !== "delivered") bad(`${n.action} hanya dari delivered, keadaan sekarang ${m.status}`);
+          if (isSeller) notParty("Only the buyer accepts or rejects an outcome");
+          if (m.status !== "delivered") bad(`${n.action} only from delivered, current state ${m.status}`);
           // no automatic confirmation here: silence never pays a result (ADR-45 point 4)
           update = n.action === "accepted" ? "status = 'confirmed', outcome = 'accepted', confirmed_at = ?, at_s = ?" : "status = 'disputed', outcome = 'rejected', dispute_reason = ?, at_s = ?";
           args = n.action === "accepted" ? [n.at, n.at] : [n.reason, n.at];
@@ -460,7 +460,7 @@ export function orderRoutes(resolveOpenEpoch: OpenEpochResolver, options: OrderO
       circleScoped: true,
       handler: async ({ db, circle, params }) => {
         const o = findOrder(db, circle.circle_id, params.hash as string);
-        if (o.kind !== "loadtest" || o.target === null) refuse("target-check hanya untuk pesanan uji beban", { kind: o.kind });
+        if (o.kind !== "loadtest" || o.target === null) refuse("target-check is only for load-test orders", { kind: o.kind });
         const target = o.target as string;
         // the file first: it passes through the guard, so a target that resolves to the network of the server is refused even if its TXT record would verify
         const guard = { ...(options.targetCheck?.resolver ? { resolver: options.targetCheck.resolver } : {}), ...(options.targetCheck?.transport ? { transport: options.targetCheck.transport } : {}), code: "target_forbidden" as const };

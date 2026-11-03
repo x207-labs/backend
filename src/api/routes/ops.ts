@@ -60,14 +60,14 @@ export function opsRoutes(o: OpsOptions): Route[] {
         let status: "ok" | "degraded" | "down" = "ok";
         if (cursors === null) {
           status = "down";
-          problems.push("database tidak menjawab");
+          problems.push("database not responding");
         } else if (first === undefined) {
           status = "down";
-          problems.push("indexer belum bootstrap");
+          problems.push("indexer has not bootstrapped yet");
         } else {
-          if (lag! > DEGRADED_LAG_BLOCKS) problems.push(`indexer tertinggal ${lag} blok`);
-          if (since! > stale) problems.push(`cursor indexer tidak ditulis ${since} detik`);
-          if (rpc.status === "failing") problems.push("RPC tidak menjawab");
+          if (lag! > DEGRADED_LAG_BLOCKS) problems.push(`indexer is ${lag} blocks behind`);
+          if (since! > stale) problems.push(`indexer cursor not written for ${since} seconds`);
+          if (rpc.status === "failing") problems.push("RPC not responding");
           if (problems.length > 0) status = "degraded";
         }
         return {
@@ -91,7 +91,7 @@ export function opsRoutes(o: OpsOptions): Route[] {
       handler: ({ db, now, headers }) => {
         if (o.metricsToken) {
           const given = String(headers.authorization ?? "").replace(/^Bearer\s+/i, "");
-          if (!same(given, o.metricsToken)) throw new ApiError(401, "invalid_signature", "metrics butuh Authorization: Bearer <token>", {});
+          if (!same(given, o.metricsToken)) throw new ApiError(401, "invalid_signature", "metrics needs Authorization: Bearer <token>", {});
         }
         return { status: 200, body: null, raw: { contentType: "text/plain; version=0.0.4; charset=utf-8", text: renderMetrics(o.telemetry, db, now(), o.extraMetrics?.() ?? []) } };
       },

@@ -23,12 +23,12 @@ export interface WithdrawOptions {
 
 function text(body: Record<string, unknown>, field: string): string {
   const value = body[field];
-  if (typeof value !== "string" || value === "") throw invalidRequest(`${field} wajib berupa string`, { field });
+  if (typeof value !== "string" || value === "") throw invalidRequest(`${field} must be a string`, { field });
   return value;
 }
 
 function objectBody(raw: unknown): Record<string, unknown> {
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw invalidRequest("body harus objek JSON");
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw invalidRequest("body must be a JSON object");
   return raw as Record<string, unknown>;
 }
 
@@ -42,7 +42,7 @@ async function oneClick<T>(call: () => Promise<T>): Promise<T> {
 }
 
 function conflict(jobId: string, status: string, expected: string): ApiError {
-  return new ApiError(409, "job_state_conflict", `Job ${jobId} berstatus ${status}, langkah ini butuh ${expected}`, { jobId, status, expected });
+  return new ApiError(409, "job_state_conflict", `Job ${jobId} has status ${status}, this step needs ${expected}`, { jobId, status, expected });
 }
 
 /**
@@ -56,7 +56,7 @@ export function withdrawRoutes(options: WithdrawOptions): Route[] {
 
   /** Mode `dry` bicara ke 1Click sungguhan: boleh quote, tetapi tidak boleh mengirim intent bertanda tangan. */
   const assertMayMoveFunds = () => {
-    if (client.mode === "dry") throw new ApiError(422, "live_mode_disabled", "submit-intent butuh X207_SETTLEMENT_MODE=live", { mode: client.mode });
+    if (client.mode === "dry") throw new ApiError(422, "live_mode_disabled", "submit-intent needs X207_SETTLEMENT_MODE=live", { mode: client.mode });
   };
 
   return [
@@ -73,22 +73,22 @@ export function withdrawRoutes(options: WithdrawOptions): Route[] {
         const refundTo = text(req, "refundTo");
         const rawAmount = req.amount;
         if (typeof rawAmount !== "string" || !/^[1-9]\d*$/.test(rawAmount) || BigInt(rawAmount) > U128_MAX) {
-          throw invalidRequest("amount harus string bilangan bulat > 0 dalam satuan terkecil", { amount: rawAmount });
+          throw invalidRequest("amount must be a string integer > 0 in the smallest unit", { amount: rawAmount });
         }
-        if (req.acceptHighFee !== undefined && typeof req.acceptHighFee !== "boolean") throw invalidRequest("acceptHighFee harus boolean", { acceptHighFee: req.acceptHighFee });
-        if (req.dry !== undefined && typeof req.dry !== "boolean") throw invalidRequest("dry harus boolean", { dry: req.dry });
+        if (req.acceptHighFee !== undefined && typeof req.acceptHighFee !== "boolean") throw invalidRequest("acceptHighFee must be a boolean", { acceptHighFee: req.acceptHighFee });
+        if (req.dry !== undefined && typeof req.dry !== "boolean") throw invalidRequest("dry must be a boolean", { dry: req.dry });
         const dry = req.dry !== false;
         const acceptHighFee = req.acceptHighFee === true;
 
         if (!row(db, "SELECT 1 AS ok FROM circles WHERE circle_id = ?", circle)) {
-          throw new ApiError(404, "circle_not_found", `Lingkaran ${circle} tidak ada`, { circle });
+          throw new ApiError(404, "circle_not_found", `Circle ${circle} not found`, { circle });
         }
         if (!row(db, "SELECT 1 AS ok FROM members WHERE circle_id = ? AND account_id = ?", circle, account)) {
-          throw new ApiError(404, "member_not_found", `Anggota ${account} tidak ada`, { circle, account });
+          throw new ApiError(404, "member_not_found", `Member ${account} not found`, { circle, account });
         }
 
         if (!(await accountExists(refundTo))) {
-          throw new ApiError(422, "refund_account_not_found", `Akun refundTo ${refundTo} tidak ada`, { refundTo });
+          throw new ApiError(422, "refund_account_not_found", `refundTo account ${refundTo} not found`, { refundTo });
         }
 
         const quote = await oneClick(() =>
@@ -170,9 +170,9 @@ export function withdrawRoutes(options: WithdrawOptions): Route[] {
       handler: async ({ db, body, now }) => {
         const jobId = text(objectBody(body), "jobId");
         const job = getJob(db, jobId);
-        if (!job) throw new ApiError(404, "job_not_found", `Job ${jobId} tidak dikenal`, { jobId });
+        if (!job) throw new ApiError(404, "job_not_found", `Unknown job ${jobId}`, { jobId });
         // job deposit dan intent kedua jatuh di sini juga (K-39)
-        if (job.kind !== "withdraw" || job.status !== "quoted") throw conflict(jobId, job.status, "withdraw berstatus quoted");
+        if (job.kind !== "withdraw" || job.status !== "quoted") throw conflict(jobId, job.status, "withdraw must be quoted");
         const response = await oneClick(() =>
           client.generateIntent({ depositAddress: job.deposit_address ?? "", signerId: job.account_id, standard: "nep413" as IntentStandardEnum }),
         );
@@ -188,10 +188,10 @@ export function withdrawRoutes(options: WithdrawOptions): Route[] {
         const req = objectBody(body);
         const jobId = text(req, "jobId");
         const signed = req.signedIntent;
-        if (typeof signed !== "object" || signed === null || Array.isArray(signed)) throw invalidRequest("signedIntent wajib berupa objek", { field: "signedIntent" });
+        if (typeof signed !== "object" || signed === null || Array.isArray(signed)) throw invalidRequest("signedIntent must be an object", { field: "signedIntent" });
         const job = getJob(db, jobId);
-        if (!job) throw new ApiError(404, "job_not_found", `Job ${jobId} tidak dikenal`, { jobId });
-        if (job.kind !== "withdraw" || job.status !== "awaiting_signature") throw conflict(jobId, job.status, "withdraw berstatus awaiting_signature");
+        if (!job) throw new ApiError(404, "job_not_found", `Unknown job ${jobId}`, { jobId });
+        if (job.kind !== "withdraw" || job.status !== "awaiting_signature") throw conflict(jobId, job.status, "withdraw must be awaiting_signature");
         assertMayMoveFunds();
         const response = await oneClick(() => client.submitIntent(signed as MultiPayload));
         setJobState(db, jobId, { status: "processing", intent_hash: response.intentHash, updated_at: now() });

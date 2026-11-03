@@ -58,7 +58,7 @@ export interface ApiServerOptions {
 
 /** Body JSON sebuah `POST`: objek apa pun yang muat di `maxBytes`; lebih besar dari itu 413 `payload_too_large`, bukan JSON 400 `invalid_request`. */
 async function readJsonBody(req: IncomingMessage, maxBytes: number): Promise<unknown> {
-  const tooLarge = () => new ApiError(413, "payload_too_large", "Body terlalu besar", { maxBytes }, { Connection: "close" });
+  const tooLarge = () => new ApiError(413, "payload_too_large", "Body too large", { maxBytes }, { Connection: "close" });
   const declared = Number(req.headers["content-length"]);
   if (Number.isFinite(declared) && declared > maxBytes) throw tooLarge();
   const chunks: Buffer[] = [];
@@ -71,7 +71,7 @@ async function readJsonBody(req: IncomingMessage, maxBytes: number): Promise<unk
   try {
     return JSON.parse(Buffer.concat(chunks).toString("utf8"));
   } catch {
-    throw invalidRequest("body bukan JSON yang sah");
+    throw invalidRequest("body is not valid JSON");
   }
 }
 
@@ -136,12 +136,12 @@ export function createApiServer(options: ApiServerOptions): Server {
     const t = now();
     if (abuse.ipPerMinute > 0) {
       const wait = ipHits.wait(ip, abuse.ipPerMinute, t);
-      if (wait > 0) throw rateLimited("Terlalu banyak permintaan", { limitPerMinute: abuse.ipPerMinute }, wait);
+      if (wait > 0) throw rateLimited("Too many requests", { limitPerMinute: abuse.ipPerMinute }, wait);
       ipHits.add(ip, t);
     }
     if (write && abuse.writeIpPerMinute > 0) {
       const wait = writeIpHits.wait(ip, abuse.writeIpPerMinute, t);
-      if (wait > 0) throw rateLimited("Terlalu banyak permintaan tulis dari alamat ini", { scope: "ip_write", limitPerMinute: abuse.writeIpPerMinute }, wait);
+      if (wait > 0) throw rateLimited("Too many write requests from this address", { scope: "ip_write", limitPerMinute: abuse.writeIpPerMinute }, wait);
       writeIpHits.add(ip, t);
     }
   }
@@ -152,32 +152,32 @@ export function createApiServer(options: ApiServerOptions): Server {
     // the route is known before the limit is checked, so that a request refused with 429 is counted under its route
     if (match) seen.route = match.route.pattern;
     checkRate(callerOf(req), req.method === "POST");
-    if (!match) throw new ApiError(404, "not_found", "Endpoint tidak dikenal", { path: url.pathname });
+    if (!match) throw new ApiError(404, "not_found", "Unknown endpoint", { path: url.pathname });
 
     let circle: CircleRow = { circle_id: "", contract_id: "", network: "" };
     let indexedBlock: string | undefined;
     if (match.route.circleScoped) {
-      if (!d9Ready(db)) throw new ApiError(503, "indexer_unavailable", "Basis data D9 belum siap");
+      if (!d9Ready(db)) throw new ApiError(503, "indexer_unavailable", "D9 database is not ready");
       const found = row<CircleRow>(db, "SELECT circle_id, contract_id, network FROM circles WHERE circle_id = ?", match.params.circle);
-      if (!found) throw new ApiError(404, "circle_not_found", `Lingkaran ${match.params.circle} tidak ada`, { circle: match.params.circle });
+      if (!found) throw new ApiError(404, "circle_not_found", `Circle ${match.params.circle} not found`, { circle: match.params.circle });
       circle = found;
       const cursor = row<{ last_block_height: bigint }>(
         db,
         "SELECT last_block_height FROM indexer_cursor WHERE contract_id = ?",
         circle.contract_id,
       );
-      if (!cursor) throw new ApiError(503, "indexer_unavailable", "Indexer belum bootstrap", { circle: circle.circle_id });
+      if (!cursor) throw new ApiError(503, "indexer_unavailable", "Indexer has not bootstrapped yet", { circle: circle.circle_id });
       indexedBlock = cursor.last_block_height.toString();
     }
     try {
       const asked = url.searchParams.get("limit");
-      if (asked !== null && /^\d+$/.test(asked) && Number(asked) > abuse.maxPageLimit) throw invalidRequest(`limit harus 1..${abuse.maxPageLimit}`, { limit: asked, max: abuse.maxPageLimit });
+      if (asked !== null && /^\d+$/.test(asked) && Number(asked) > abuse.maxPageLimit) throw invalidRequest(`limit must be 1..${abuse.maxPageLimit}`, { limit: asked, max: abuse.maxPageLimit });
       const body = match.route.method === "POST" ? await readJsonBody(req, abuse.maxBodyBytes) : undefined;
       // a write is counted for its account only when it was accepted: a request that names someone else's account but fails its signature costs that account nothing
       const account = abuse.writeAccountPerMinute > 0 && match.route.method === "POST" ? accountOfBody(body) : null;
       if (account !== null) {
         const wait = accountHits.wait(account, abuse.writeAccountPerMinute, now());
-        if (wait > 0) throw rateLimited(`Akun ${account} terlalu sering menulis`, { scope: "account_write", account, limitPerMinute: abuse.writeAccountPerMinute }, wait);
+        if (wait > 0) throw rateLimited(`Account ${account} is writing too often`, { scope: "account_write", account, limitPerMinute: abuse.writeAccountPerMinute }, wait);
       }
       const result = await match.route.handler({ db, params: match.params, query: url.searchParams, now, circle, body, headers: req.headers });
       if (account !== null && result.status >= 200 && result.status < 300) accountHits.add(account, now());

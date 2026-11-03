@@ -28,7 +28,7 @@ export const memberHandlers: HandlerMap = {
     const result = ctx.db
       .prepare("UPDATE members SET admitted = 1, updated_block = ? WHERE circle_id = ? AND account_id = ?")
       .run(ctx.block.height, ctx.circleId, e.account_id);
-    requireChange(result.changes, `anggota ${e.account_id}`);
+    requireChange(result.changes, `member ${e.account_id}`);
   },
 
   // ADR-29: the status stays until `stake_withdrawn`.
@@ -36,7 +36,7 @@ export const memberHandlers: HandlerMap = {
     const result = ctx.db
       .prepare("UPDATE members SET exit_requested_epoch = ?, updated_block = ? WHERE circle_id = ? AND account_id = ?")
       .run(e.epoch, ctx.block.height, ctx.circleId, e.account_id);
-    requireChange(result.changes, `anggota ${e.account_id}`);
+    requireChange(result.changes, `member ${e.account_id}`);
   },
 
   stake_withdrawn(ctx, e) {
@@ -45,7 +45,7 @@ export const memberHandlers: HandlerMap = {
         "UPDATE members SET status = 'exited', stake = 0, credit_limit = 0, updated_block = ? WHERE circle_id = ? AND account_id = ?",
       )
       .run(ctx.block.height, ctx.circleId, e.account_id);
-    requireChange(result.changes, `anggota ${e.account_id}`);
+    requireChange(result.changes, `member ${e.account_id}`);
   },
 
   // A failed transfer restores the stake on chain and changes nothing in D9; the raw row is enough.
@@ -59,6 +59,6 @@ export const memberHandlers: HandlerMap = {
          WHERE circle_id = ? AND account_id = ?`,
       )
       .run(units(e.stake, "stake"), units(e.limit, "limit"), e.effective_epoch, ctx.block.height, ctx.circleId, e.account_id);
-    requireChange(result.changes, `anggota ${e.account_id}`);
+    requireChange(result.changes, `member ${e.account_id}`);
   },
 };

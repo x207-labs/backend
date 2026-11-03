@@ -71,7 +71,7 @@ export function createProviderRoutes(options: ProviderRoutesOptions): (request: 
   const ipHits = new WindowCounter();
   const grantHits = new WindowCounter();
   const tooMany = (wait: number, scope: string): Response =>
-    new Response(JSON.stringify({ error: "rate_limited", message: `terlalu banyak permintaan (${scope})` }), { status: 429, headers: { "content-type": "application/json", "retry-after": String(wait) } });
+    new Response(JSON.stringify({ error: "rate_limited", message: `too many requests (${scope})` }), { status: 429, headers: { "content-type": "application/json", "retry-after": String(wait) } });
 
   return async (request) => {
     const url = new URL(request.url);
@@ -81,12 +81,12 @@ export function createProviderRoutes(options: ProviderRoutesOptions): (request: 
     // the peer address is put in the request by `serve` (a header of the caller with that name is overwritten there)
     const t = now();
     const waitIp = ipHits.hit(request.headers.get("x-x207-peer") ?? "unknown", limits.ipPerMinute, t);
-    if (waitIp > 0) return tooMany(waitIp, "alamat");
+    if (waitIp > 0) return tooMany(waitIp, "address");
     const waitGrant = grantHits.hit(`grant:${grantId}`, limits.grantPerMinute, t);
     if (waitGrant > 0) return tooMany(waitGrant, "grant");
     if (request.method === "POST") {
       const declared = Number(request.headers.get("content-length"));
-      if (Number.isFinite(declared) && declared > limits.maxBodyBytes) return json(413, { error: "payload_too_large", message: `body lebih dari ${limits.maxBodyBytes} byte` });
+      if (Number.isFinite(declared) && declared > limits.maxBodyBytes) return json(413, { error: "payload_too_large", message: `body is larger than ${limits.maxBodyBytes} bytes` });
     }
     const stop = match[2] === "/stop";
     const challengePath = match[2] === "/challenge";
@@ -111,7 +111,7 @@ export function createProviderRoutes(options: ProviderRoutesOptions): (request: 
           throw e;
         });
         const a = manager.access(grantId);
-        if (!a) return json(404, { error: "access_not_found", message: `grant ${grantId} tidak punya akses` });
+        if (!a) return json(404, { error: "access_not_found", message: `grant ${grantId} has no access` });
         return json(200, await view(grant ?? ({ grant_id: grantId } as AccessGrant)));
       } catch (error) {
         return fail(error);
@@ -129,18 +129,18 @@ export function createProviderRoutes(options: ProviderRoutesOptions): (request: 
       let body: { notice?: { circle?: unknown; grant_id?: unknown; actor?: unknown; action?: unknown; at?: unknown }; signature?: unknown };
       try {
         const text = await readCapped(request.clone(), limits.maxBodyBytes);
-        if (text === null) return json(413, { error: "payload_too_large", message: `body lebih dari ${limits.maxBodyBytes} byte` });
+        if (text === null) return json(413, { error: "payload_too_large", message: `body is larger than ${limits.maxBodyBytes} bytes` });
         body = JSON.parse(text) as typeof body;
       } catch {
-        return json(400, { error: "invalid_request", message: "body bukan JSON" });
+        return json(400, { error: "invalid_request", message: "body is not JSON" });
       }
       const n = body.notice;
       if (!n || typeof body.signature !== "string" || n.action !== "stop" || typeof n.actor !== "string" || typeof n.circle !== "string" || n.grant_id !== grantId || !Number.isSafeInteger(n.at)) {
-        return json(400, { error: "invalid_request", message: "notice wajib {circle, grant_id, actor, action: stop, at}" });
+        return json(400, { error: "invalid_request", message: "notice must be {circle, grant_id, actor, action: stop, at}" });
       }
-      if (n.circle !== options.contractId) return json(400, { error: "invalid_request", message: "notice.circle harus akun kontrak lingkaran" });
-      if (Math.abs((n.at as number) - Math.floor(now() / 1000)) > SKEW_SECONDS) return json(400, { error: "invalid_request", message: `notice.at menyimpang lebih dari ${SKEW_SECONDS} detik` });
-      if (n.actor !== grant.grantee) return json(403, { error: "not_grantee", message: `grant ${grantId} disewa oleh ${grant.grantee}` });
+      if (n.circle !== options.contractId) return json(400, { error: "invalid_request", message: "notice.circle must be the circle contract account" });
+      if (Math.abs((n.at as number) - Math.floor(now() / 1000)) > SKEW_SECONDS) return json(400, { error: "invalid_request", message: `notice.at deviates by more than ${SKEW_SECONDS} seconds` });
+      if (n.actor !== grant.grantee) return json(403, { error: "not_grantee", message: `grant ${grantId} is rented by ${grant.grantee}` });
       const key = await options.voucherKeyOf(n.actor);
       const text = stopNoticeText({ circle: n.circle, grant_id: grantId, actor: n.actor, at: n.at as number });
       let ok = false;
@@ -149,9 +149,9 @@ export function createProviderRoutes(options: ProviderRoutesOptions): (request: 
       } catch {
         ok = false;
       }
-      if (!ok) return json(401, { error: "invalid_signature", message: "tanda tangan notice tidak cocok dengan kunci voucher penyewa" });
+      if (!ok) return json(401, { error: "invalid_signature", message: "notice signature does not match the renter's voucher key" });
       try {
-        if (!manager.access(grantId)) return json(404, { error: "access_not_found", message: `grant ${grantId} tidak punya akses` });
+        if (!manager.access(grantId)) return json(404, { error: "access_not_found", message: `grant ${grantId} has no access` });
         await manager.revokeAccess(grantId, "stopped");
         return json(200, await view(grant));
       } catch (error) {
@@ -170,17 +170,17 @@ export function createProviderRoutes(options: ProviderRoutesOptions): (request: 
       let body: { grantee_ref?: unknown; proof?: unknown };
       try {
         const text = await readCapped(request.clone(), limits.maxBodyBytes);
-        if (text === null) return json(413, { error: "payload_too_large", message: `body lebih dari ${limits.maxBodyBytes} byte` });
+        if (text === null) return json(413, { error: "payload_too_large", message: `body is larger than ${limits.maxBodyBytes} bytes` });
         body = JSON.parse(text) as typeof body;
       } catch {
-        return json(400, { error: "invalid_request", message: "body bukan JSON {grantee_ref, proof?}" });
+        return json(400, { error: "invalid_request", message: "body is not JSON {grantee_ref, proof?}" });
       }
       const scope = parseProviderScope(grant.limits.scope);
       if (typeof body.grantee_ref !== "string" || (body.proof !== undefined && body.proof !== null && typeof body.proof !== "string")) {
-        return json(400, { error: "invalid_request", message: "body wajib {grantee_ref, proof?} berupa teks" });
+        return json(400, { error: "invalid_request", message: "body must be {grantee_ref, proof?} as text" });
       }
       // the reference is fixed in the scope of the grant on the chain: asking for another one is how a grant would be moved to another account
-      if (body.grantee_ref !== scope.grantee_ref) return json(403, { error: "grantee_ref_mismatch", message: "grantee_ref harus sama dengan yang tertulis di scope grant" });
+      if (body.grantee_ref !== scope.grantee_ref) return json(403, { error: "grantee_ref_mismatch", message: "grantee_ref must match the one written in the grant scope" });
       const charge = meterGrant(grant, { quantity: 1 });
       const middleware = x207Middleware({
         routes: { [url.pathname]: { price: options.creditPrice(charge.amount), description: `Rent of access ${grantId}`, grant: () => ({ grantId, payTo: grant.grantor }) } },
@@ -194,7 +194,7 @@ export function createProviderRoutes(options: ProviderRoutesOptions): (request: 
         } catch {
           payer = undefined;
         }
-        if (payer !== grant.grantee) return json(403, { error: "payer_not_grantee", message: `grant ${grantId} disewa oleh ${grant.grantee}` });
+        if (payer !== grant.grantee) return json(403, { error: "payer_not_grantee", message: `grant ${grantId} is rented by ${grant.grantee}` });
         try {
           const { access, delivery, warnings } = await manager.grantAccess(grant, 1, typeof body.proof === "string" ? body.proof : null);
           return json(200, { ...(await view(grant)), paidUntil: iso(access.paidUntilMs), delivery, warnings });

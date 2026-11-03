@@ -35,12 +35,12 @@ export function memberLimit(ctx: HandlerContext, account: string): bigint {
     .prepare("SELECT credit_limit FROM members WHERE circle_id = ? AND account_id = ?")
     .safeIntegers(true)
     .get(ctx.circleId, account) as { credit_limit: bigint } | undefined;
-  if (!row) throw new IndexerHaltError(`anggota ${account} tidak dikenal di D9`);
+  if (!row) throw new IndexerHaltError(`unknown member ${account} in D9`);
   return row.credit_limit;
 }
 
 export function requireChange(changes: number, what: string): void {
-  if (changes === 0) throw new IndexerHaltError(`${what} tidak ditemukan di D9`);
+  if (changes === 0) throw new IndexerHaltError(`${what} not found in D9`);
 }
 
 export function recordLimit(

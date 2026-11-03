@@ -22,6 +22,6 @@ export const voucherHandlers: HandlerMap = {
     const debt = ctx.db
       .prepare("UPDATE members SET outstanding_debt = ?, updated_block = ? WHERE circle_id = ? AND account_id = ?")
       .run(units(e.outstanding_debt, "outstanding_debt"), ctx.block.height, ctx.circleId, e.payer);
-    requireChange(debt.changes, `anggota ${e.payer}`);
+    requireChange(debt.changes, `member ${e.payer}`);
   },
 };

@@ -59,7 +59,7 @@ describe("BE-071 health and metrics of the broker", () => {
     const health = await ask(t.handler, "/healthz");
     const body = (await health.json()) as any;
     expect([health.status, body.status, body.revokeQueue]).toEqual([200, "degraded", { leasesOverdue: 1, providerRevokePending: 1 }]);
-    expect(body.problems.join(" ")).toMatch(/sewa kelas B/);
+    expect(body.problems.join(" ")).toMatch(/class B leases/);
     // the secrets of a provider row (the error text of the provider) are in no metric
     expect(text).not.toContain("HTTP 503");
   });

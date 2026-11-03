@@ -53,11 +53,11 @@ export const memberRoutes: Route[] = [
       const limit = parseLimit(query);
       const status = query.get("status");
       if (status !== null && !(MEMBER_STATUSES as readonly string[]).includes(status)) {
-        throw invalidRequest("status tidak dikenal", { status, allowed: MEMBER_STATUSES });
+        throw invalidRequest("unknown status", { status, allowed: MEMBER_STATUSES });
       }
       const cursor = decodeCursor(query);
       const after = cursor && typeof cursor.a === "string" ? cursor.a : null;
-      if (cursor && after === null) throw invalidRequest("cursor tidak valid");
+      if (cursor && after === null) throw invalidRequest("invalid cursor");
 
       const found = rows<MemberRow>(
         db,
@@ -98,7 +98,7 @@ export const memberRoutes: Route[] = [
         account,
       );
       if (!m) {
-        throw new ApiError(404, "member_not_found", `Anggota ${account} tidak terdaftar`, {
+        throw new ApiError(404, "member_not_found", `Member ${account} is not registered`, {
           circle: circle.circle_id,
           account,
         });

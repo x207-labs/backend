@@ -62,9 +62,9 @@ export function listingView(r: ListingRow, nowS: number) {
 }
 
 export function findListing(db: Database.Database, circleId: string, hash: string): ListingRow {
-  if (!HASH.test(hash)) throw invalidRequest("hash listing harus 64 karakter heksadesimal huruf kecil", { hash });
+  if (!HASH.test(hash)) throw invalidRequest("listing hash must be 64 lowercase hex characters", { hash });
   const found = row<ListingRow>(db, "SELECT * FROM listings WHERE circle_id = ? AND listing_hash = ?", circleId, hash);
-  if (!found) throw new ApiError(404, "listing_not_found", `Listing ${hash} tidak ada`, { listingHash: hash });
+  if (!found) throw new ApiError(404, "listing_not_found", `Listing ${hash} not found`, { listingHash: hash });
   return found;
 }
 
@@ -72,17 +72,17 @@ export function findListing(db: Database.Database, circleId: string, hash: strin
 export type ListingCheck = (listing: Listing, context: { db: Database.Database; circleId: string; nowS: number }) => void;
 
 function parseListingBody(body: unknown): { listing: Listing; signature: string } {
-  if (body === null || typeof body !== "object") throw invalidRequest("body harus objek");
+  if (body === null || typeof body !== "object") throw invalidRequest("body must be an object");
   const { listing, signature } = body as { listing?: unknown; signature?: unknown };
-  if (typeof signature !== "string") throw invalidRequest("signature wajib string");
-  if (listing === null || typeof listing !== "object") throw invalidRequest("listing wajib objek");
+  if (typeof signature !== "string") throw invalidRequest("signature must be a string");
+  if (listing === null || typeof listing !== "object") throw invalidRequest("listing must be an object");
   return { listing: listing as Listing, signature };
 }
 
 function boolParam(query: URLSearchParams, name: string): boolean | null {
   const raw = query.get(name);
   if (raw === null) return null;
-  if (raw !== "true" && raw !== "false") throw invalidRequest(`${name} harus true atau false`, { [name]: raw });
+  if (raw !== "true" && raw !== "false") throw invalidRequest(`${name} must be true or false`, { [name]: raw });
   return raw === "true";
 }
 
@@ -105,16 +105,16 @@ function checkListingRequest(
     throw error;
   }
   if (listing.circle !== circle.contract_id) {
-    throw invalidRequest("listing.circle harus akun kontrak lingkaran", { expected: circle.contract_id, got: listing.circle });
+    throw invalidRequest("listing.circle must be the circle contract account", { expected: circle.contract_id, got: listing.circle });
   }
-  if (listing.expires_at <= nowS) throw invalidRequest("expires_at sudah lewat", { expires_at: listing.expires_at });
+  if (listing.expires_at <= nowS) throw invalidRequest("expires_at has already passed", { expires_at: listing.expires_at });
   const pubkey = activeMemberKey(db, circle.circle_id, listing.account);
   if (!verifyListingSignature(listing, signature, pubkey)) {
-    throw new ApiError(401, "invalid_signature", "Tanda tangan listing tidak cocok dengan kunci voucher anggota", { account: listing.account });
+    throw new ApiError(401, "invalid_signature", "Listing signature does not match the member's voucher key", { account: listing.account });
   }
   const hash = listingHash(listing);
   if (row(db, "SELECT 1 AS x FROM listings WHERE circle_id = ? AND listing_hash = ?", circle.circle_id, hash)) {
-    throw new ApiError(409, "already_exists", "Listing dengan hash ini sudah tercatat", { listingHash: hash });
+    throw new ApiError(409, "already_exists", "A listing with this hash is already recorded", { listingHash: hash });
   }
   return { listing, signature, hash, nowS };
 }
@@ -138,7 +138,7 @@ export function listingRoutes(checks: readonly ListingCheck[] = []): Route[] {
             listing.offer.value, listing.want.asset_type, listing.want.asset_class, listing.want.quantity, listing.want.value,
             listing.terms, listing.detail, listing.expires_at, listing.discount_bps, listing.accept_payment ? 1 : 0,
             listing.discoverable ? 1 : 0, listing.nonce, signature, now());
-        if (inserted.changes === 0) throw new ApiError(409, "already_exists", "Listing dengan hash ini sudah tercatat", { listingHash: hash });
+        if (inserted.changes === 0) throw new ApiError(409, "already_exists", "A listing with this hash is already recorded", { listingHash: hash });
         return { status: 201, body: listingView(findListing(db, circle.circle_id, hash), nowS) };
       },
     },
@@ -160,7 +160,7 @@ export function listingRoutes(checks: readonly ListingCheck[] = []): Route[] {
       handler: ({ db, circle, query, now }) => {
         const limit = parseLimit(query);
         const status = query.get("status") ?? "open";
-        if (!(STATUSES as readonly string[]).includes(status)) throw invalidRequest("status tidak dikenal", { status, allowed: STATUSES });
+        if (!(STATUSES as readonly string[]).includes(status)) throw invalidRequest("status is not recognized", { status, allowed: STATUSES });
         const nowS = nowSeconds(now());
         const where = ["circle_id = ?"];
         const args: unknown[] = [circle.circle_id];
@@ -181,7 +181,7 @@ export function listingRoutes(checks: readonly ListingCheck[] = []): Route[] {
         }
         const cursor = decodeCursor(query);
         const after = cursor && typeof cursor.a === "number" ? cursor.a : null;
-        if (cursor && after === null) throw invalidRequest("cursor tidak valid");
+        if (cursor && after === null) throw invalidRequest("cursor is not valid");
         if (after !== null) where.push("id > ?"), args.push(after);
         const found = rows<ListingRow>(db, `SELECT * FROM listings WHERE ${where.join(" AND ")} ORDER BY id LIMIT ?`, ...args, limit + 1);
         const page = found.slice(0, limit);
@@ -208,14 +208,14 @@ export function listingRoutes(checks: readonly ListingCheck[] = []): Route[] {
       handler: ({ db, circle, params, body, now }) => {
         const found = findListing(db, circle.circle_id, params.hash as string);
         const signature = body !== null && typeof body === "object" ? (body as { signature?: unknown }).signature : undefined;
-        if (typeof signature !== "string") throw invalidRequest("signature wajib string");
+        if (typeof signature !== "string") throw invalidRequest("signature must be a string");
         const pubkey = memberKeys(db, circle.circle_id, [found.account_id])[found.account_id];
         if (pubkey === undefined || !verifyCancelSignature(found.listing_hash, circle.contract_id, signature, pubkey)) {
-          throw new ApiError(401, "invalid_signature", "Pembatalan harus ditandatangani pemasang listing", { account: found.account_id });
+          throw new ApiError(401, "invalid_signature", "The cancellation must be signed by the listing's poster", { account: found.account_id });
         }
         const nowS = nowSeconds(now());
         const status = effectiveStatus(found, nowS);
-        if (status !== "open") throw new ApiError(409, "listing_not_open", `Listing berstatus ${status}`, { listingHash: found.listing_hash, status });
+        if (status !== "open") throw new ApiError(409, "listing_not_open", `Listing is ${status}`, { listingHash: found.listing_hash, status });
         db.prepare("UPDATE listings SET status = 'cancelled', closed_at_ms = ? WHERE id = ?").run(now(), found.id);
         return { status: 200, body: listingView(findListing(db, circle.circle_id, found.listing_hash), nowS) };
       },

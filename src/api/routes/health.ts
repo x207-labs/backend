@@ -30,7 +30,7 @@ export const healthRoutes: Route[] = [
       } catch {
         // tabel belum dimigrasi: diperlakukan sama dengan cursor yang belum ada
       }
-      if (cursors.length === 0) throw new ApiError(503, "indexer_unavailable", "Indexer belum bootstrap");
+      if (cursors.length === 0) throw new ApiError(503, "indexer_unavailable", "Indexer has not bootstrapped yet");
       return {
         status: 200,
         body: {

@@ -16,16 +16,16 @@ const SIGNED = /^-?\d+$/;
 
 /** String bilangan bulat tak negatif dari event menjadi bigint; lebih besar dari 2^63 − 1 menghentikan indexer. */
 export function units(value: string, field: string): bigint {
-  if (!DIGITS.test(value)) throw new IndexerHaltError(`field ${field} bukan bilangan bulat: ${value}`);
+  if (!DIGITS.test(value)) throw new IndexerHaltError(`field ${field} is not an integer: ${value}`);
   const parsed = BigInt(value);
-  if (parsed > MAX_UNITS) throw new IndexerHaltError(`field ${field} melebihi 2^63 - 1: ${value}`);
+  if (parsed > MAX_UNITS) throw new IndexerHaltError(`field ${field} exceeds 2^63 - 1: ${value}`);
   return parsed;
 }
 
 export function signedUnits(value: string, field: string): bigint {
-  if (!SIGNED.test(value)) throw new IndexerHaltError(`field ${field} bukan bilangan bulat: ${value}`);
+  if (!SIGNED.test(value)) throw new IndexerHaltError(`field ${field} is not an integer: ${value}`);
   const parsed = BigInt(value);
-  if (parsed > MAX_UNITS || -parsed > MAX_UNITS) throw new IndexerHaltError(`field ${field} melebihi 2^63 - 1: ${value}`);
+  if (parsed > MAX_UNITS || -parsed > MAX_UNITS) throw new IndexerHaltError(`field ${field} exceeds 2^63 - 1: ${value}`);
   return parsed;
 }
 

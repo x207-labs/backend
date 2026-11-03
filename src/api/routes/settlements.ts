@@ -55,7 +55,7 @@ function item(r: SettlementRow, withAccount: boolean) {
 function statusFilter(query: URLSearchParams): string | null {
   const status = query.get("status");
   if (status !== null && !(STATUSES as readonly string[]).includes(status)) {
-    throw invalidRequest("status tidak dikenal", { status, allowed: STATUSES });
+    throw invalidRequest("unknown status", { status, allowed: STATUSES });
   }
   return status;
 }
@@ -72,9 +72,9 @@ export const settlementRoutes: Route[] = [
       const status = statusFilter(query);
       const cursor = decodeCursor(query);
       const before = cursor && typeof cursor.e === "number" && Number.isInteger(cursor.e) ? cursor.e : null;
-      if (cursor && before === null) throw invalidRequest("cursor tidak valid");
+      if (cursor && before === null) throw invalidRequest("invalid cursor");
       if (!row(db, "SELECT 1 AS one FROM members WHERE circle_id = ? AND account_id = ?", circle.circle_id, account)) {
-        throw new ApiError(404, "member_not_found", `Anggota ${account} tidak terdaftar`, { circle: circle.circle_id, account });
+        throw new ApiError(404, "member_not_found", `Member ${account} is not registered`, { circle: circle.circle_id, account });
       }
       const found = rows<SettlementRow>(
         db,
@@ -107,7 +107,7 @@ export const settlementRoutes: Route[] = [
       const status = statusFilter(query);
       const cursor = decodeCursor(query);
       const after = cursor && typeof cursor.a === "string" ? cursor.a : null;
-      if (cursor && after === null) throw invalidRequest("cursor tidak valid");
+      if (cursor && after === null) throw invalidRequest("invalid cursor");
       const epoch = resolveEpoch(ctx);
       const found = rows<SettlementRow>(
         db,

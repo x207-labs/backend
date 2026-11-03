@@ -67,11 +67,11 @@ export const ruleRoutes: Route[] = [
       const cursor = decodeCursor(query);
       const account = query.get("account");
       const state = query.get("state") ?? "all";
-      if (account !== null && !ACCOUNT.test(account)) throw invalidRequest("account bukan account id", { account });
-      if (state !== "all" && !(DEAL_STATES as readonly string[]).includes(state)) throw invalidRequest("state tidak dikenal", { state, allowed: [...DEAL_STATES, "all"] });
+      if (account !== null && !ACCOUNT.test(account)) throw invalidRequest("account is not a valid account id", { account });
+      if (state !== "all" && !(DEAL_STATES as readonly string[]).includes(state)) throw invalidRequest("unknown state", { state, allowed: [...DEAL_STATES, "all"] });
       let after = Number.MAX_SAFE_INTEGER;
       if (cursor) {
-        if (typeof cursor.a !== "number" || !Number.isSafeInteger(cursor.a)) throw invalidRequest("cursor tidak valid");
+        if (typeof cursor.a !== "number" || !Number.isSafeInteger(cursor.a)) throw invalidRequest("invalid cursor");
         after = cursor.a;
       }
       const found = rows<DealRow>(
@@ -104,9 +104,9 @@ export const ruleRoutes: Route[] = [
     pattern: "/x207/circles/{circle}/deals/{bundleId}",
     circleScoped: true,
     handler: ({ db, circle, params }) => {
-      if (!/^(0|[1-9]\d*)$/.test(params.bundleId as string)) throw invalidRequest("bundleId harus bilangan bulat >= 0", { bundleId: params.bundleId });
+      if (!/^(0|[1-9]\d*)$/.test(params.bundleId as string)) throw invalidRequest("bundleId must be an integer >= 0", { bundleId: params.bundleId });
       const d = row<DealRow>(db, "SELECT * FROM deals WHERE circle_id = ? AND bundle_id = ?", circle.circle_id, BigInt(params.bundleId as string));
-      if (!d) throw new ApiError(404, "deal_not_found", `Deal ${params.bundleId} tidak ada`, { bundleId: params.bundleId });
+      if (!d) throw new ApiError(404, "deal_not_found", `Deal ${params.bundleId} not found`, { bundleId: params.bundleId });
       const events = rows<{ event: string; account_id: string | null; amount: bigint | null; detail: string | null; block_height: bigint }>(
         db,
         "SELECT event, account_id, amount, detail, block_height FROM deal_events WHERE circle_id = ? AND bundle_id = ? ORDER BY id",
@@ -127,7 +127,7 @@ export const ruleRoutes: Route[] = [
     circleScoped: true,
     handler: ({ db, circle, query }) => {
       const state = query.get("state");
-      if (state !== null && state !== "pending" && state !== "frozen") throw invalidRequest("state harus pending atau frozen", { state });
+      if (state !== null && state !== "pending" && state !== "frozen") throw invalidRequest("state must be pending or frozen", { state });
       const found = rows<FreezeRow>(db, "SELECT * FROM member_freezes WHERE circle_id = ? AND (? IS NULL OR state = ?) ORDER BY account_id", circle.circle_id, state, state);
       return { status: 200, body: { circle: circle.circle_id, items: found.map(freezeView) } };
     },
@@ -140,7 +140,7 @@ export const ruleRoutes: Route[] = [
     handler: ({ db, circle, params }) => {
       const account = params.account as string;
       if (!row(db, "SELECT 1 AS one FROM members WHERE circle_id = ? AND account_id = ?", circle.circle_id, account)) {
-        throw new ApiError(404, "member_not_found", `Anggota ${account} tidak terdaftar`, { circle: circle.circle_id, account });
+        throw new ApiError(404, "member_not_found", `Member ${account} is not registered`, { circle: circle.circle_id, account });
       }
       const f = row<FreezeRow>(db, "SELECT * FROM member_freezes WHERE circle_id = ? AND account_id = ?", circle.circle_id, account);
       return { status: 200, body: { circle: circle.circle_id, ...(f ? freezeView(f) : { account, state: null, frozen: false, eta: null, reasonHash: null, fromEpoch: null }) } };

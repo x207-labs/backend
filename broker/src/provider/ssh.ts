@@ -34,17 +34,17 @@ const KEY_TYPES: Readonly<Record<string, { blob: string; length?: number }>> = {
 
 /** A public key of the form `<type> <base64>`; the blob must start with the same type name, so an option cannot ride in the type field. Returns the clean `type base64` or a reason. */
 export function parsePublicKey(ref: string): { ok: true; key: string } | { ok: false; reason: string } {
-  if (/[\x00-\x08\x0a-\x1f\x7f]/.test(ref.trim())) return { ok: false, reason: "kunci tidak boleh memuat baris baru atau karakter kontrol" };
+  if (/[\x00-\x08\x0a-\x1f\x7f]/.test(ref.trim())) return { ok: false, reason: "key must not contain newlines or control characters" };
   const parts = ref.trim().split(/\s+/);
   const type = parts[0] ?? "";
   const known = KEY_TYPES[type];
-  if (!known) return { ok: false, reason: `jenis kunci ${JSON.stringify(type.slice(0, 40))} tidak didukung` };
+  if (!known) return { ok: false, reason: `key type ${JSON.stringify(type.slice(0, 40))} is not supported` };
   const b64 = parts[1] ?? "";
-  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(b64) || b64.length > 2048) return { ok: false, reason: "bagian base64 kunci tidak sah" };
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(b64) || b64.length > 2048) return { ok: false, reason: "key base64 part is invalid" };
   const blob = Buffer.from(b64, "base64");
   const nameLength = blob.length >= 4 ? blob.readUInt32BE(0) : -1;
-  if (nameLength < 1 || 4 + nameLength > blob.length || blob.subarray(4, 4 + nameLength).toString("latin1") !== known.blob) return { ok: false, reason: "isi kunci tidak cocok dengan jenisnya" };
-  if (known.length !== undefined && blob.length !== known.length) return { ok: false, reason: "panjang kunci ed25519 tidak sah" };
+  if (nameLength < 1 || 4 + nameLength > blob.length || blob.subarray(4, 4 + nameLength).toString("latin1") !== known.blob) return { ok: false, reason: "key content does not match its type" };
+  if (known.length !== undefined && blob.length !== known.length) return { ok: false, reason: "ed25519 key length is invalid" };
   return { ok: true, key: `${type} ${b64}` };
 }
 
@@ -61,8 +61,8 @@ export function parseTimespec(spec: string): number | null {
 
 /** The forced command goes between double quotes of an option: no quote, backslash, control character or newline. */
 export function commandProblem(command: string): string | null {
-  if (command.length === 0 || command.length > 512) return "command harus 1 sampai 512 karakter";
-  if (/["\\\x00-\x1f\x7f]/.test(command)) return "command tidak boleh memuat tanda kutip ganda, backslash, atau karakter kontrol";
+  if (command.length === 0 || command.length > 512) return "command must be 1 to 512 characters";
+  if (/["\\\x00-\x1f\x7f]/.test(command)) return "command must not contain double quotes, backslashes, or control characters";
   return null;
 }
 
@@ -94,7 +94,7 @@ export class SshAdapter implements ProviderAccessAdapter {
     const parsed = parsePublicKey(ref);
     if (!parsed.ok) return parsed;
     // the proof is a raw ed25519 signature (SD-071): a key of another type could be named but never proven, so the grant could never open (B4-F5)
-    if (!parsed.key.startsWith("ssh-ed25519 ")) return { ok: false, reason: "hanya kunci ssh-ed25519 yang bisa dibuktikan kepemilikannya; RSA, ECDSA, dan kunci keamanan tidak didukung" };
+    if (!parsed.key.startsWith("ssh-ed25519 ")) return { ok: false, reason: "only ssh-ed25519 keys can be proven; RSA, ECDSA, and security keys are not supported" };
     return { ok: true };
   }
 
@@ -120,7 +120,7 @@ export class SshAdapter implements ProviderAccessAdapter {
     const parsed = parsePublicKey(request.granteeRef);
     if (!parsed.ok) throw new Error(parsed.reason);
     const command = request.resource ?? this.#o.defaultCommand ?? null;
-    if (command === null) throw new Error("grant SSH wajib menamai command di resource");
+    if (command === null) throw new Error("SSH grant must name the command in resource");
     const problem = commandProblem(command);
     if (problem !== null) throw new Error(problem);
     const handle = marker(request.grantId);

@@ -11,19 +11,19 @@ export type RawHandler = (ctx: HandlerContext, data: Record<string, unknown>) =>
 
 const str = (data: Record<string, unknown>, field: string): string => {
   const value = data[field];
-  if (typeof value !== "string") throw new IndexerHaltError(`event escrow: field ${field} harus string`);
+  if (typeof value !== "string") throw new IndexerHaltError(`escrow event: field ${field} must be a string`);
   return value;
 };
 const int = (data: Record<string, unknown>, field: string): number => {
   const value = data[field];
   const n = typeof value === "string" ? Number(value) : value;
-  if (typeof n !== "number" || !Number.isSafeInteger(n)) throw new IndexerHaltError(`event escrow: field ${field} harus integer`);
+  if (typeof n !== "number" || !Number.isSafeInteger(n)) throw new IndexerHaltError(`escrow event: field ${field} must be an integer`);
   return n;
 };
 
 /** An amount of a NEP-141 token, up to 2^128 - 1 (a token with 18 decimals passes 2^63): kept as the decimal text. */
 function tokenAmount(value: string): string {
-  if (!/^[1-9]\d*$/.test(value) || BigInt(value) >= 1n << 128n) throw new IndexerHaltError(`event escrow token: amount bukan bilangan bulat 1..2^128-1: ${value}`);
+  if (!/^[1-9]\d*$/.test(value) || BigInt(value) >= 1n << 128n) throw new IndexerHaltError(`escrow token event: amount is not an integer in 1..2^128-1: ${value}`);
   return value;
 }
 
@@ -42,7 +42,7 @@ interface VoucherEvent {
  */
 function earlierRegistrations(ctx: HandlerContext, epoch: number, payer: string, payee: string): VoucherEvent[] {
   const contract = (ctx.db.prepare("SELECT contract_id FROM circles WHERE circle_id = ?").get(ctx.circleId) as { contract_id: string } | undefined)?.contract_id;
-  if (contract === undefined) throw new IndexerHaltError(`lingkaran ${ctx.circleId} tidak dikenal`);
+  if (contract === undefined) throw new IndexerHaltError(`unknown circle ${ctx.circleId}`);
   const rows = ctx.db
     .prepare(
       `SELECT data_json FROM events_raw WHERE contract_id = ? AND event = 'voucher_registered'
@@ -108,7 +108,7 @@ export const rawHandlers: Record<string, RawHandler> = {
     const payee = str(data, "payee");
     const delta = units(str(data, "delta"), "delta");
     const [cancelled, before] = earlierRegistrations(ctx, epoch, payer, payee);
-    if (cancelled === undefined) throw new IndexerHaltError(`escrow_failed: tidak ada voucher_registered untuk ${payer} -> ${payee} di epoch ${epoch}`);
+    if (cancelled === undefined) throw new IndexerHaltError(`escrow_failed: no voucher_registered for ${payer} -> ${payee} in epoch ${epoch}`);
     if (before === undefined) {
       ctx.db.prepare("DELETE FROM obligations WHERE circle_id = ? AND epoch = ? AND debtor = ? AND creditor = ?").run(ctx.circleId, epoch, payer, payee);
     } else {
@@ -122,7 +122,7 @@ export const rawHandlers: Record<string, RawHandler> = {
     const debt = ctx.db
       .prepare("UPDATE members SET outstanding_debt = outstanding_debt - ?, updated_block = ? WHERE circle_id = ? AND account_id = ? AND outstanding_debt >= ?")
       .run(delta, ctx.block.height, ctx.circleId, payer, delta);
-    if (debt.changes === 0) throw new IndexerHaltError(`escrow_failed: utang ${payer} lebih kecil dari ${delta}`);
+    if (debt.changes === 0) throw new IndexerHaltError(`escrow_failed: debt of ${payer} is smaller than ${delta}`);
     ctx.db.prepare("UPDATE escrows SET state = 'held' WHERE circle_id = ? AND grant_id = ?").run(ctx.circleId, grantId);
   },
 };

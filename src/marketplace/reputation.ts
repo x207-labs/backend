@@ -44,14 +44,14 @@ export function validateSpotCheck(n: SpotCheckNotice): void {
   const bad = (m: string): never => {
     throw new SpotCheckFormatError(m);
   };
-  for (const key of ["circle", "subject", "verifier"] as const) if (typeof n[key] !== "string" || !ACCOUNT.test(n[key])) bad(`${key} harus account id`);
-  if (!HASH.test(String(n.job_hash))) bad("job_hash harus 64 heksadesimal huruf kecil");
-  if (typeof n.passed !== "boolean") bad("passed harus boolean");
-  if ((n.expected_hash === null) !== (n.got_hash === null)) bad("expected_hash dan got_hash datang bersama atau tidak sama sekali");
-  for (const h of [n.expected_hash, n.got_hash]) if (h !== null && !HASH.test(String(h))) bad("expected_hash dan got_hash harus 64 heksadesimal huruf kecil");
-  if (n.passed && n.expected_hash !== null && n.expected_hash !== n.got_hash) bad("passed true berarti expected_hash sama dengan got_hash");
-  if (!n.passed && n.expected_hash !== null && n.expected_hash === n.got_hash) bad("passed false berarti expected_hash berbeda dari got_hash");
-  if (!Number.isSafeInteger(n.at) || n.at < 1) bad("at harus detik unix bulat");
+  for (const key of ["circle", "subject", "verifier"] as const) if (typeof n[key] !== "string" || !ACCOUNT.test(n[key])) bad(`${key} must be an account id`);
+  if (!HASH.test(String(n.job_hash))) bad("job_hash must be 64 lowercase hex characters");
+  if (typeof n.passed !== "boolean") bad("passed must be a boolean");
+  if ((n.expected_hash === null) !== (n.got_hash === null)) bad("expected_hash and got_hash must both be present or both be absent");
+  for (const h of [n.expected_hash, n.got_hash]) if (h !== null && !HASH.test(String(h))) bad("expected_hash and got_hash must be 64 lowercase hex characters");
+  if (n.passed && n.expected_hash !== null && n.expected_hash !== n.got_hash) bad("passed true means expected_hash equals got_hash");
+  if (!n.passed && n.expected_hash !== null && n.expected_hash === n.got_hash) bad("passed false means expected_hash differs from got_hash");
+  if (!Number.isSafeInteger(n.at) || n.at < 1) bad("at must be integer unix seconds");
 }
 
 const sha = (text: string): Uint8Array => createHash("sha256").update(text, "utf8").digest();
@@ -218,9 +218,9 @@ export const reputationRoutes: Route[] = [
     circleScoped: true,
     handler: ({ db, circle, params }) => {
       const account = params.account as string;
-      if (!ACCOUNT.test(account)) throw invalidRequest("account bukan account id", { account });
+      if (!ACCOUNT.test(account)) throw invalidRequest("account is not an account id", { account });
       const member = row<{ status: string }>(db, "SELECT status FROM members WHERE circle_id = ? AND account_id = ?", circle.circle_id, account);
-      if (!member) throw new ApiError(404, "member_not_found", `Akun ${account} bukan anggota`, { account });
+      if (!member) throw new ApiError(404, "member_not_found", `Account ${account} is not a member`, { account });
       return { status: 200, body: { circle: circle.circle_id, memberStatus: member.status, ...reputationOf(db, circle.circle_id, account) } };
     },
   },
@@ -245,10 +245,10 @@ export const reputationRoutes: Route[] = [
     pattern: "/x207/circles/{circle}/reputation/spot-checks",
     circleScoped: true,
     handler: ({ db, circle, body, now }) => {
-      if (body === null || typeof body !== "object") throw invalidRequest("body harus objek");
+      if (body === null || typeof body !== "object") throw invalidRequest("body must be an object");
       const { notice, signature } = body as { notice?: unknown; signature?: unknown };
-      if (typeof signature !== "string") throw invalidRequest("signature wajib string");
-      if (notice === null || typeof notice !== "object") throw invalidRequest("notice wajib objek");
+      if (typeof signature !== "string") throw invalidRequest("signature must be a string");
+      if (notice === null || typeof notice !== "object") throw invalidRequest("notice must be an object");
       const n = notice as SpotCheckNotice;
       try {
         validateSpotCheck(n);
@@ -256,20 +256,20 @@ export const reputationRoutes: Route[] = [
         if (error instanceof SpotCheckFormatError) throw invalidRequest(error.message);
         throw error;
       }
-      if (n.circle !== circle.contract_id) throw invalidRequest("notice.circle harus akun kontrak lingkaran", { expected: circle.contract_id, got: n.circle });
-      if (n.verifier === n.subject) throw invalidRequest("verifier tidak boleh memeriksa dirinya sendiri");
+      if (n.circle !== circle.contract_id) throw invalidRequest("notice.circle must be the circle contract account", { expected: circle.contract_id, got: n.circle });
+      if (n.verifier === n.subject) throw invalidRequest("verifier must not check themselves");
       const nowS = nowSeconds(now());
-      if (Math.abs(n.at - nowS) > MAX_NOTICE_SKEW_SECONDS) throw invalidRequest(`notice.at menyimpang lebih dari ${MAX_NOTICE_SKEW_SECONDS} detik dari jam server`, { at: n.at, now: nowS });
+      if (Math.abs(n.at - nowS) > MAX_NOTICE_SKEW_SECONDS) throw invalidRequest(`notice.at deviates more than ${MAX_NOTICE_SKEW_SECONDS} seconds from the server clock`, { at: n.at, now: nowS });
       const pubkey = activeMemberKey(db, circle.circle_id, n.verifier);
-      if (!verifySpotCheckSignature(n, signature, pubkey)) throw new ApiError(401, "invalid_signature", "Tanda tangan notice tidak cocok dengan kunci voucher verifier", { account: n.verifier });
-      if (!row(db, "SELECT 1 AS x FROM members WHERE circle_id = ? AND account_id = ?", circle.circle_id, n.subject)) throw new ApiError(404, "member_not_found", `Akun ${n.subject} bukan anggota`, { account: n.subject });
+      if (!verifySpotCheckSignature(n, signature, pubkey)) throw new ApiError(401, "invalid_signature", "Notice signature does not match the verifier's voucher key", { account: n.verifier });
+      if (!row(db, "SELECT 1 AS x FROM members WHERE circle_id = ? AND account_id = ?", circle.circle_id, n.subject)) throw new ApiError(404, "member_not_found", `Account ${n.subject} is not a member`, { account: n.subject });
       const inserted = db
         .prepare(
           `INSERT OR IGNORE INTO spot_checks (circle_id, subject, verifier, job_hash, passed, expected_hash, got_hash, at_s, notice_hash, signature, recorded_at_ms)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(circle.circle_id, n.subject, n.verifier, n.job_hash, n.passed ? 1 : 0, n.expected_hash, n.got_hash, n.at, spotCheckHash(n), signature, now());
-      if (inserted.changes === 0) throw new ApiError(409, "already_exists", "Hasil uji acak untuk job ini sudah tercatat", { subject: n.subject, jobHash: n.job_hash });
+      if (inserted.changes === 0) throw new ApiError(409, "already_exists", "The spot-check result for this job is already recorded", { subject: n.subject, jobHash: n.job_hash });
       return { status: 201, body: { recorded: true, subject: n.subject, jobHash: n.job_hash, passed: n.passed, reputation: reputationOf(db, circle.circle_id, n.subject) } };
     },
   },

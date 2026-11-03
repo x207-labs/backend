@@ -23,21 +23,21 @@ export function parseDaoRegistry(text: string): DaoRegistryItem[] {
   try {
     raw = JSON.parse(text);
   } catch {
-    throw new DaoRegistryError("registri DAO bukan JSON");
+    throw new DaoRegistryError("DAO registry is not JSON");
   }
-  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) throw new DaoRegistryError("registri DAO harus objek {akun DAO: {rentable_vote_kinds}}");
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) throw new DaoRegistryError("DAO registry must be an object {DAO account: {rentable_vote_kinds}}");
   const items: DaoRegistryItem[] = [];
   for (const [dao, entry] of Object.entries(raw as Record<string, unknown>)) {
-    if (!isAccount(dao)) throw new DaoRegistryError(`${JSON.stringify(dao)} bukan akun NEAR`);
+    if (!isAccount(dao)) throw new DaoRegistryError(`${JSON.stringify(dao)} is not a NEAR account`);
     const kinds = (entry as { rentable_vote_kinds?: unknown } | null)?.rentable_vote_kinds ?? [];
-    if (!Array.isArray(kinds)) throw new DaoRegistryError(`${dao}: rentable_vote_kinds harus daftar`);
+    if (!Array.isArray(kinds)) throw new DaoRegistryError(`${dao}: rentable_vote_kinds must be a list`);
     const list: DaoRegistryItem["rentable_vote_kinds"] = [];
     for (const item of kinds as unknown[]) {
       const kind = typeof item === "string" ? item : (item as { kind?: unknown } | null)?.kind;
       const contract = typeof item === "string" ? null : (item as { contract?: unknown } | null)?.contract ?? null;
-      if (typeof kind !== "string" || !KIND.test(kind)) throw new DaoRegistryError(`${dao}: kind harus teks [a-z][a-z0-9_]{1,31}`);
-      if (FORBIDDEN_VOTE_KINDS.includes(kind)) throw new DaoRegistryError(`${dao}: jenis ${kind} tidak boleh disewakan (vote_kind_forbidden)`);
-      if (contract !== null && !isAccount(contract)) throw new DaoRegistryError(`${dao}: contract untuk ${kind} bukan akun NEAR`);
+      if (typeof kind !== "string" || !KIND.test(kind)) throw new DaoRegistryError(`${dao}: kind must be text matching [a-z][a-z0-9_]{1,31}`);
+      if (FORBIDDEN_VOTE_KINDS.includes(kind)) throw new DaoRegistryError(`${dao}: kind ${kind} cannot be rented out (vote_kind_forbidden)`);
+      if (contract !== null && !isAccount(contract)) throw new DaoRegistryError(`${dao}: contract for ${kind} is not a NEAR account`);
       if (!list.some((k) => k.kind === kind)) list.push({ kind, contract });
     }
     items.push({ dao, rentable_vote_kinds: list });

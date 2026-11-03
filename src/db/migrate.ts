@@ -6,8 +6,8 @@ import { MIGRATIONS, type Migration } from "./migrations.js";
 export class SchemaTooNewError extends Error {
   constructor(readonly unknown: number[], readonly inDatabase: { d9: number | null; marketplace: number | null }, readonly inCode: { d9: number; marketplace: number }) {
     super(
-      `database punya migrasi ${unknown.join(", ")} yang tidak dikenal build ini (versi tertinggi di database: D9 ${inDatabase.d9 ?? "-"}, marketplace ${inDatabase.marketplace ?? "-"}; di kode: D9 ${inCode.d9}, marketplace ${inCode.marketplace}). ` +
-        "Jangan jalankan build lama di file ini: pulihkan backup sebelum upgrade (docs/operations.md), atau pakai build yang baru.",
+      `database has migrations ${unknown.join(", ")} unknown to this build (highest version in database: D9 ${inDatabase.d9 ?? "-"}, marketplace ${inDatabase.marketplace ?? "-"}; in code: D9 ${inCode.d9}, marketplace ${inCode.marketplace}). ` +
+        "Do not run an older build on this file: restore a backup from before the upgrade (docs/operations.md), or use the newer build.",
     );
     this.name = "SchemaTooNewError";
   }

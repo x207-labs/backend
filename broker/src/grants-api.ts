@@ -18,7 +18,7 @@ export function activeGrantIdsOf(options: ActiveGrantsOptions): (grantee: string
     do {
       const url: string = `${base}/x207/circles/${encodeURIComponent(options.circle)}/grants?grantee=${encodeURIComponent(grantee)}&status=active&limit=${options.pageSize ?? 100}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`;
       const response = await (options.fetch ?? fetch)(url, { signal: AbortSignal.timeout(10_000) });
-      if (!response.ok) throw new Error(`read API ${response.status} untuk ${url}`);
+      if (!response.ok) throw new Error(`read API ${response.status} for ${url}`);
       const page = (await response.json()) as { items: Array<{ grantId: number }>; nextCursor: string | null };
       for (const item of page.items) ids.push(item.grantId);
       cursor = page.nextCursor;

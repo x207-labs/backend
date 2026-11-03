@@ -70,8 +70,8 @@ describe("BE-049 validation of a listing per kind of asset (catalogue #1 to #10)
   it("TC-BE-049-02 the scope must be exactly what the escrow takes: a key missing, of another shape, or badly formed is refused", async () => {
     const m = await start();
     const cases: Array<[string, (d: Record<string, unknown>) => Record<string, unknown>, RegExp]> = [
-      ["nft", ({ token_id: _t, ...d }) => d, /tepat nft_contract, token_id/],
-      ["nft", (d) => ({ ...d, amount: "1" }), /tepat nft_contract, token_id/],
+      ["nft", ({ token_id: _t, ...d }) => d, /must contain exactly nft_contract, token_id/],
+      ["nft", (d) => ({ ...d, amount: "1" }), /must contain exactly nft_contract, token_id/],
       ["nft", (d) => ({ ...d, nft_contract: "Bad Name" }), /account id/],
       ["nft", (d) => ({ ...d, token_id: "" }), /token_id/],
       ["ft", (d) => ({ ...d, amount: "0" }), /amount/],
@@ -79,9 +79,9 @@ describe("BE-049 validation of a listing per kind of asset (catalogue #1 to #10)
       ["ft", (d) => ({ ...d, amount: "-1" }), /amount/],
       ["ft", (d) => ({ ...d, amount: "1.5" }), /amount/],
       ["ft", (d) => ({ ...d, amount: "340282366920938463463374607431768211456" }), /u128/],
-      ["ft", (d) => ({ ...d, nft_contract: "n.near" }), /tepat ft_contract, amount/],
-      ["intents-balance", ({ amount: _a, ...d }) => d, /tepat mt_contract, token_id, amount/],
-      ["intents-balance", (d) => ({ ...d, ft_contract: "f.near" }), /tepat mt_contract, token_id, amount/],
+      ["ft", (d) => ({ ...d, nft_contract: "n.near" }), /must contain exactly ft_contract, amount/],
+      ["intents-balance", ({ amount: _a, ...d }) => d, /must contain exactly mt_contract, token_id, amount/],
+      ["intents-balance", (d) => ({ ...d, ft_contract: "f.near" }), /must contain exactly mt_contract, token_id, amount/],
       ["nft", (d) => ({ ...d, kind: "ft" }), /detail.kind/],
     ];
     for (const [key, patch, pattern] of cases) {
@@ -102,27 +102,27 @@ describe("BE-049 validation of a listing per kind of asset (catalogue #1 to #10)
   it("TC-BE-049-04 class A only, one lot, and the type registered in D10 with class A", async () => {
     const m = await start();
     const detail = buildAssetTemplate(inputs.ft!, NOW_S).detail;
-    expect(message(await post(m, { assetType: "token:nep141", detail, assetClass: "B" }))[2]).toContain("harus A");
-    expect(message(await post(m, { assetType: "token:nep141", detail, quantity: 2 }))[2]).toContain("quantity harus 1");
+    expect(message(await post(m, { assetType: "token:nep141", detail, assetClass: "B" }))[2]).toContain("must be A");
+    expect(message(await post(m, { assetType: "token:nep141", detail, quantity: 2 }))[2]).toContain("quantity must be 1");
     m.db.prepare("DELETE FROM asset_classes WHERE asset_type = 'token:nep141'").run();
-    expect(message(await post(m, { assetType: "token:nep141", detail }))[2]).toContain("belum terdaftar");
+    expect(message(await post(m, { assetType: "token:nep141", detail }))[2]).toContain("is not registered");
     m.db.prepare("INSERT INTO asset_classes (circle_id, asset_type, class, block_height, receipt_id, log_index) VALUES (?, 'token:nep141', 'B', 1, 'r', 0)").run(CIRCLE);
-    expect(message(await post(m, { assetType: "token:nep141", detail }))[2]).toContain("kelas B");
+    expect(message(await post(m, { assetType: "token:nep141", detail }))[2]).toContain("class B");
   });
 
   it("TC-BE-049-05 a ticket ends with its event and a coupon with its validity; the listing may not outlive them", async () => {
     const m = await start();
     const eventEnds = (ends: number) => (d: Record<string, unknown>) => ({ ...d, event: { ...(d.event as object), ends_at: ends } });
     expect(message(await fromTemplate(m, "ticket", eventEnds(NOW_S + 1000), { expiresAt: NOW_S + 2000 }))[2]).toContain("event.ends_at");
-    expect(message(await fromTemplate(m, "ticket", eventEnds(NOW_S - 5)))[2]).toContain("sudah lewat");
+    expect(message(await fromTemplate(m, "ticket", eventEnds(NOW_S - 5)))[2]).toContain("already passed");
     // the SDK writes the end of the event in `event.ends_at` and, in newer versions, in `valid_until` too: remove both
     const noEvent = await fromTemplate(m, "ticket", ({ event: _e, valid_until: _v, ...d }) => d);
-    expect(message(noEvent)[2]).toContain("event.ends_at atau valid_until");
+    expect(message(noEvent)[2]).toContain("event.ends_at or valid_until");
     expect((await fromTemplate(m, "ticket", eventEnds(NOW_S + 1000), { expiresAt: NOW_S + 1000 })).status).toBe(201);
     expect(message(await fromTemplate(m, "coupon", ({ valid_until: _v, ...d }) => d))[2]).toContain("valid_until");
     expect(message(await fromTemplate(m, "coupon", (d) => ({ ...d, valid_until: "soon" })))[2]).toContain("valid_until");
-    expect(message(await fromTemplate(m, "coupon", (d) => ({ ...d, valid_until: NOW_S + 100 }), { expiresAt: NOW_S + 3000 }))[2]).toContain("tidak boleh melewati valid_until");
-    expect(message(await fromTemplate(m, "coupon", (d) => ({ ...d, valid_until: NOW_S - 1 })))[2]).toContain("sudah lewat");
+    expect(message(await fromTemplate(m, "coupon", (d) => ({ ...d, valid_until: NOW_S + 100 }), { expiresAt: NOW_S + 3000 }))[2]).toContain("must not be after valid_until");
+    expect(message(await fromTemplate(m, "coupon", (d) => ({ ...d, valid_until: NOW_S - 1 })))[2]).toContain("already passed");
   });
 
   it("TC-BE-049-06 a license keeps its terms hash and seats well formed", async () => {
@@ -146,7 +146,7 @@ describe("BE-049 validation of a listing per kind of asset (catalogue #1 to #10)
   it("TC-BE-049-08 the USDT of the circle held at Intents is refused; another token held there is accepted", async () => {
     const m = await start({ intentsId: "intents.near", usdtTokenId: "usdt.token.near" });
     const usdt = await fromTemplate(m, "intents-balance", (d) => ({ ...d, token_id: "nep141:usdt.token.near" }));
-    expect([usdt.status, usdt.json.error.code, usdt.json.error.message]).toEqual([400, "scope_invalid", expect.stringContaining("bukan aset escrow")]);
+    expect([usdt.status, usdt.json.error.code, usdt.json.error.message]).toEqual([400, "scope_invalid", expect.stringContaining("not an escrow asset")]);
     expect((await fromTemplate(m, "intents-balance")).status).toBe(201);
     expect((await fromTemplate(m, "intents-balance", (d) => ({ ...d, mt_contract: "other.near", token_id: "nep141:usdt.token.near" }))).status).toBe(201);
   });
@@ -166,7 +166,7 @@ describe("BE-049 validation of a listing per kind of asset (catalogue #1 to #10)
     expect((await fromTemplate(m, "pool-share-mt")).status).toBe(201);
     const both = await fromTemplate(m, "pool-share-ft", (d) => ({ ...d, mt_contract: "m.near", token_id: "t" }));
     expect(both.json.error.code).toBe("scope_invalid");
-    expect(message(await post(m, { assetType: "amm:lp-share", detail: JSON.stringify({ pool: "x" }) }))[2]).toContain("ft_contract atau mt_contract");
+    expect(message(await post(m, { assetType: "amm:lp-share", detail: JSON.stringify({ pool: "x" }) }))[2]).toContain("ft_contract or mt_contract");
   });
 
   it("TC-BE-049-10 other asset types are not looked at, and a typed name from the old convention (nft:*) is an ordinary type again", async () => {

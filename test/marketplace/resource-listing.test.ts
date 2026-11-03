@@ -39,8 +39,8 @@ describe("BE-050 listing of a metered resource (class D): unit, price per unit, 
   it("TC-BE-050-02 a listing without a unit, with an unknown unit or with a bad price is refused", async () => {
     market = await startMarket(["andi"]);
     const m = market;
-    expect(message(await post(m, { detail: JSON.stringify({ unit_price: C(1), endpoint: "https://a.example/x" }) }))).toEqual([400, "scope_invalid", "unit tidak dikenal"]);
-    for (const unit of ["once", "GBs", "gb", "", 5, null]) expect((await post(m, { detail: detailOf({ unit }) })).json.error.message, String(unit)).toBe("unit tidak dikenal");
+    expect(message(await post(m, { detail: JSON.stringify({ unit_price: C(1), endpoint: "https://a.example/x" }) }))).toEqual([400, "scope_invalid", "unit is not recognized"]);
+    for (const unit of ["once", "GBs", "gb", "", 5, null]) expect((await post(m, { detail: detailOf({ unit }) })).json.error.message, String(unit)).toBe("unit is not recognized");
     for (const price of ["0", "-1", "1.5", 5, "", "abc", "340282366920938463463374607431768211456"]) {
       const r = await post(m, { detail: detailOf({ unit_price: price }) });
       expect([String(price), r.status, r.json.error.code]).toEqual([String(price), 400, "scope_invalid"]);
@@ -56,27 +56,27 @@ describe("BE-050 listing of a metered resource (class D): unit, price per unit, 
     const bad: Array<[string, RegExp]> = [
       ["http://api.provider.example/run", /https/],
       ["ftp://api.provider.example/run", /https/],
-      ["https://user:secret@api.provider.example/run", /nama pengguna|kata sandi/],
-      ["https://user@api.provider.example/run", /nama pengguna|kata sandi/],
-      ["https://api.provider.example/run?api_key=abc", /kredensial/],
-      ["https://api.provider.example/run?x=1&Token=abc", /kredensial/],
-      ["https://api.provider.example/run#frag", /fragmen/],
-      ["https://203.0.113.7/run", /alamat IP/],
-      ["https://[::1]/run", /alamat IP/],
-      ["https://localhost/run", /host publik/],
-      ["https://box.internal/run", /host publik/],
-      ["https://printer.local/run", /host publik/],
-      ["https://intranet/run", /host publik/],
+      ["https://user:secret@api.provider.example/run", /username or password/],
+      ["https://user@api.provider.example/run", /username or password/],
+      ["https://api.provider.example/run?api_key=abc", /credentials/],
+      ["https://api.provider.example/run?x=1&Token=abc", /credentials/],
+      ["https://api.provider.example/run#frag", /fragment/],
+      ["https://203.0.113.7/run", /IP address/],
+      ["https://[::1]/run", /IP address/],
+      ["https://localhost/run", /public host/],
+      ["https://box.internal/run", /public host/],
+      ["https://printer.local/run", /public host/],
+      ["https://intranet/run", /public host/],
       // BE-062 F6: a name with a trailing dot is the same name; names that carry an address, and wildcard DNS
-      ["https://localhost./run", /host publik/],
-      ["https://localhost.../run", /host publik/],
-      ["https://metadata.google.internal./latest", /host publik/],
-      ["https://printer.local./run", /host publik/],
-      ["https://127.0.0.1.nip.io/run", /membawa alamat IP/],
-      ["https://10.0.0.5.example.com/run", /membawa alamat IP/],
+      ["https://localhost./run", /public host/],
+      ["https://localhost.../run", /public host/],
+      ["https://metadata.google.internal./latest", /public host/],
+      ["https://printer.local./run", /public host/],
+      ["https://127.0.0.1.nip.io/run", /carries an IP address/],
+      ["https://10.0.0.5.example.com/run", /carries an IP address/],
       ["https://10-0-0-5.sslip.io/run", /wildcard/],
       ["https://app.localtest.me/run", /wildcard/],
-      ["api.provider.example/run", /bukan URL/],
+      ["api.provider.example/run", /not a URL/],
       ["https://api.provider.example/run run", /ASCII/],
       ["", /endpoint/],
       [`https://api.provider.example/${"a".repeat(600)}`, /512/],
@@ -95,8 +95,8 @@ describe("BE-050 listing of a metered resource (class D): unit, price per unit, 
   it("TC-BE-050-04 class D only for these kinds; other kinds and classes are not looked at", async () => {
     market = await startMarket(["andi"]);
     const m = market;
-    expect(message(await post(m, { assetClass: "A" }))[2]).toContain("harus D");
-    expect(message(await post(m, { assetClass: "C" }))[2]).toContain("harus D");
+    expect(message(await post(m, { assetClass: "A" }))[2]).toContain("must be D");
+    expect(message(await post(m, { assetClass: "C" }))[2]).toContain("must be D");
     // an asset type outside the twelve keeps its old rules: free text is fine
     expect((await post(m, { assetType: "text:translation-summary", detail: "translate up to 5 pages" })).status).toBe(201);
     expect((await post(m, { assetType: "gpu-hours", detail: "A100 80GB", assetClass: "A" })).status).toBe(201);

@@ -32,7 +32,7 @@ describe("BE-042 asset_type bebas dan kelas A/B/C/D", () => {
       expect(res.status).toBe(400);
       expect(res.json.error.code).toBe("asset_class_rejected");
       expect(res.json.error.details).toMatchObject({ side, assetClass: "X", allowed: ["A", "B", "C", "D"] });
-      expect(res.json.error.message).toContain("kelas X");
+      expect(res.json.error.message).toContain("class X");
     }
     expect((await m.get("/listings?status=all")).json.items).toHaveLength(0);
   });

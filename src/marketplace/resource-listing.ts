@@ -42,24 +42,24 @@ const invalid = (message: string, details: Record<string, unknown> = {}): never 
 
 /** The reason an endpoint is refused, or `null` when it is an https address without credentials. Pure, for the tests too. */
 export function endpointProblem(endpoint: unknown): string | null {
-  if (typeof endpoint !== "string" || endpoint.length === 0 || endpoint.length > MAX_URL) return `endpoint harus teks 1 sampai ${MAX_URL} karakter`;
-  if (!/^[\x21-\x7e]+$/.test(endpoint)) return "endpoint harus ASCII tanpa spasi";
+  if (typeof endpoint !== "string" || endpoint.length === 0 || endpoint.length > MAX_URL) return `endpoint must be text of 1 to ${MAX_URL} characters`;
+  if (!/^[\x21-\x7e]+$/.test(endpoint)) return "endpoint must be ASCII without spaces";
   let url: URL;
   try {
     url = new URL(endpoint);
   } catch {
-    return "endpoint bukan URL";
+    return "endpoint is not a URL";
   }
-  if (url.protocol !== "https:") return "endpoint harus https";
-  if (url.username !== "" || url.password !== "") return "endpoint tidak boleh memuat nama pengguna atau kata sandi";
-  if (url.hash !== "") return "endpoint tidak boleh memuat fragmen";
+  if (url.protocol !== "https:") return "endpoint must be https";
+  if (url.username !== "" || url.password !== "") return "endpoint must not contain a username or password";
+  if (url.hash !== "") return "endpoint must not contain a fragment";
   // a name may end with a dot (`localhost.`, `metadata.google.internal.`): the dot is the same name, so it goes before the checks (BE-062 F6)
   const host = url.hostname.toLowerCase().replace(/\.+$/, "");
-  if (host.startsWith("[") || IPV4.test(host)) return "endpoint harus memakai nama host, bukan alamat IP";
-  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal") || !host.includes(".")) return "endpoint harus nama host publik";
+  if (host.startsWith("[") || IPV4.test(host)) return "endpoint must use a host name, not an IP address";
+  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal") || !host.includes(".")) return "endpoint must be a public host name";
   // names that carry an address in themselves (`127.0.0.1.nip.io`, `10-0-0-5.sslip.io`) and services that answer with any address asked for
-  if (/(^|\.)\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(\.|$)/.test(host) || WILDCARD_DNS.some((d) => host === d || host.endsWith(`.${d}`))) return "endpoint tidak boleh memakai nama yang membawa alamat IP atau DNS wildcard";
-  for (const name of url.searchParams.keys()) if (SECRET_PARAM.test(name)) return `endpoint tidak boleh memuat kredensial di query (${name})`;
+  if (/(^|\.)\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(\.|$)/.test(host) || WILDCARD_DNS.some((d) => host === d || host.endsWith(`.${d}`))) return "endpoint must not use a name that carries an IP address or wildcard DNS";
+  for (const name of url.searchParams.keys()) if (SECRET_PARAM.test(name)) return `endpoint must not contain credentials in the query (${name})`;
   return null;
 }
 
@@ -67,18 +67,18 @@ export const resourceCheck: ListingCheck = (listing: Listing) => {
   const offer = (listing as { offer?: { asset_type?: unknown; asset_class?: unknown } }).offer;
   const assetType = offer?.asset_type;
   if (typeof assetType !== "string" || !(assetType in RESOURCE_ASSET_TYPES)) return;
-  if (offer?.asset_class !== "D") invalid(`offer.asset_class harus D untuk ${assetType}: sumber daya terukur dibayar per pemakaian`, { assetType, assetClass: offer?.asset_class ?? null });
+  if (offer?.asset_class !== "D") invalid(`offer.asset_class must be D for ${assetType}: metered resources are paid per use`, { assetType, assetClass: offer?.asset_class ?? null });
   let detail: unknown;
   try {
     detail = JSON.parse(String((listing as { detail?: unknown }).detail ?? ""));
   } catch {
-    return invalid(`detail untuk ${assetType} harus teks JSON {"unit", "unit_price", "endpoint"}`, { assetType });
+    return invalid(`detail for ${assetType} must be JSON text {"unit", "unit_price", "endpoint"}`, { assetType });
   }
-  if (detail === null || typeof detail !== "object" || Array.isArray(detail)) return invalid(`detail untuk ${assetType} harus objek JSON`, { assetType });
+  if (detail === null || typeof detail !== "object" || Array.isArray(detail)) return invalid(`detail for ${assetType} must be a JSON object`, { assetType });
   const d = detail as Record<string, unknown>;
-  if (!(RESOURCE_UNITS as readonly unknown[]).includes(d.unit)) invalid("unit tidak dikenal", { assetType, unit: d.unit ?? null, allowed: [...RESOURCE_UNITS] });
+  if (!(RESOURCE_UNITS as readonly unknown[]).includes(d.unit)) invalid("unit is not recognized", { assetType, unit: d.unit ?? null, allowed: [...RESOURCE_UNITS] });
   if (!(typeof d.unit_price === "string" && /^[1-9]\d*$/.test(d.unit_price) && BigInt(d.unit_price) <= U128_MAX)) {
-    invalid("unit_price harus string desimal di atas 0 (credit satuan terkecil per satuan) dan tidak melebihi u128", { assetType });
+    invalid("unit_price must be a decimal string above 0 (credit in the smallest unit, per unit) and not exceed u128", { assetType });
   }
   const problem = endpointProblem(d.endpoint);
   if (problem !== null) invalid(problem, { assetType });
@@ -102,7 +102,7 @@ export const resourceRoutes: Route[] = [
     circleScoped: true,
     handler: ({ db, circle, query, now }) => {
       const unitFilter = query.get("unit");
-      if (unitFilter !== null && !(RESOURCE_UNITS as readonly string[]).includes(unitFilter)) throw invalidRequest("unit tidak dikenal", { unit: unitFilter, allowed: [...RESOURCE_UNITS] });
+      if (unitFilter !== null && !(RESOURCE_UNITS as readonly string[]).includes(unitFilter)) throw invalidRequest("unit is not recognized", { unit: unitFilter, allowed: [...RESOURCE_UNITS] });
       const found = rows<ListingDetailRow>(
         db,
         "SELECT offer_asset_type, detail FROM listings WHERE circle_id = ? AND status = 'open' AND expires_at > ? AND offer_class = 'D' ORDER BY id",

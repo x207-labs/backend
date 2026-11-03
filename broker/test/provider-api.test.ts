@@ -271,7 +271,7 @@ describe("BE-059 AWS STS adapter with a permission boundary (mock HTTP)", () => 
     expect(none.seen.map((s) => new URLSearchParams(s.body).get("Action"))).toEqual(["GetRole"]);
     const ok = make(iamOk);
     await expect(ok.adapter.grant(req({ resource: "arn:aws:iam::123456789012:role/other" }))).rejects.toThrow(/allowedRoleArns/);
-    await expect(ok.adapter.grant(req({ expiresAtMs: NOW + (STS_MIN_SECONDS - 1) * 1000 }))).rejects.toThrow(/batas bawah/);
+    await expect(ok.adapter.grant(req({ expiresAtMs: NOW + (STS_MIN_SECONDS - 1) * 1000 }))).rejects.toThrow(/remaining lease time/);
     await expect(ok.adapter.grant(req({ resource: "not-an-arn" }))).rejects.toThrow();
     expect(ok.seen).toEqual([]);
   });

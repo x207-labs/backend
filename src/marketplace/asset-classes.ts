@@ -6,10 +6,10 @@ import type { Route } from "../api/router.js";
 import type { ListingCheck } from "./listings.js";
 
 export const ASSET_CLASS_REGISTRY = [
-  { class: "A", delivery: "native", description: "Dialihkan secara native lewat escrow atomik (NFT, akun NEAR, aset on-chain)" },
-  { class: "B", delivery: "access_key", description: "Sewa akses akun NEAR lewat function-call key" },
-  { class: "C", delivery: "tee_broker", description: "Broker TEE meneruskan panggilan lewat endpoint x402" },
-  { class: "D", delivery: "x402", description: "Jasa langsung dibayar dengan voucher (alur F2)" },
+  { class: "A", delivery: "native", description: "Transferred natively through atomic escrow (NFT, NEAR account, on-chain asset)" },
+  { class: "B", delivery: "access_key", description: "Rental of NEAR account access through a function-call key" },
+  { class: "C", delivery: "tee_broker", description: "TEE broker relays calls through an x402 endpoint" },
+  { class: "D", delivery: "x402", description: "Service paid directly with a voucher (flow F2)" },
 ] as const;
 
 /** Tolak sisi listing yang `asset_class`-nya di luar A/B/C/D (termasuk `X`) dengan 400 `asset_class_rejected`. */
@@ -18,8 +18,8 @@ export const assetClassCheck: ListingCheck = (listing: Listing) => {
     const assetClass = (listing[side] as { asset_class?: unknown } | undefined)?.asset_class;
     if (assetClass === undefined) continue;
     if (!(ASSET_CLASSES as readonly unknown[]).includes(assetClass)) {
-      const hint = assetClass === "X" ? "kelas X (aset yang tidak boleh dialihkan) tidak bisa dilisting" : "kelas aset tidak dikenal";
-      throw new ApiError(400, "asset_class_rejected", `${side}.asset_class ${JSON.stringify(assetClass)} ditolak: ${hint}`, {
+      const hint = assetClass === "X" ? "class X (non-transferable asset) cannot be listed" : "unknown asset class";
+      throw new ApiError(400, "asset_class_rejected", `${side}.asset_class ${JSON.stringify(assetClass)} rejected: ${hint}`, {
         side,
         assetClass: assetClass as string,
         allowed: [...ASSET_CLASSES],

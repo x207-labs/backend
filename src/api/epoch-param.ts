@@ -9,13 +9,13 @@ const EPOCH_COLUMNS = `epoch, phase, cutoff_at_ns, closed_at_ns, proposal_deadli
 /** `{n}` = bilangan bulat ≥ 0 atau `current` (epoch terbesar di D9); 404 `epoch_not_found` bila belum ada. */
 export function resolveEpoch(ctx: Pick<RouteContext, "db" | "circle" | "params">): EpochRow {
   const raw = ctx.params.n as string;
-  if (raw !== "current" && !/^\d+$/.test(raw)) throw invalidRequest("{n} harus bilangan bulat >= 0 atau current", { n: raw });
+  if (raw !== "current" && !/^\d+$/.test(raw)) throw invalidRequest("{n} must be an integer >= 0 or current", { n: raw });
   const found =
     raw === "current"
       ? row<EpochRow>(ctx.db, `SELECT ${EPOCH_COLUMNS} FROM epochs WHERE circle_id = ? ORDER BY epoch DESC LIMIT 1`, ctx.circle.circle_id)
       : row<EpochRow>(ctx.db, `SELECT ${EPOCH_COLUMNS} FROM epochs WHERE circle_id = ? AND epoch = ?`, ctx.circle.circle_id, BigInt(raw));
   if (!found) {
-    throw new ApiError(404, "epoch_not_found", `Epoch ${raw} belum ada di D9`, {
+    throw new ApiError(404, "epoch_not_found", `Epoch ${raw} does not exist in D9 yet`, {
       circle: ctx.circle.circle_id,
       epoch: raw === "current" ? raw : Number(raw),
     });

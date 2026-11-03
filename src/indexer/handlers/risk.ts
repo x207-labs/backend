@@ -30,7 +30,7 @@ export const riskHandlers: HandlerMap = {
     );
     for (const change of e.changes) {
       const newLimit = units(change.new_limit, "new_limit");
-      requireChange(update.run(newLimit, ctx.block.height, ctx.circleId, change.account_id).changes, `anggota ${change.account_id}`);
+      requireChange(update.run(newLimit, ctx.block.height, ctx.circleId, change.account_id).changes, `member ${change.account_id}`);
       recordLimit(ctx, {
         account: change.account_id, epoch: e.epoch, oldLimit: units(change.old_limit, "old_limit"), newLimit,
         status: change.status, reason: ruling ? "ruling" : "finalize",

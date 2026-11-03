@@ -29,28 +29,28 @@ export interface BrokerConfig {
 export function readConfig(env: Record<string, string | undefined>): BrokerConfig {
   const need = (name: string): string => {
     const value = env[name];
-    if (value === undefined || value === "") throw new ConfigError(`${name} wajib diisi (lihat .env.example)`);
+    if (value === undefined || value === "") throw new ConfigError(`${name} is required (see .env.example)`);
     return value;
   };
   const key = (name: string): string => {
     const value = need(name);
-    if (!value.startsWith("ed25519:")) throw new ConfigError(`${name} harus berbentuk ed25519:<base58>`);
+    if (!value.startsWith("ed25519:")) throw new ConfigError(`${name} must have the form ed25519:<base58>`);
     return value;
   };
   const int = (name: string, fallback: number): number => {
     const raw = env[name];
     if (raw === undefined || raw === "") return fallback;
-    if (!/^\d+$/.test(raw)) throw new ConfigError(`${name} harus bilangan bulat >= 0`);
+    if (!/^\d+$/.test(raw)) throw new ConfigError(`${name} must be an integer >= 0`);
     return Number(raw);
   };
   const mode = (): "self-hosted" | "hosted" => {
     const raw = env.BROKER_MODE ?? "";
     if (raw === "" || raw === "self-hosted") return "self-hosted";
     if (raw === "hosted") return "hosted";
-    throw new ConfigError("BROKER_MODE harus self-hosted atau hosted");
+    throw new ConfigError("BROKER_MODE must be self-hosted or hosted");
   };
   const limitsRaw = env.BROKER_LIMITS ?? env.API_LIMITS ?? "";
-  if (limitsRaw !== "" && limitsRaw !== "on" && limitsRaw !== "off") throw new ConfigError("BROKER_LIMITS (atau API_LIMITS) harus off atau on");
+  if (limitsRaw !== "" && limitsRaw !== "on" && limitsRaw !== "off") throw new ConfigError("BROKER_LIMITS (or API_LIMITS) must be off or on");
   const off = limitsRaw === "off";
   return {
     readApiUrl: need("X207_READ_API_URL"),

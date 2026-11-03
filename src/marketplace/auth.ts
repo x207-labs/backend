@@ -10,8 +10,8 @@ export function activeMemberKey(db: Database.Database, circleId: string, account
     circleId,
     account,
   );
-  if (!member) throw new ApiError(404, "member_not_found", `Akun ${account} bukan anggota`, { account });
-  if (member.status !== "active") throw new ApiError(403, "member_not_active", `Akun ${account} tidak aktif`, { account, status: member.status });
+  if (!member) throw new ApiError(404, "member_not_found", `Account ${account} is not a member`, { account });
+  if (member.status !== "active") throw new ApiError(403, "member_not_active", `Account ${account} is not active`, { account, status: member.status });
   return member.pubkey_voucher;
 }
 

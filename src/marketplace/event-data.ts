@@ -2,7 +2,7 @@
 // read from either shape. Found by the near-sandbox test of BE-055: with `$.field` alone, a real event gave NULL.
 /** SQL expression for the field `key` of the event in the column `data_json` (a name of a field, not user input). */
 export const eventField = (key: string, column = "data_json"): string => {
-  if (!/^[a-z_]+$/.test(key)) throw new Error(`campo de evento tidak sah: ${key}`);
+  if (!/^[a-z_]+$/.test(key)) throw new Error(`invalid event field: ${key}`);
   return `COALESCE(json_extract(${column}, '$[0].${key}'), json_extract(${column}, '$.${key}'))`;
 };
 

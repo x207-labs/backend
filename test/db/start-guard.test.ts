@@ -42,7 +42,7 @@ describe("BE-073 fix: the start guard refuses a file written by a newer build", 
     expect(error).toBeInstanceOf(SchemaTooNewError);
     const message = (error as SchemaTooNewError).message;
     expect(message).toContain("1117, 9999");
-    expect(message).toMatch(/versi tertinggi di database: D9 10, marketplace 9999; di kode: D9 10, marketplace 1116/);
+    expect(message).toMatch(/highest version in database: D9 10, marketplace 9999; in code: D9 10, marketplace 1116/);
     expect((error as SchemaTooNewError).unknown).toEqual([1117, 9999]);
     expect(recorded(file)).toBe(before);
     const db = new Database(file);
@@ -74,7 +74,7 @@ describe("BE-073 fix: the start guard refuses a file written by a newer build", 
     });
     expect(run.status).toBe(1);
     const line = JSON.parse(run.stderr.trim().split("\n").pop()!);
-    expect(line).toMatchObject({ level: "error", msg: "backend tidak bisa mulai", error: { name: "SchemaTooNewError" } });
+    expect(line).toMatchObject({ level: "error", msg: "backend failed to start", error: { name: "SchemaTooNewError" } });
     expect(line.error.message).toContain("9999");
     expect(recorded(file)).toBeGreaterThan(0);
   });

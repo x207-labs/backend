@@ -46,13 +46,13 @@ export function validateDeliveryNotice(n: DeliveryNotice): void {
   const bad = (m: string): never => {
     throw new DeliveryFormatError(m);
   };
-  if (typeof n.circle !== "string" || !ACCOUNT.test(n.circle) || typeof n.actor !== "string" || !ACCOUNT.test(n.actor)) bad("circle dan actor harus account id");
-  if (!HASH.test(String(n.listing_hash)) || !HASH.test(String(n.offer_hash))) bad("listing_hash dan offer_hash harus 64 heksadesimal huruf kecil");
-  if (!(DELIVERY_SIDES as readonly string[]).includes(n.side)) bad("side harus offer atau want");
-  if (!(DELIVERY_ACTIONS as readonly string[]).includes(n.action)) bad("action tidak dikenal");
-  if (!Number.isSafeInteger(n.at) || n.at < 1) bad("at harus detik unix bulat");
-  if (n.proof_hash !== null && (n.action !== "delivered" || !HASH.test(String(n.proof_hash)))) bad("proof_hash hanya untuk delivered dan berupa 64 heksadesimal huruf kecil");
-  if (n.action === "disputed" ? !(DISPUTE_REASONS as readonly string[]).includes(String(n.reason)) : n.reason !== null) bad("reason wajib untuk disputed dan tidak untuk yang lain");
+  if (typeof n.circle !== "string" || !ACCOUNT.test(n.circle) || typeof n.actor !== "string" || !ACCOUNT.test(n.actor)) bad("circle and actor must be account ids");
+  if (!HASH.test(String(n.listing_hash)) || !HASH.test(String(n.offer_hash))) bad("listing_hash and offer_hash must be 64 lowercase hex characters");
+  if (!(DELIVERY_SIDES as readonly string[]).includes(n.side)) bad("side must be offer or want");
+  if (!(DELIVERY_ACTIONS as readonly string[]).includes(n.action)) bad("action is not recognized");
+  if (!Number.isSafeInteger(n.at) || n.at < 1) bad("at must be whole unix seconds");
+  if (n.proof_hash !== null && (n.action !== "delivered" || !HASH.test(String(n.proof_hash)))) bad("proof_hash is only for delivered and must be 64 lowercase hex characters");
+  if (n.action === "disputed" ? !(DISPUTE_REASONS as readonly string[]).includes(String(n.reason)) : n.reason !== null) bad("reason is required for disputed and not allowed otherwise");
 }
 
 /** Canonical JSON: keys `circle, listing_hash, offer_hash, side, actor, action, at, proof_hash, reason`. */

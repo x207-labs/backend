@@ -31,17 +31,17 @@ export interface AppConfig {
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
   const value = env[name];
-  if (value === undefined || value === "") throw new Error(`${name} wajib diisi`);
+  if (value === undefined || value === "") throw new Error(`${name} is required`);
   return value;
 }
 
 function integer(env: NodeJS.ProcessEnv, name: string, fallback?: number): number {
   const raw = env[name];
   if (raw === undefined || raw === "") {
-    if (fallback === undefined) throw new Error(`${name} wajib diisi`);
+    if (fallback === undefined) throw new Error(`${name} is required`);
     return fallback;
   }
-  if (!/^\d+$/.test(raw)) throw new Error(`${name} harus bilangan bulat >= 0, dapat "${raw}"`);
+  if (!/^\d+$/.test(raw)) throw new Error(`${name} must be an integer >= 0, got "${raw}"`);
   return Number(raw);
 }
 
@@ -75,7 +75,7 @@ async function viewGetParams(rpcUrl: string, contractId: string): Promise<Contra
     signal: AbortSignal.timeout(15_000),
   });
   const body = (await response.json()) as { result?: { result: number[] }; error?: unknown };
-  if (!body.result) throw new Error(`get_params gagal: ${JSON.stringify(body.error)}`);
+  if (!body.result) throw new Error(`get_params failed: ${JSON.stringify(body.error)}`);
   return JSON.parse(Buffer.from(body.result.result).toString("utf8")) as ContractAbi.Params;
 }
 
@@ -110,16 +110,16 @@ export async function startApp(env: NodeJS.ProcessEnv = process.env, log: (line:
   await indexer.bootstrap();
 
   const client = new OneClickClient({ config: settlement });
-  if (!env.X207_CODE_SEEN_KEY) logger.warn("X207_CODE_SEEN_KEY kosong, kode yang dijual dua kali tidak dideteksi (code_duplicate mati)");
+  if (!env.X207_CODE_SEEN_KEY) logger.warn("X207_CODE_SEEN_KEY is empty, codes sold twice are not detected (code_duplicate disabled)");
   const server = createApiServer({ db, ...apiOptionsFromEnv(env), logger, ...(env.METRICS_TOKEN ? { metricsToken: env.METRICS_TOKEN } : {}), rpcProbe: async () => { await viewGetParams(primary, config.contractId); return { endpoint: primary }; }, settlement: { client, accountExists: nearAccountExists(primary) }, daoView: rpcViewFunction(primary), extraRoutes: marketplaceRoutes(db, { chainView: rpcViewFunction(primary), claimRpc: jsonRpcClaimRpc(primary), openLimits: abuseFromEnv(env).open, ...(env.X207_CODE_SEEN_KEY ? { codeSeenKey: env.X207_CODE_SEEN_KEY } : {}), daoRegistry: env.X207_DAO_REGISTRY_PATH ? daoRegistryFromFile(env.X207_DAO_REGISTRY_PATH) : [] }) });
   await new Promise<void>((ready) => server.listen(config.port, config.host, ready));
   const stopMonitor = startJobMonitor({ db, client }, config.jobPollMs);
 
   const abort = new AbortController();
   const running = indexer
-    .run({ signal: abort.signal, onError: (error) => logger.warn("indexer: sumber gagal, mencoba lagi", { error }) })
+    .run({ signal: abort.signal, onError: (error) => logger.warn("indexer: source failed, retrying", { error }) })
     .catch((error: unknown) => logger.error("indexer berhenti", { error }));
-  logger.info("x207 backend siap", { host: config.host, port: config.port, contract: config.contractId, mode: settlement.mode });
+  logger.info("x207 backend ready", { host: config.host, port: config.port, contract: config.contractId, mode: settlement.mode });
 
   return {
     db,
@@ -138,7 +138,7 @@ export async function startApp(env: NodeJS.ProcessEnv = process.env, log: (line:
 if (import.meta.url === `file://${process.argv[1]}`) {
   // a start that cannot go on (a file from a newer build, a missing variable) ends with one JSON line and a code that is not 0, not with a stack
   const app = await startApp().catch((error: unknown) => {
-    createLogger({}).error("backend tidak bisa mulai", { error: error instanceof Error ? { name: error.name, message: error.message } : String(error) });
+    createLogger({}).error("backend failed to start", { error: error instanceof Error ? { name: error.name, message: error.message } : String(error) });
     process.exit(1);
   });
   const shutdown = () => void app.stop().then(() => process.exit(0));

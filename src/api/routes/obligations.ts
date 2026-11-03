@@ -33,12 +33,12 @@ export const obligationRoutes: Route[] = [
       const { db, circle, query, now } = ctx;
       const stage = query.get("stage") ?? "cutoff";
       if (!(STAGES as readonly string[]).includes(stage)) {
-        throw invalidRequest("stage tidak dikenal", { stage, allowed: STAGES });
+        throw invalidRequest("unknown stage", { stage, allowed: STAGES });
       }
       const epoch = resolveEpoch(ctx);
       const allowed = STAGE_PHASES[stage as Stage];
       if (stage === "cutoff" && epoch.phase === "open") {
-        throw new ApiError(409, "epoch_not_closed", `Epoch ${epoch.epoch} belum ditutup (cutoff)`, {
+        throw new ApiError(409, "epoch_not_closed", `Epoch ${epoch.epoch} is not closed yet (cutoff)`, {
           circle: circle.circle_id,
           epoch: Number(epoch.epoch),
           phase: epoch.phase,

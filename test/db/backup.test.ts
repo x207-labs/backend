@@ -68,7 +68,7 @@ describe("BE-073 backup and restore of the SQLite file", () => {
     copy.close();
     db.close();
     // it does not overwrite a backup that exists
-    await expect(backupDatabase(file, dest)).rejects.toThrow(/sudah ada/);
+    await expect(backupDatabase(file, dest)).rejects.toThrow(/already exists/);
   });
 
   it("TC-BE-073-02 RESTORE for real: the file is lost, the backup is put back, the tables are the same, and the indexer goes on from the cursor to the state of a run that never stopped", async () => {
@@ -118,19 +118,19 @@ describe("BE-073 backup and restore of the SQLite file", () => {
     writeFileSync(inPlace, "not a database, but the owner's file");
 
     // already there
-    expect(() => restoreDatabase(good, inPlace)).toThrow(/sudah ada/);
+    expect(() => restoreDatabase(good, inPlace)).toThrow(/already exists/);
     // cut short
     const cut = join(dir, "cut.db");
     writeFileSync(cut, Buffer.from(Buffer.from(readFileSync(good)).subarray(0, 5000)));
     expect(checkDatabase(cut), "cut").toMatchObject({ ok: false });
-    expect(() => restoreDatabase(cut, inPlace, { force: true })).toThrow(/tidak sehat/);
+    expect(() => restoreDatabase(cut, inPlace, { force: true })).toThrow(/unhealthy copy/);
     // damaged in the middle
     const damaged = join(dir, "damaged.db");
     const bytes = Buffer.from(readFileSync(good));
     for (let i = 8192; i < Math.min(bytes.length, 8192 + 4096); i++) bytes[i] = 0xff;
     writeFileSync(damaged, bytes);
     expect(checkDatabase(damaged), "damaged").toMatchObject({ ok: false });
-    expect(() => restoreDatabase(damaged, inPlace, { force: true })).toThrow(/tidak sehat/);
+    expect(() => restoreDatabase(damaged, inPlace, { force: true })).toThrow(/unhealthy copy/);
     // from a newer build
     const newer = join(dir, "newer.db");
     await backupDatabase(good, newer);
@@ -139,7 +139,7 @@ describe("BE-073 backup and restore of the SQLite file", () => {
     n.close();
     const verdict = checkDatabase(newer);
     expect(verdict).toMatchObject({ ok: false, unknownVersions: [9999] });
-    expect(() => restoreDatabase(newer, inPlace, { force: true })).toThrow(/tidak dikenal/);
+    expect(() => restoreDatabase(newer, inPlace, { force: true })).toThrow(/unknown to this build/);
     // missing
     expect(checkDatabase(join(dir, "nope.db")).ok).toBe(false);
     // none of the refusals touched the file in place

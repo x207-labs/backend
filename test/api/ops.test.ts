@@ -51,7 +51,7 @@ describe("BE-071 health, metrics and structured logs", () => {
     expect(bad.status).toBe(200);
     expect(bad.json.status).toBe("degraded");
     expect(bad.json.rpc).toMatchObject({ status: "failing" });
-    expect(bad.json.problems.join(" ")).toMatch(/tertinggal 500 blok/);
+    expect(bad.json.problems.join(" ")).toMatch(/500 blocks behind/);
     await srv.close();
     db.close();
 

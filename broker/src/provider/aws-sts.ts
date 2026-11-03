@@ -72,27 +72,27 @@ export class AwsStsAdapter implements ProviderAccessAdapter {
 
   async verifyGranteeRef(ref: string): Promise<{ ok: true } | { ok: false; reason: string }> {
     // the lessee has no account at AWS: the session is made for a name, which becomes the RoleSessionName in the logs of the grantor
-    return SESSION_NAME.test(ref) ? { ok: true } : { ok: false, reason: "grantee_ref harus 2 sampai 64 karakter [A-Za-z0-9_+=,.@-]" };
+    return SESSION_NAME.test(ref) ? { ok: true } : { ok: false, reason: "grantee_ref must be 2 to 64 characters [A-Za-z0-9_+=,.@-]" };
   }
 
   async grant(request: ProviderGrantRequest): Promise<ProviderGrantResult> {
     const role = request.resource;
-    if (role === null || !ARN_ROLE.test(role)) throw new Error("resource harus ARN role IAM");
-    if (!this.#o.allowedRoleArns.includes(role)) throw new Error("role tidak ada di allowedRoleArns broker ini");
+    if (role === null || !ARN_ROLE.test(role)) throw new Error("resource must be an IAM role ARN");
+    if (!this.#o.allowedRoleArns.includes(role)) throw new Error("role is not in this broker's allowedRoleArns");
     const now = this.#now();
     const seconds = Math.min(Math.floor((request.expiresAtMs - now) / 1000), this.#o.maxSeconds ?? 43_200);
-    if (seconds < STS_MIN_SECONDS) throw new Error(`sisa masa sewa ${seconds} detik kurang dari batas bawah STS (${STS_MIN_SECONDS})`);
+    if (seconds < STS_MIN_SECONDS) throw new Error(`remaining lease time of ${seconds} seconds is below the STS minimum (${STS_MIN_SECONDS})`);
     // the boundary is read from the role itself on every grant, not remembered
     const got = await this.#query("iam", this.#o.iamUrl ?? "https://iam.amazonaws.com/", { Action: "GetRole", Version: "2010-05-08", RoleName: role.slice(role.lastIndexOf("/") + 1) });
-    if (!got.includes(`<PermissionsBoundaryArn>${this.#o.permissionsBoundaryArn}</PermissionsBoundaryArn>`)) throw new Error("role tidak membawa permission boundary yang diwajibkan");
+    if (!got.includes(`<PermissionsBoundaryArn>${this.#o.permissionsBoundaryArn}</PermissionsBoundaryArn>`)) throw new Error("role does not carry the required permission boundary");
     const policy = JSON.stringify({ Version: "2012-10-17", Statement: [{ Effect: "Allow", Action: request.permission === null ? ["s3:GetObject"] : [request.permission], Resource: "*" }] });
     const xml = await this.#query("sts", this.#o.stsUrl ?? "https://sts.amazonaws.com/", {
       Action: "AssumeRole", Version: "2011-06-15", RoleArn: role, RoleSessionName: request.granteeRef, DurationSeconds: String(seconds), Policy: policy,
     });
     const credentials = { accessKeyId: tag(xml, "AccessKeyId"), secretAccessKey: tag(xml, "SecretAccessKey"), sessionToken: tag(xml, "SessionToken"), expiration: tag(xml, "Expiration") };
-    if (!credentials.accessKeyId || !credentials.secretAccessKey || !credentials.sessionToken || !credentials.expiration) throw new Error("jawaban STS tidak memuat kredensial sesi");
+    if (!credentials.accessKeyId || !credentials.secretAccessKey || !credentials.sessionToken || !credentials.expiration) throw new Error("STS response does not contain session credentials");
     const end = Date.parse(credentials.expiration);
-    if (!Number.isFinite(end)) throw new Error("Expiration STS tidak sah");
+    if (!Number.isFinite(end)) throw new Error("STS Expiration is invalid");
     const handle = `sts:${request.grantId}:${credentials.accessKeyId}`;
     this.#ends.set(handle, end);
     return { handle, nativeExpiresAtMs: end, delivery: { provider: "aws-sts", roleArn: role, credentials, expiresAt: credentials.expiration } };

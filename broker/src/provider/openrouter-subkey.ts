@@ -31,7 +31,7 @@ type Reset = (typeof RESETS)[number];
 const handleOf = (grantId: number, hash: string): string => `or:${grantId}:${hash}`;
 const hashOf = (handle: string): string => {
   const m = /^or:(\d+):([A-Za-z0-9]{8,128})$/.exec(handle);
-  if (!m) throw new Error("handle OpenRouter tidak dikenal");
+  if (!m) throw new Error("unknown OpenRouter handle");
   return m[2] as string;
 };
 
@@ -54,16 +54,16 @@ export class OpenRouterSubkeyAdapter implements ProviderAccessAdapter {
   }
 
   async verifyGranteeRef(ref: string): Promise<{ ok: true } | { ok: false; reason: string }> {
-    return REF.test(ref) ? { ok: true } : { ok: false, reason: "grantee_ref adalah nama kunci: 1 sampai 64 karakter [A-Za-z0-9._:@-]" };
+    return REF.test(ref) ? { ok: true } : { ok: false, reason: "grantee_ref is the key name: 1 to 64 characters [A-Za-z0-9._:@-]" };
   }
 
   /** The limit and the reset of a grant, checked; `resource` is the limit in USD. */
   #terms(request: ProviderGrantRequest): { limit: number; reset: Reset } {
     const limit = request.resource ?? "";
-    if (!LIMIT.test(limit) || Number(limit) <= 0) throw new Error("resource harus batas kredit dalam USD, mis. \"5\" atau \"2.5\" (lebih dari 0)");
-    if (Number(limit) > (this.#o.maxLimitUsd ?? 50)) throw new Error(`batas ${limit} USD melebihi maxLimitUsd broker ini (${this.#o.maxLimitUsd ?? 50})`);
+    if (!LIMIT.test(limit) || Number(limit) <= 0) throw new Error("resource must be a credit limit in USD, e.g. \"5\" or \"2.5\" (greater than 0)");
+    if (Number(limit) > (this.#o.maxLimitUsd ?? 50)) throw new Error(`limit ${limit} USD exceeds this broker's maxLimitUsd (${this.#o.maxLimitUsd ?? 50})`);
     const reset = (request.permission ?? "daily") as Reset;
-    if (!RESETS.includes(reset)) throw new Error("permission harus daily, weekly, atau monthly (limit_reset)");
+    if (!RESETS.includes(reset)) throw new Error("permission must be daily, weekly, or monthly (limit_reset)");
     return { limit: Number(limit), reset };
   }
 
@@ -79,7 +79,7 @@ export class OpenRouterSubkeyAdapter implements ProviderAccessAdapter {
     }
     const made = await call(this.#fetch, this.#base, this.#headers(), { method: "POST", path: "/keys", body: JSON.stringify({ name: `x207-${request.grantId}-${request.granteeRef}`.slice(0, 256), limit, limit_reset: reset }) }, [200, 201]);
     const body = JSON.parse(made.text) as { data?: { hash?: unknown }; key?: unknown };
-    if (typeof body.key !== "string" || body.key === "" || typeof body.data?.hash !== "string") throw new Error("jawaban OpenRouter tidak memuat key dan hash");
+    if (typeof body.key !== "string" || body.key === "" || typeof body.data?.hash !== "string") throw new Error("OpenRouter response does not contain key and hash");
     return {
       handle: handleOf(request.grantId, body.data.hash), nativeExpiresAtMs: null,
       delivery: { provider: "openrouter-subkey", key: body.key, baseUrl: "https://openrouter.ai/api/v1", limitUsd: limit, limitReset: reset },

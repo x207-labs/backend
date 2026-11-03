@@ -161,7 +161,7 @@ export class Indexer {
     const row = this.#db.prepare("SELECT last_block_height, head_block_height FROM indexer_cursor WHERE name = ?").get(this.#contractId) as
       | CursorRow
       | undefined;
-    if (!row) throw new Error("indexer_cursor kosong: panggil bootstrap() dulu");
+    if (!row) throw new Error("indexer_cursor is empty: call bootstrap() first");
     return row;
   }
 
@@ -244,7 +244,7 @@ function toRow(block: SourceBlock, log: BlockLog, contractId: string): EventRow 
   try {
     envelope = JSON.parse(log.log.slice(EVENT_PREFIX.length));
   } catch (error) {
-    throw new IndexerHaltError(`log ${log.receiptId}#${log.logIndex} bukan JSON: ${(error as Error).message}`);
+    throw new IndexerHaltError(`log ${log.receiptId}#${log.logIndex} is not JSON: ${(error as Error).message}`);
   }
   if (envelope === null || typeof envelope !== "object" || (envelope as { standard?: unknown }).standard !== "x207") return null;
   const { version, event, data } = envelope as { version: string; event: string; data: unknown };
@@ -273,7 +273,7 @@ function dispatch(db: Database.Database, circleId: string, handlers: HandlerMap,
   try {
     parsed = parseEventLog(log);
   } catch (error) {
-    throw new IndexerHaltError(`event ${row.event} tidak terbaca: ${(error as Error).message}`);
+    throw new IndexerHaltError(`event ${row.event} could not be read: ${(error as Error).message}`);
   }
   if (!parsed) return HANDLED.done;
 

@@ -36,7 +36,7 @@ export const epochRoutes: Route[] = [
       const limit = parseLimit(query);
       const cursor = decodeCursor(query);
       const before = cursor && typeof cursor.e === "number" && Number.isInteger(cursor.e) ? cursor.e : null;
-      if (cursor && before === null) throw invalidRequest("cursor tidak valid");
+      if (cursor && before === null) throw invalidRequest("invalid cursor");
 
       const nowNs = BigInt(now()) * 1_000_000n;
       const found = rows<EpochRow>(

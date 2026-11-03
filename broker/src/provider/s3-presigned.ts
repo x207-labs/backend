@@ -37,8 +37,8 @@ function signature(o: PresignOptions, method: string, path: string, query: Array
 /** A presigned URL for `method` on `key` that is valid `expiresSeconds` from `nowMs`. */
 export function presignUrl(o: PresignOptions, args: { key: string; nowMs: number; expiresSeconds: number; method?: "GET" | "PUT" }): string {
   const { key, nowMs, expiresSeconds } = args;
-  if (!Number.isInteger(expiresSeconds) || expiresSeconds < 1 || expiresSeconds > MAX_EXPIRES_SECONDS) throw new Error(`expiresSeconds harus 1 sampai ${MAX_EXPIRES_SECONDS}`);
-  if (key.length === 0 || key.length > 1024 || key.startsWith("/") || /[\x00-\x1f]/.test(key)) throw new Error("key objek tidak sah");
+  if (!Number.isInteger(expiresSeconds) || expiresSeconds < 1 || expiresSeconds > MAX_EXPIRES_SECONDS) throw new Error(`expiresSeconds must be 1 to ${MAX_EXPIRES_SECONDS}`);
+  if (key.length === 0 || key.length > 1024 || key.startsWith("/") || /[\x00-\x1f]/.test(key)) throw new Error("object key is invalid");
   const date = amzDate(nowMs);
   const path = `/${enc(key, true)}`;
   const query: Array<[string, string]> = [
@@ -86,15 +86,15 @@ export class S3PresignedAdapter implements ProviderAccessAdapter {
 
   async verifyGranteeRef(ref: string): Promise<{ ok: true } | { ok: false; reason: string }> {
     // nothing at the provider to look up: the URL is a bearer, the reference is a label of whom it was made for
-    return /^[\x21-\x7e]{1,128}$/.test(ref) ? { ok: true } : { ok: false, reason: "grantee_ref harus ASCII tanpa spasi, 1 sampai 128 karakter" };
+    return /^[\x21-\x7e]{1,128}$/.test(ref) ? { ok: true } : { ok: false, reason: "grantee_ref must be ASCII without spaces, 1 to 128 characters" };
   }
 
   async grant(request: ProviderGrantRequest): Promise<ProviderGrantResult> {
-    if (request.resource === null) throw new Error("grant presigned wajib menamai key objek di resource");
+    if (request.resource === null) throw new Error("presigned grant must name the object key in resource");
     const method = request.permission === "write" ? "PUT" : "GET";
     const now = this.#now();
     const seconds = Math.min(Math.floor((request.expiresAtMs - now) / 1000), MAX_EXPIRES_SECONDS);
-    if (seconds < 1) throw new Error("masa berlaku habis sebelum URL bisa dibuat");
+    if (seconds < 1) throw new Error("validity ran out before the URL could be created");
     const end = Math.floor(now / 1000) * 1000 + seconds * 1000;
     const url = presignUrl(this.#o, { key: request.resource, nowMs: now, expiresSeconds: seconds, method });
     const handle = `s3-${request.grantId}`;

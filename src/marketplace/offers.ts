@@ -54,22 +54,22 @@ export function offerView(r: OfferRow) {
 }
 
 export function findOffer(db: Database.Database, circleId: string, listingHashHex: string, hash: string): OfferRow {
-  if (!HASH.test(hash)) throw invalidRequest("hash penawaran harus 64 karakter heksadesimal huruf kecil", { hash });
+  if (!HASH.test(hash)) throw invalidRequest("offer hash must be 64 lowercase hex characters", { hash });
   const found = row<OfferRow>(db, "SELECT * FROM offers WHERE circle_id = ? AND listing_hash = ? AND offer_hash = ?", circleId, listingHashHex, hash);
-  if (!found) throw new ApiError(404, "offer_not_found", `Penawaran ${hash} tidak ada`, { offerHash: hash });
+  if (!found) throw new ApiError(404, "offer_not_found", `Offer ${hash} not found`, { offerHash: hash });
   return found;
 }
 
 function parseOfferBody(body: unknown): { offer: Offer; signature: string; inReplyTo: string | null; referralHash: string | null } {
-  if (body === null || typeof body !== "object") throw invalidRequest("body harus objek");
+  if (body === null || typeof body !== "object") throw invalidRequest("body must be an object");
   const { offer, signature, inReplyTo, referralHash } = body as { offer?: unknown; signature?: unknown; inReplyTo?: unknown; referralHash?: unknown };
   if (referralHash !== undefined && referralHash !== null && (typeof referralHash !== "string" || !HASH.test(referralHash))) {
-    throw invalidRequest("referralHash harus hash ajakan 64 karakter heksadesimal huruf kecil");
+    throw invalidRequest("referralHash must be a 64-character lowercase hex referral hash");
   }
-  if (typeof signature !== "string") throw invalidRequest("signature wajib string");
-  if (offer === null || typeof offer !== "object") throw invalidRequest("offer wajib objek");
+  if (typeof signature !== "string") throw invalidRequest("signature must be a string");
+  if (offer === null || typeof offer !== "object") throw invalidRequest("offer must be an object");
   if (inReplyTo !== undefined && inReplyTo !== null && (typeof inReplyTo !== "string" || !HASH.test(inReplyTo))) {
-    throw invalidRequest("inReplyTo harus hash penawaran 64 karakter heksadesimal huruf kecil");
+    throw invalidRequest("inReplyTo must be a 64-character lowercase hex offer hash");
   }
   return { offer: offer as Offer, signature, inReplyTo: (inReplyTo as string | null | undefined) ?? null, referralHash: (referralHash as string | null | undefined) ?? null };
 }
@@ -90,47 +90,47 @@ export function offerRoutes(options: { maxRounds?: number } = {}): Route[] {
           if (error instanceof BarterFormatError) throw invalidRequest(error.message);
           throw error;
         }
-        if (offer.circle !== circle.contract_id) throw invalidRequest("offer.circle harus akun kontrak lingkaran", { expected: circle.contract_id, got: offer.circle });
-        if (offer.listing_hash !== listing.listing_hash) throw invalidRequest("offer.listing_hash tidak sama dengan listing di path");
+        if (offer.circle !== circle.contract_id) throw invalidRequest("offer.circle must be the circle contract account", { expected: circle.contract_id, got: offer.circle });
+        if (offer.listing_hash !== listing.listing_hash) throw invalidRequest("offer.listing_hash does not match the listing in the path");
         const nowS = nowSeconds(now());
         const status = effectiveStatus(listing, nowS);
-        if (status !== "open") throw new ApiError(409, "listing_not_open", `Listing berstatus ${status}`, { listingHash: listing.listing_hash, status });
-        if (offer.mode === "pay" && listing.accept_payment !== 1n) throw invalidRequest("listing tidak menerima pembayaran (accept_payment false)");
-        if (offer.round > maxRounds) throw new ApiError(409, "negotiation_closed", `Ronde maksimal ${maxRounds}`, { maxRounds, round: offer.round });
+        if (status !== "open") throw new ApiError(409, "listing_not_open", `Listing is ${status}`, { listingHash: listing.listing_hash, status });
+        if (offer.mode === "pay" && listing.accept_payment !== 1n) throw invalidRequest("listing does not accept payment (accept_payment false)");
+        if (offer.round > maxRounds) throw new ApiError(409, "negotiation_closed", `Maximum round is ${maxRounds}`, { maxRounds, round: offer.round });
         const pubkey = activeMemberKey(db, circle.circle_id, offer.proposer);
         if (!verifyOfferSignature(offer, signature, pubkey)) {
-          throw new ApiError(401, "invalid_signature", "Tanda tangan penawaran tidak cocok dengan kunci voucher anggota", { account: offer.proposer });
+          throw new ApiError(401, "invalid_signature", "Offer signature does not match the member's voucher key", { account: offer.proposer });
         }
 
         let counterparty: string;
         let awaiting: string;
         let previous: OfferRow | undefined;
         if (offer.round === 1) {
-          if (inReplyTo !== null) throw invalidRequest("ronde 1 tidak membalas penawaran lain");
-          if (offer.proposer === listing.account_id) throw invalidRequest("pemasang listing tidak menawar listingnya sendiri");
+          if (inReplyTo !== null) throw invalidRequest("round 1 does not reply to another offer");
+          if (offer.proposer === listing.account_id) throw invalidRequest("the listing poster cannot make an offer on their own listing");
           const existing = row<{ n: bigint }>(db, "SELECT COUNT(*) AS n FROM offers WHERE circle_id = ? AND listing_hash = ? AND counterparty = ?", circle.circle_id, listing.listing_hash, offer.proposer);
-          if (existing && existing.n > 0n) throw new ApiError(409, "already_exists", "Sudah ada utas negosiasi dari akun ini untuk listing ini", { counterparty: offer.proposer });
+          if (existing && existing.n > 0n) throw new ApiError(409, "already_exists", "A negotiation thread from this account already exists for this listing", { counterparty: offer.proposer });
           counterparty = offer.proposer;
           awaiting = listing.account_id;
         } else {
-          if (inReplyTo === null) throw invalidRequest("ronde berikutnya wajib menyertakan inReplyTo");
+          if (inReplyTo === null) throw invalidRequest("later rounds must include inReplyTo");
           previous = findOffer(db, circle.circle_id, listing.listing_hash, inReplyTo);
-          if (previous.status !== "pending") throw new ApiError(409, "offer_not_open", `Penawaran sebelumnya berstatus ${previous.status}`, { offerHash: previous.offer_hash, status: previous.status });
-          if (BigInt(offer.round) !== previous.round + 1n) throw invalidRequest("round harus naik satu dari penawaran sebelumnya", { expected: Number(previous.round) + 1 });
-          if (offer.proposer !== previous.awaiting) throw invalidRequest("ronde berikutnya harus dari pihak lawan", { expected: previous.awaiting });
+          if (previous.status !== "pending") throw new ApiError(409, "offer_not_open", `Previous offer is ${previous.status}`, { offerHash: previous.offer_hash, status: previous.status });
+          if (BigInt(offer.round) !== previous.round + 1n) throw invalidRequest("round must increase by one from the previous offer", { expected: Number(previous.round) + 1 });
+          if (offer.proposer !== previous.awaiting) throw invalidRequest("later rounds must come from the other party", { expected: previous.awaiting });
           counterparty = previous.counterparty;
           awaiting = previous.proposer;
         }
         // Ajakan pencari (BE-044): penawaran ronde 1 yang merujuk ajakan harus sama dengan isi ajakan, dan ajakan harus masih pending
         if (referralHash !== null) {
-          if (offer.round !== 1) throw invalidRequest("referralHash hanya untuk penawaran ronde 1");
+          if (offer.round !== 1) throw invalidRequest("referralHash is only for round 1 offers");
           const referral = findReferral(db, circle.circle_id, referralHash);
           const state = referral.status === "pending" && Number(referral.expires_at) <= nowS ? "expired" : referral.status;
-          if (state !== "pending") throw new ApiError(409, "referral_not_open", `Ajakan berstatus ${state}`, { referralHash, status: state });
-          if (referral.to_account !== offer.proposer) throw invalidRequest("ajakan ini ditujukan ke agent lain", { to: referral.to_account });
-          if (referral.listing_hash !== listing.listing_hash) throw invalidRequest("ajakan ini untuk listing lain");
+          if (state !== "pending") throw new ApiError(409, "referral_not_open", `Referral is ${state}`, { referralHash, status: state });
+          if (referral.to_account !== offer.proposer) throw invalidRequest("this referral is addressed to another agent", { to: referral.to_account });
+          if (referral.listing_hash !== listing.listing_hash) throw invalidRequest("this referral is for another listing");
           if (referral.mode !== offer.mode || referral.value !== offer.value || Number(referral.quantity) !== offer.quantity) {
-            throw invalidRequest("penawaran harus sama dengan ajakan (cara, nilai, jumlah)", { mode: referral.mode, value: referral.value, quantity: Number(referral.quantity) });
+            throw invalidRequest("the offer must match the referral (mode, value, quantity)", { mode: referral.mode, value: referral.value, quantity: Number(referral.quantity) });
           }
         }
         const hash = offerHash(offer);
@@ -141,7 +141,7 @@ export function offerRoutes(options: { maxRounds?: number } = {}): Route[] {
           )
           .run(circle.circle_id, hash, listing.listing_hash, offer.proposer, counterparty, awaiting, offer.round, offer.mode, offer.value,
             offer.quantity, offer.deliver_by, signature, inReplyTo, referralHash, now());
-        if (inserted.changes === 0) throw new ApiError(409, "already_exists", "Penawaran dengan hash ini sudah tercatat", { offerHash: hash });
+        if (inserted.changes === 0) throw new ApiError(409, "already_exists", "An offer with this hash is already recorded", { offerHash: hash });
         if (referralHash !== null) db.prepare("UPDATE referrals SET status = 'taken', offer_hash = ? WHERE circle_id = ? AND referral_hash = ?").run(hash, circle.circle_id, referralHash);
         if (previous) db.prepare("UPDATE offers SET status = 'countered' WHERE id = ?").run(previous.id);
         return { status: 201, body: offerView(findOffer(db, circle.circle_id, listing.listing_hash, hash)) };
@@ -154,7 +154,7 @@ export function offerRoutes(options: { maxRounds?: number } = {}): Route[] {
       handler: ({ db, circle, params, query }) => {
         const listing = findListing(db, circle.circle_id, params.hash as string);
         const status = query.get("status") ?? "all";
-        if (!(OFFER_STATUSES as readonly string[]).includes(status)) throw invalidRequest("status tidak dikenal", { status, allowed: OFFER_STATUSES });
+        if (!(OFFER_STATUSES as readonly string[]).includes(status)) throw invalidRequest("status is not recognized", { status, allowed: OFFER_STATUSES });
         const where = ["circle_id = ?", "listing_hash = ?"];
         const args: unknown[] = [circle.circle_id, listing.listing_hash];
         if (status !== "all") where.push("status = ?"), args.push(status);
@@ -171,15 +171,15 @@ export function offerRoutes(options: { maxRounds?: number } = {}): Route[] {
       circleScoped: true,
       handler: ({ db, circle, query, now }) => {
         const account = query.get("account");
-        if (account === null) throw invalidRequest("account wajib diisi");
+        if (account === null) throw invalidRequest("account is required");
         const box = query.get("box") ?? "inbox";
-        if (box !== "inbox" && box !== "sent") throw invalidRequest("box harus inbox atau sent", { box });
+        if (box !== "inbox" && box !== "sent") throw invalidRequest("box must be inbox or sent", { box });
         const status = query.get("status") ?? "pending";
-        if (!(OFFER_STATUSES as readonly string[]).includes(status)) throw invalidRequest("status tidak dikenal", { status, allowed: OFFER_STATUSES });
+        if (!(OFFER_STATUSES as readonly string[]).includes(status)) throw invalidRequest("status is not recognized", { status, allowed: OFFER_STATUSES });
         const limit = parseLimit(query);
         const cursor = decodeCursor(query);
         const after = cursor && typeof cursor.a === "number" ? cursor.a : null;
-        if (cursor && after === null) throw invalidRequest("cursor tidak valid");
+        if (cursor && after === null) throw invalidRequest("cursor is not valid");
         const where = ["o.circle_id = ?", box === "inbox" ? "o.awaiting = ?" : "o.proposer = ?"];
         const args: unknown[] = [circle.circle_id, account];
         if (status !== "all") where.push("o.status = ?"), args.push(status);

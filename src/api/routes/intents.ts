@@ -36,7 +36,7 @@ export const intentRoutes: Route[] = [
     circleScoped: true,
     handler: ({ db, circle, query }) => {
       const status = query.get("status") ?? "posted";
-      if (!(STATUSES as readonly string[]).includes(status)) throw invalidRequest("status tidak dikenal", { status, allowed: STATUSES });
+      if (!(STATUSES as readonly string[]).includes(status)) throw invalidRequest("unknown status", { status, allowed: STATUSES });
       const account = query.get("account");
       const limit = parseLimit(query);
       const cursor = decodeCursor(query);

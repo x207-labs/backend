@@ -58,19 +58,19 @@ export function scopeCheck(options: ScopeOptions = {}): ListingCheck {
     const entry = typeof assetType === "string" ? ESCROW_ASSET_TYPES[assetType] : undefined;
     if (typeof assetType !== "string" || entry === undefined) return;
 
-    if (offer?.asset_class !== "A") invalid(`offer.asset_class harus A untuk ${assetType}: escrow kontrak hanya untuk kelas A`, { assetType, assetClass: offer?.asset_class ?? null });
-    if (offer?.quantity !== 1) invalid(`offer.quantity harus 1 untuk ${assetType}: satu token atau satu lot per listing`, { assetType, quantity: offer?.quantity ?? null });
+    if (offer?.asset_class !== "A") invalid(`offer.asset_class must be A for ${assetType}: contract escrow is only for class A`, { assetType, assetClass: offer?.asset_class ?? null });
+    if (offer?.quantity !== 1) invalid(`offer.quantity must be 1 for ${assetType}: one token or one lot per listing`, { assetType, quantity: offer?.quantity ?? null });
     const registered = row<{ class: string }>(db, "SELECT class FROM asset_classes WHERE circle_id = ? AND asset_type = ?", circleId, assetType);
-    if (!registered) invalid(`asset_type ${assetType} belum terdaftar di registri kelas aset (set_asset_class), escrow-nya tidak akan jalan`, { assetType });
-    if (registered && registered.class !== "A") invalid(`asset_type ${assetType} terdaftar dengan kelas ${registered.class}, bukan A`, { assetType, registeredClass: registered.class });
+    if (!registered) invalid(`asset_type ${assetType} is not registered in the asset class registry (set_asset_class), so its escrow will not work`, { assetType });
+    if (registered && registered.class !== "A") invalid(`asset_type ${assetType} is registered with class ${registered.class}, not A`, { assetType, registeredClass: registered.class });
 
     let detail: unknown;
     try {
       detail = JSON.parse(String((listing as { detail?: unknown }).detail ?? ""));
     } catch {
-      return invalid(`detail untuk ${assetType} harus teks JSON datar dengan kunci scope (buildAssetTemplate)`, { assetType });
+      return invalid(`detail for ${assetType} must be flat JSON text with the scope keys (buildAssetTemplate)`, { assetType });
     }
-    if (detail === null || typeof detail !== "object" || Array.isArray(detail)) return invalid(`detail untuk ${assetType} harus objek JSON`, { assetType });
+    if (detail === null || typeof detail !== "object" || Array.isArray(detail)) return invalid(`detail for ${assetType} must be a JSON object`, { assetType });
     const d = detail as Record<string, unknown>;
 
     // the shape comes from the delivery method of the entry; a registry entry with both methods (a pool share) is told apart by the keys of the detail
@@ -78,28 +78,28 @@ export function scopeCheck(options: ScopeOptions = {}): ListingCheck {
     if (entry.delivery.length === 1) shape = entry.delivery[0] === "escrow_nft" ? "nft" : entry.delivery[0] === "escrow_ft" ? "ft" : "mt";
     else if (d.standard === "nep141" || (d.standard === undefined && "ft_contract" in d)) shape = "ft";
     else if (d.standard === "nep245" || (d.standard === undefined && "mt_contract" in d)) shape = "mt";
-    else return invalid(`detail untuk ${assetType} harus memakai ft_contract atau mt_contract`, { assetType });
-    if (d.kind !== undefined && d.kind !== entry.kind) invalid(`detail.kind ${JSON.stringify(d.kind)} tidak cocok dengan ${assetType} (${entry.kind})`, { assetType });
+    else return invalid(`detail for ${assetType} must use ft_contract or mt_contract`, { assetType });
+    if (d.kind !== undefined && d.kind !== entry.kind) invalid(`detail.kind ${JSON.stringify(d.kind)} does not match ${assetType} (${entry.kind})`, { assetType });
 
     const keys = SCOPE_KEYS[shape];
     const missing = keys.filter((k) => !(k in d));
     const foreign = ALL_SCOPE_KEYS.filter((k) => k in d && !keys.includes(k));
-    if (missing.length > 0 || foreign.length > 0) invalid(`scope untuk ${assetType} berisi tepat ${keys.join(", ")}`, { assetType, missing, unknown: foreign });
+    if (missing.length > 0 || foreign.length > 0) invalid(`scope for ${assetType} must contain exactly ${keys.join(", ")}`, { assetType, missing, unknown: foreign });
     const contractKey = keys[0] as string;
-    if (!isAccount(d[contractKey])) invalid(`${contractKey} bukan account id`, { assetType });
-    if (shape !== "ft" && !isToken(d.token_id)) invalid("token_id wajib teks 1 sampai 128 byte", { assetType });
-    if (shape !== "nft" && !isAmount(d.amount)) invalid("amount harus string desimal di atas 0 dan tidak melebihi u128 (jumlah persis dalam satuan token)", { assetType });
+    if (!isAccount(d[contractKey])) invalid(`${contractKey} is not an account id`, { assetType });
+    if (shape !== "ft" && !isToken(d.token_id)) invalid("token_id must be text of 1 to 128 bytes", { assetType });
+    if (shape !== "nft" && !isAmount(d.amount)) invalid("amount must be a decimal string above 0 and not exceed u128 (the exact amount in token units)", { assetType });
 
     const expiresAt = (listing as { expires_at?: number }).expires_at;
     const limit = (what: string, until: unknown): void => {
-      if (!isSeconds(until)) invalid(`${what} harus detik unix`, { assetType, value: until ?? null });
-      if ((until as number) <= nowS) invalid(`${what} sudah lewat`, { assetType, value: until, now: nowS });
-      if (expiresAt !== undefined && expiresAt > (until as number)) invalid(`listing.expires_at tidak boleh melewati ${what}`, { assetType, expiresAt, value: until });
+      if (!isSeconds(until)) invalid(`${what} must be unix seconds`, { assetType, value: until ?? null });
+      if ((until as number) <= nowS) invalid(`${what} has already passed`, { assetType, value: until, now: nowS });
+      if (expiresAt !== undefined && expiresAt > (until as number)) invalid(`listing.expires_at must not be after ${what}`, { assetType, expiresAt, value: until });
     };
     if (entry.kind === "ticket") {
       const event = d.event;
       const endsAt = event !== null && typeof event === "object" ? (event as Record<string, unknown>).ends_at : undefined;
-      if (endsAt === undefined && d.valid_until === undefined) invalid("tiket wajib event.ends_at atau valid_until", { assetType });
+      if (endsAt === undefined && d.valid_until === undefined) invalid("a ticket requires event.ends_at or valid_until", { assetType });
       if (endsAt !== undefined) limit("event.ends_at", endsAt);
       if (d.valid_until !== undefined) limit("valid_until", d.valid_until);
     } else if (entry.kind === "coupon") {
@@ -108,19 +108,19 @@ export function scopeCheck(options: ScopeOptions = {}): ListingCheck {
       limit("valid_until", d.valid_until);
     }
     if (entry.kind === "license") {
-      if (d.terms_hash !== undefined && !(typeof d.terms_hash === "string" && HASH_HEX.test(d.terms_hash))) invalid("terms_hash harus 64 heksadesimal huruf kecil", { assetType });
-      if (d.seats !== undefined && !(typeof d.seats === "number" && Number.isSafeInteger(d.seats) && d.seats >= 1)) invalid("seats harus bilangan bulat >= 1", { assetType });
+      if (d.terms_hash !== undefined && !(typeof d.terms_hash === "string" && HASH_HEX.test(d.terms_hash))) invalid("terms_hash must be 64 lowercase hex characters", { assetType });
+      if (d.seats !== undefined && !(typeof d.seats === "number" && Number.isSafeInteger(d.seats) && d.seats >= 1)) invalid("seats must be an integer >= 1", { assetType });
     }
 
     if (entry.kind === "rwa" && !whitelist.has(d.ft_contract as string)) {
-      invalid(`token ${String(d.ft_contract)} tidak ada di whitelist RWA circle ini`, { ftContract: d.ft_contract, whitelisted: [...whitelist] });
+      invalid(`token ${String(d.ft_contract)} is not in this circle's RWA whitelist`, { ftContract: d.ft_contract, whitelisted: [...whitelist] });
     }
     // the USDT of the circle is not an escrow asset as a NEP-141 either (ERR_ESCROW_USDT on the contract): such a listing could never be bought
     if (shape === "ft" && options.usdtTokenId !== undefined && d.ft_contract === options.usdtTokenId) {
-      invalid("USDT lingkaran bukan aset escrow: kontrak menolak titipannya (ERR_ESCROW_USDT)", { ftContract: d.ft_contract });
+      invalid("the circle's USDT is not an escrow asset: the contract refuses its deposit (ERR_ESCROW_USDT)", { ftContract: d.ft_contract });
     }
     if (shape === "mt" && options.intentsId !== undefined && options.usdtTokenId !== undefined && d.mt_contract === options.intentsId && d.token_id === `nep141:${options.usdtTokenId}`) {
-      invalid("USDT lingkaran yang disimpan di Intents bukan aset escrow", { tokenId: d.token_id });
+      invalid("the circle's USDT held in Intents is not an escrow asset", { tokenId: d.token_id });
     }
   };
 }

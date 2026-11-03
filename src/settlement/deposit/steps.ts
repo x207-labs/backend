@@ -15,15 +15,15 @@ export function buildDepositSteps(params: {
   circleContractId: string;
 }): [ContractCall, ContractCall] {
   const { job, owner, circleContractId } = params;
-  if (job.kind === "withdraw") throw new Error("job withdraw tidak punya langkah jalur masuk");
-  if (job.status !== "ready_withdraw") throw new Error(`job berstatus ${job.status}, langkah jalur masuk butuh ready_withdraw`);
-  if (job.amount_out === null) throw new Error("job tanpa amount_out");
+  if (job.kind === "withdraw") throw new Error("withdraw job has no deposit-path steps");
+  if (job.status !== "ready_withdraw") throw new Error(`job is ${job.status}; the steps of the deposit path need ready_withdraw`);
+  if (job.amount_out === null) throw new Error("job without amount_out");
   const memberId = owner === job.account_id ? undefined : job.account_id;
   let msg: string;
   if (job.kind === "deposit_stake") {
     msg = stakeMsg(memberId);
   } else {
-    if (job.epoch === null) throw new Error("job settle tanpa epoch");
+    if (job.epoch === null) throw new Error("settle job without epoch");
     msg = settleMsg(job.epoch, memberId);
   }
   return [

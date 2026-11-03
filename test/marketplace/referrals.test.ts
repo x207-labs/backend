@@ -116,8 +116,8 @@ describe("BE-044 kotak masuk ajakan pencari", () => {
     const { m, l, hash } = await setup();
     const a = (await m.post("/referrals", signedReferral(m, "citra", "budi", l))).json.referralHash;
     const offerTo = (name: string, over = {}) => bid(m, name, l, { mode: "barter", value: C(100), ...over });
-    expect((await m.post(`/listings/${hash}/offers`, { ...offerTo("dewi"), referralHash: a })).json.error.message).toContain("agent lain");
-    expect((await m.post(`/listings/${hash}/offers`, { ...offerTo("budi", { value: C(90) }), referralHash: a })).json.error.message).toContain("sama dengan ajakan");
+    expect((await m.post(`/listings/${hash}/offers`, { ...offerTo("dewi"), referralHash: a })).json.error.message).toContain("another agent");
+    expect((await m.post(`/listings/${hash}/offers`, { ...offerTo("budi", { value: C(90) }), referralHash: a })).json.error.message).toContain("must match the referral");
     expect((await m.post(`/listings/${hash}/offers`, { ...offerTo("budi"), referralHash: "z" })).status).toBe(400);
     expect((await m.post(`/listings/${hash}/offers`, { ...offerTo("budi"), referralHash: "f".repeat(64) })).json.error.code).toBe("referral_not_found");
     expect((await m.post(`/listings/${hash}/offers`, { ...offerTo("budi"), referralHash: a })).status).toBe(201);

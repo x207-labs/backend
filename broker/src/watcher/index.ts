@@ -54,7 +54,7 @@ export class GrantWatcher {
       const cursor = this.#o.store.cursor(this.#name);
       const url = `${base}/x207/circles/${encodeURIComponent(this.#o.circle)}/events?event=${names}&limit=${this.#o.pageSize ?? 100}${cursor ? `&cursor=${cursor}` : ""}`;
       const response = await (this.#o.fetch ?? fetch)(url, { signal: AbortSignal.timeout(10_000) });
-      if (!response.ok) throw new Error(`read API ${response.status} untuk ${url}`);
+      if (!response.ok) throw new Error(`read API ${response.status} for ${url}`);
       const page = (await response.json()) as { items: WatchedEvent[]; more: boolean };
       for (const event of page.items) {
         if (this.#o.store.markSeen(event.receiptId, event.logIndex)) {

@@ -101,7 +101,7 @@ describe("BE-056 license handover: fair exchange with encryption", () => {
     expect(first.status).toBe(201);
     expect((await buy(m, listings[1]!)).status).toBe(201);
     const refused = await buy(m, listings[2]!);
-    expect([refused.status, refused.json.error.code, refused.json.error.details]).toEqual([409, "open_limit_reached", { kind: "pembelian", limit: 2, account: acct("budi") }]);
+    expect([refused.status, refused.json.error.code, refused.json.error.details]).toEqual([409, "open_limit_reached", { kind: "purchase", limit: 2, account: acct("budi") }]);
     expect((await buy(m, listings[2]!, "citra")).status).toBe(201); // another buyer
     expect((await buyerNotice(m, first.json.purchase_id, "cancelled", "andi")).status).toBe(201); // the seller cancels
     expect((await buy(m, listings[2]!)).status).toBe(201); // a place is free again

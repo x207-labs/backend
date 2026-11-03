@@ -11,7 +11,7 @@ export const paramsHandlers: HandlerMap = {
     const oldParams = e.old as unknown as Record<string, unknown>;
     const newParams = e.new as unknown as Record<string, unknown>;
     for (const field of e.changed) {
-      if (!(field in newParams)) throw new IndexerHaltError(`params_updated: field ${field} tidak ada di new`);
+      if (!(field in newParams)) throw new IndexerHaltError(`params_updated: field ${field} is missing from new`);
       insert.run(
         ctx.circleId, field, JSON.stringify(oldParams[field] ?? null), JSON.stringify(newParams[field]),
         e.effective_epoch, ctx.block.height, ctx.receiptId, ctx.logIndex,

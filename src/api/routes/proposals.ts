@@ -48,7 +48,7 @@ export function proposalRoutes(view: ViewFunction): Route[] {
       handler: async ({ circle, query }) => {
         const status = query.get("status");
         if (status !== null && !(PROPOSAL_STATUSES as readonly string[]).includes(status)) {
-          throw invalidRequest("status tidak dikenal", { status, allowed: PROPOSAL_STATUSES });
+          throw invalidRequest("unknown status", { status, allowed: PROPOSAL_STATUSES });
         }
         let dao: string;
         let proposals: DaoProposal[];
@@ -58,7 +58,7 @@ export function proposalRoutes(view: ViewFunction): Route[] {
           const from = Math.max(0, last - PAGE);
           proposals = (await view(dao, "get_proposals", { from_index: from, limit: PAGE })) as DaoProposal[];
         } catch (error) {
-          throw new ApiError(502, "dao_unavailable", "Proposal DAO tidak terbaca", { upstream: error instanceof Error ? error.message : String(error) });
+          throw new ApiError(502, "dao_unavailable", "DAO proposals could not be read", { upstream: error instanceof Error ? error.message : String(error) });
         }
         const items = proposals
           .map((p) => ({ p, call: decodeSetParams(p.kind, circle.contract_id) }))

@@ -31,25 +31,25 @@ export function parseDaoRegistry(text: string): DaoRegistry {
   try {
     raw = JSON.parse(text);
   } catch {
-    throw new DaoRegistryError("registri DAO bukan JSON");
+    throw new DaoRegistryError("DAO registry is not JSON");
   }
-  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) throw new DaoRegistryError("registri DAO harus objek {akun DAO: {rentable_vote_kinds}}");
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) throw new DaoRegistryError("DAO registry must be an object {DAO account: {rentable_vote_kinds}}");
   const out: Record<string, { rentable_vote_kinds: RentableKind[] }> = {};
   for (const [dao, entry] of Object.entries(raw as Record<string, unknown>)) {
-    if (!ACCOUNT.test(dao) || dao.length < 2 || dao.length > 64) throw new DaoRegistryError(`${JSON.stringify(dao)} bukan akun NEAR`);
+    if (!ACCOUNT.test(dao) || dao.length < 2 || dao.length > 64) throw new DaoRegistryError(`${JSON.stringify(dao)} is not a NEAR account`);
     const kinds = (entry as { rentable_vote_kinds?: unknown } | null)?.rentable_vote_kinds;
     if (kinds === undefined) {
       out[dao] = { rentable_vote_kinds: [] }; // no list: nothing is for rent
       continue;
     }
-    if (!Array.isArray(kinds)) throw new DaoRegistryError(`${dao}: rentable_vote_kinds harus daftar`);
+    if (!Array.isArray(kinds)) throw new DaoRegistryError(`${dao}: rentable_vote_kinds must be a list`);
     const list: RentableKind[] = [];
     for (const item of kinds as unknown[]) {
       const kind = typeof item === "string" ? item : (item as { kind?: unknown } | null)?.kind;
       const contract = typeof item === "string" ? null : (item as { contract?: unknown } | null)?.contract ?? null;
-      if (typeof kind !== "string" || !KIND.test(kind)) throw new DaoRegistryError(`${dao}: kind harus teks [a-z][a-z0-9_]{1,31}`);
-      if (FORBIDDEN_VOTE_KINDS.includes(kind)) throw new DaoRegistryError(`${dao}: jenis ${kind} tidak boleh disewakan (vote_kind_forbidden)`);
-      if (contract !== null && (typeof contract !== "string" || !ACCOUNT.test(contract) || contract.length < 2 || contract.length > 64)) throw new DaoRegistryError(`${dao}: contract untuk ${kind} bukan akun NEAR`);
+      if (typeof kind !== "string" || !KIND.test(kind)) throw new DaoRegistryError(`${dao}: kind must be text [a-z][a-z0-9_]{1,31}`);
+      if (FORBIDDEN_VOTE_KINDS.includes(kind)) throw new DaoRegistryError(`${dao}: kind ${kind} must not be rentable (vote_kind_forbidden)`);
+      if (contract !== null && (typeof contract !== "string" || !ACCOUNT.test(contract) || contract.length < 2 || contract.length > 64)) throw new DaoRegistryError(`${dao}: contract for ${kind} is not a NEAR account`);
       if (!list.some((k) => k.kind === kind)) list.push({ kind, contract: contract as string | null });
     }
     out[dao] = { rentable_vote_kinds: list };
@@ -61,7 +61,7 @@ export function parseDaoRegistry(text: string): DaoRegistry {
 export async function fetchDaoRegistry(options: { readApiUrl: string; circle: string; fetch?: typeof fetch }): Promise<DaoRegistry> {
   const url = `${options.readApiUrl.replace(/\/+$/, "")}/x207/circles/${encodeURIComponent(options.circle)}/marketplace/dao-registry`;
   const r = await (options.fetch ?? fetch)(url, { signal: AbortSignal.timeout(10_000) });
-  if (!r.ok) throw new DaoRegistryError(`read API ${r.status} untuk registri DAO`);
+  if (!r.ok) throw new DaoRegistryError(`read API ${r.status} for the DAO registry`);
   const body = (await r.json()) as { items?: Array<{ dao?: unknown; rentable_vote_kinds?: unknown }> };
   const map: Record<string, unknown> = {};
   for (const item of body.items ?? []) if (typeof item.dao === "string") map[item.dao] = { rentable_vote_kinds: item.rentable_vote_kinds };
@@ -104,8 +104,8 @@ export class DaoVoteAdapter implements ProviderAccessAdapter {
   }
 
   async verifyGranteeRef(ref: string): Promise<{ ok: true } | { ok: false; reason: string }> {
-    if (!ACCOUNT.test(ref)) return { ok: false, reason: "bukan akun NEAR" };
-    return (await this.#o.client.accountExists(ref)) ? { ok: true } : { ok: false, reason: "akun penerima delegasi tidak ada" };
+    if (!ACCOUNT.test(ref)) return { ok: false, reason: "not a NEAR account" };
+    return (await this.#o.client.accountExists(ref)) ? { ok: true } : { ok: false, reason: "delegation recipient account does not exist" };
   }
 
   /** The account that receives the delegation must be the account that signs the vouchers of the lessee: the vote cannot be rented on to another account. No proof is sent. */
@@ -116,16 +116,16 @@ export class DaoVoteAdapter implements ProviderAccessAdapter {
   async grant(request: ProviderGrantRequest): Promise<ProviderGrantResult> {
     const dao = request.resource;
     const kind = request.permission;
-    if (dao === null || kind === null) throw new ProviderAccessError("scope_invalid", "grant dao-vote wajib menamai DAO (resource) dan jenis suara (permission)");
-    if (FORBIDDEN_VOTE_KINDS.includes(kind)) throw new ProviderAccessError("vote_kind_forbidden", `suara ${kind} tidak pernah disewakan`);
+    if (dao === null || kind === null) throw new ProviderAccessError("scope_invalid", "dao-vote grant must name the DAO (resource) and the vote kind (permission)");
+    if (FORBIDDEN_VOTE_KINDS.includes(kind)) throw new ProviderAccessError("vote_kind_forbidden", `vote ${kind} is never rentable`);
     const registry = typeof this.#o.registry === "function" ? await this.#o.registry() : this.#o.registry;
     const entry = registry[dao];
-    if (entry === undefined) throw new ProviderAccessError("dao_unknown", `DAO ${dao} tidak ada di registri D10: tidak ada sewa suara`);
+    if (entry === undefined) throw new ProviderAccessError("dao_unknown", `DAO ${dao} is not in the D10 registry: no vote rental`);
     const rentable = entry.rentable_vote_kinds.find((k) => k.kind === kind);
-    if (rentable === undefined) throw new ProviderAccessError("vote_kind_forbidden", `DAO ${dao} tidak mengizinkan sewa suara ${kind} (rentable_vote_kinds)`);
+    if (rentable === undefined) throw new ProviderAccessError("vote_kind_forbidden", `DAO ${dao} does not allow renting vote ${kind} (rentable_vote_kinds)`);
     // a general delegation covers every proposal, the treasury too: only a contract that handles this kind alone may be delegated to
     if (rentable.contract === null || rentable.contract === dao) {
-      throw new ProviderAccessError("delegation_not_scoped", `DAO ${dao} tidak punya kontrak yang hanya mengurus suara ${kind}: delegasi umum tidak disewakan`);
+      throw new ProviderAccessError("delegation_not_scoped", `DAO ${dao} has no contract that handles only vote ${kind}: general delegation is not rentable`);
     }
     const made = await this.#o.client.delegate({ dao, contract: rentable.contract, kind, delegate: request.granteeRef, expiresAtMs: request.expiresAtMs });
     return {
@@ -136,7 +136,7 @@ export class DaoVoteAdapter implements ProviderAccessAdapter {
 
   #decode(handle: string): { dao: string; id: string } {
     const m = /^dao:([^:]+):(.+)$/.exec(handle);
-    if (!m) throw new Error("handle dao-vote tidak dikenal");
+    if (!m) throw new Error("unknown dao-vote handle");
     return { dao: m[1] as string, id: m[2] as string };
   }
 

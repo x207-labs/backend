@@ -64,10 +64,10 @@ function intentView(db: Database.Database, contractId: string, r: IntentRow, now
 }
 
 function parseIntentBody(body: unknown): { intent: BarterIntent; signature: string } {
-  if (body === null || typeof body !== "object") throw invalidRequest("body harus objek");
+  if (body === null || typeof body !== "object") throw invalidRequest("body must be an object");
   const { intent, signature } = body as { intent?: unknown; signature?: unknown };
-  if (typeof signature !== "string") throw invalidRequest("signature wajib string");
-  if (intent === null || typeof intent !== "object") throw invalidRequest("intent wajib objek");
+  if (typeof signature !== "string") throw invalidRequest("signature must be a string");
+  if (intent === null || typeof intent !== "object") throw invalidRequest("intent must be an object");
   return { intent: intent as BarterIntent, signature };
 }
 
@@ -85,13 +85,13 @@ export const intentRoutes: Route[] = [
         throw error;
       }
       if (intent.circle !== circle.contract_id) {
-        throw invalidRequest("intent.circle harus akun kontrak lingkaran", { expected: circle.contract_id, got: intent.circle });
+        throw invalidRequest("intent.circle must be the circle contract account", { expected: circle.contract_id, got: intent.circle });
       }
       const nowSeconds = Math.floor(now() / 1000);
-      if (intent.expiresAt <= nowSeconds) throw invalidRequest("expiresAt sudah lewat", { expiresAt: intent.expiresAt });
+      if (intent.expiresAt <= nowSeconds) throw invalidRequest("expiresAt has already passed", { expiresAt: intent.expiresAt });
       const pubkey = activeMemberKey(db, circle.circle_id, intent.account);
       if (!verifyIntentSignature(intent, signature, pubkey)) {
-        throw new ApiError(401, "invalid_signature", "Tanda tangan intent tidak cocok dengan kunci voucher anggota", { account: intent.account });
+        throw new ApiError(401, "invalid_signature", "Intent signature does not match the member's voucher key", { account: intent.account });
       }
       const hash = intentHash(intent);
       const hashB58 = intentHashBase58(intent);
@@ -103,7 +103,7 @@ export const intentRoutes: Route[] = [
         )
         .run(circle.circle_id, hash, hashB58, intent.account, intent.offer.service, intent.offer.calls, intent.offer.value,
           intent.need.service, intent.need.calls, intent.need.value, intent.expiresAt, intent.nonce, signature, now());
-      if (inserted.changes === 0) throw new ApiError(409, "already_exists", "Intent dengan hash ini sudah tercatat", { intentHash: hash });
+      if (inserted.changes === 0) throw new ApiError(409, "already_exists", "An intent with this hash is already recorded", { intentHash: hash });
       const stored = row<IntentRow>(db, "SELECT * FROM intents WHERE circle_id = ? AND intent_hash = ?", circle.circle_id, hash) as IntentRow;
       return { status: 201, body: intentView(db, circle.contract_id, stored, nowSeconds) };
     },
@@ -115,11 +115,11 @@ export const intentRoutes: Route[] = [
     handler: ({ db, circle, query, now }) => {
       const limit = parseLimit(query);
       const status = query.get("status") ?? "open";
-      if (!(STATUSES as readonly string[]).includes(status)) throw invalidRequest("status tidak dikenal", { status, allowed: STATUSES });
+      if (!(STATUSES as readonly string[]).includes(status)) throw invalidRequest("unknown status", { status, allowed: STATUSES });
       const account = query.get("account");
       const cursor = decodeCursor(query);
       const after = cursor && typeof cursor.a === "number" ? cursor.a : null;
-      if (cursor && after === null) throw invalidRequest("cursor tidak valid");
+      if (cursor && after === null) throw invalidRequest("invalid cursor");
       const nowSeconds = Math.floor(now() / 1000);
 
       const where = ["circle_id = ?"];

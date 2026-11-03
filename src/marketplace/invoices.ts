@@ -40,12 +40,12 @@ export interface InvoiceNotice {
 }
 
 export function validateInvoiceNotice(n: InvoiceNotice): void {
-  if (typeof n.circle !== "string" || !ACCOUNT.test(n.circle) || typeof n.actor !== "string" || !ACCOUNT.test(n.actor)) badNotice("circle dan actor harus account id");
-  if (!HASH.test(String(n.invoice_hash))) badNotice("invoice_hash harus 64 heksadesimal huruf kecil");
-  if (!(INVOICE_ACTIONS as readonly string[]).includes(n.action)) badNotice("action harus requested atau rejected");
-  if (!Number.isSafeInteger(n.at) || n.at < 1) badNotice("at harus detik unix bulat");
+  if (typeof n.circle !== "string" || !ACCOUNT.test(n.circle) || typeof n.actor !== "string" || !ACCOUNT.test(n.actor)) badNotice("circle and actor must be account ids");
+  if (!HASH.test(String(n.invoice_hash))) badNotice("invoice_hash must be 64 lowercase hex characters");
+  if (!(INVOICE_ACTIONS as readonly string[]).includes(n.action)) badNotice("action must be requested or rejected");
+  if (!Number.isSafeInteger(n.at) || n.at < 1) badNotice("at must be whole unix seconds");
   if (n.action === "requested" ? n.reason !== null : n.reason !== null && (typeof n.reason !== "string" || n.reason.length === 0 || n.reason.length > 256)) {
-    badNotice("reason hanya untuk rejected, paling banyak 256 karakter");
+    badNotice("reason is only for rejected, at most 256 characters");
   }
 }
 
@@ -104,9 +104,9 @@ const installmentsOf = (db: Database.Database, circleId: string, hash: string): 
   rows<InstallmentRow>(db, "SELECT * FROM invoice_installments WHERE circle_id = ? AND invoice_hash = ? ORDER BY idx", circleId, hash);
 
 function findInvoice(db: Database.Database, circleId: string, hash: string): InvoiceRow {
-  if (!HASH.test(hash)) throw invalidRequest("hash invoice harus 64 heksadesimal huruf kecil", { hash });
+  if (!HASH.test(hash)) throw invalidRequest("invoice hash must be 64 lowercase hex characters", { hash });
   const found = row<InvoiceRow>(db, "SELECT * FROM invoices WHERE circle_id = ? AND invoice_hash = ?", circleId, hash);
-  if (!found) throw new ApiError(404, "invoice_not_found", `Invoice ${hash} tidak ada`, { invoiceHash: hash });
+  if (!found) throw new ApiError(404, "invoice_not_found", `Invoice ${hash} not found`, { invoiceHash: hash });
   return found;
 }
 
@@ -222,22 +222,22 @@ type VoucherInput = { voucher?: unknown; signature?: unknown };
 /** The voucher of the body, with its signature, when it is exactly `expected`; `installment_voucher_mismatch` when not. */
 function exactVoucher(input: VoucherInput, expected: UnsignedVoucher, debtorKey: string, where: string): Voucher {
   if (input === null || typeof input !== "object" || input.voucher === null || typeof input.voucher !== "object" || typeof input.signature !== "string") {
-    throw invalidRequest(`${where}: voucher dan signature wajib`);
+    throw invalidRequest(`${where}: voucher and signature are required`);
   }
   const v = input.voucher as Record<string, unknown>;
   const keys: Array<keyof UnsignedVoucher> = ["circle", "payer", "payee", "epoch", "seq", "cumulativeAmount", "unit", "resource"];
   const diff = keys.filter((k) => v[k] !== expected[k]);
-  if (diff.length > 0) throw new ApiError(409, "installment_voucher_mismatch", `${where}: voucher tidak sama dengan yang dihitung dari dokumen dan jadwal`, { fields: diff });
+  if (diff.length > 0) throw new ApiError(409, "installment_voucher_mismatch", `${where}: voucher does not match the one computed from the document and schedule`, { fields: diff });
   const signed = { ...expected, signature: input.signature } as Voucher;
-  if (!verifyVoucher(signed, debtorKey)) throw new ApiError(401, "invalid_signature", `${where}: tanda tangan voucher tidak cocok dengan kunci voucher debtor`, { account: expected.payer });
+  if (!verifyVoucher(signed, debtorKey)) throw new ApiError(401, "invalid_signature", `${where}: voucher signature does not match the debtor's voucher key`, { account: expected.payer });
   return signed;
 }
 
 function readNotice(body: unknown, now: () => number): { notice: InvoiceNotice; signature: string; raw: Record<string, unknown> } {
-  if (body === null || typeof body !== "object") throw invalidRequest("body harus objek");
+  if (body === null || typeof body !== "object") throw invalidRequest("body must be an object");
   const raw = body as Record<string, unknown>;
-  if (typeof raw.signature !== "string") throw invalidRequest("signature wajib string");
-  if (raw.notice === null || typeof raw.notice !== "object") throw invalidRequest("notice wajib objek");
+  if (typeof raw.signature !== "string") throw invalidRequest("signature must be a string");
+  if (raw.notice === null || typeof raw.notice !== "object") throw invalidRequest("notice must be an object");
   const notice = raw.notice as InvoiceNotice;
   try {
     validateInvoiceNotice(notice);
@@ -245,7 +245,7 @@ function readNotice(body: unknown, now: () => number): { notice: InvoiceNotice; 
     asApiError(error);
   }
   const nowS = nowSeconds(now());
-  if (Math.abs(notice.at - nowS) > NOTICE_SKEW_SECONDS) throw invalidRequest(`notice.at menyimpang lebih dari ${NOTICE_SKEW_SECONDS} detik dari jam server`, { at: notice.at, now: nowS });
+  if (Math.abs(notice.at - nowS) > NOTICE_SKEW_SECONDS) throw invalidRequest(`notice.at is more than ${NOTICE_SKEW_SECONDS} seconds off the server clock`, { at: notice.at, now: nowS });
   return { notice, signature: raw.signature, raw };
 }
 
@@ -265,10 +265,10 @@ export function invoiceRoutes(resolveOpenEpoch: OpenEpochResolver, options: Invo
       circleScoped: true,
       handler: async ({ db, circle, body, now }) => {
         const { notice, signature, raw } = readNotice(body, now);
-        if (raw.document === null || typeof raw.document !== "object") throw invalidRequest("document wajib objek");
+        if (raw.document === null || typeof raw.document !== "object") throw invalidRequest("document must be an object");
         const count = raw.installments;
         if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 1 || count > MAX_INSTALLMENTS) {
-          throw new ApiError(400, "installment_count", `installments harus bilangan bulat 1 sampai ${MAX_INSTALLMENTS}`, {});
+          throw new ApiError(400, "installment_count", `installments must be an integer from 1 to ${MAX_INSTALLMENTS}`, {});
         }
         const doc = raw.document as InvoiceDocument;
         let hash: string;
@@ -277,17 +277,17 @@ export function invoiceRoutes(resolveOpenEpoch: OpenEpochResolver, options: Invo
         } catch (error) {
           return asApiError(error);
         }
-        if (notice.action !== "requested") throw invalidRequest("notice.action harus requested");
-        if (notice.circle !== circle.contract_id) throw invalidRequest("notice.circle harus akun kontrak lingkaran", { expected: circle.contract_id, got: notice.circle });
-        if (notice.invoice_hash !== hash) throw invalidRequest("notice.invoice_hash harus hash dokumen", { expected: hash });
-        if (notice.actor !== doc.issuer) throw new ApiError(403, "invoice_not_party", "Hanya issuer yang mengajukan invoice", { actor: notice.actor });
+        if (notice.action !== "requested") throw invalidRequest("notice.action must be requested");
+        if (notice.circle !== circle.contract_id) throw invalidRequest("notice.circle must be the circle contract account", { expected: circle.contract_id, got: notice.circle });
+        if (notice.invoice_hash !== hash) throw invalidRequest("notice.invoice_hash must be the document hash", { expected: hash });
+        if (notice.actor !== doc.issuer) throw new ApiError(403, "invoice_not_party", "Only the issuer requests an invoice", { actor: notice.actor });
         const issuerKey = activeMemberKey(db, circle.circle_id, doc.issuer);
         if (!verifyNoticeJson(serializeInvoiceNotice(notice), circle.contract_id, signature, issuerKey)) {
-          throw new ApiError(401, "invalid_signature", "Tanda tangan notice tidak cocok dengan kunci voucher issuer", { account: doc.issuer });
+          throw new ApiError(401, "invalid_signature", "Notice signature does not match the issuer's voucher key", { account: doc.issuer });
         }
         activeMemberKey(db, circle.circle_id, doc.debtor);
         const open = await resolveOpenEpoch(db, circle);
-        if (open === null) throw new ApiError(409, "epoch_not_open", "Tidak ada epoch open untuk menjadwalkan cicilan", {});
+        if (open === null) throw new ApiError(409, "epoch_not_open", "No open epoch to schedule installments", {});
         let plan: InstallmentPlan;
         try {
           plan = planInstallments({ circle: circle.contract_id, doc, firstEpoch: open + 1, count });
@@ -295,7 +295,7 @@ export function invoiceRoutes(resolveOpenEpoch: OpenEpochResolver, options: Invo
           return asApiError(error);
         }
         if (row(db, "SELECT 1 AS x FROM invoices WHERE circle_id = ? AND invoice_hash = ?", circle.circle_id, hash)) {
-          throw new ApiError(409, "invoice_duplicate", "Invoice dengan hash ini sudah ada di lingkaran", { invoiceHash: hash });
+          throw new ApiError(409, "invoice_duplicate", "An invoice with this hash already exists in the circle", { invoiceHash: hash });
         }
         assertOpenRoom(db, "SELECT COUNT(*) AS n FROM invoices WHERE circle_id = ? AND issuer = ? AND status IN ('requested','approved')", [circle.circle_id, doc.issuer], options.openLimits?.invoices ?? DEFAULT_OPEN.invoices, "invoice", doc.issuer);
         db.transaction(() => {
@@ -320,11 +320,11 @@ export function invoiceRoutes(resolveOpenEpoch: OpenEpochResolver, options: Invo
         const cursor = decodeCursor(query);
         const party = query.get("party");
         const status = query.get("status");
-        if (party !== null && !ACCOUNT.test(party)) throw invalidRequest("party bukan account id", { party });
-        if (status !== null && !(INVOICE_STATUSES as readonly string[]).includes(status)) throw invalidRequest("status tidak dikenal", { status });
+        if (party !== null && !ACCOUNT.test(party)) throw invalidRequest("party is not an account id", { party });
+        if (status !== null && !(INVOICE_STATUSES as readonly string[]).includes(status)) throw invalidRequest("status is not recognized", { status });
         let after = Number.MAX_SAFE_INTEGER;
         if (cursor) {
-          if (typeof cursor.a !== "number" || !Number.isSafeInteger(cursor.a)) throw invalidRequest("cursor tidak valid");
+          if (typeof cursor.a !== "number" || !Number.isSafeInteger(cursor.a)) throw invalidRequest("cursor is not valid");
           after = cursor.a;
         }
         const list = rows<InvoiceRow>(
@@ -360,15 +360,15 @@ export function invoiceRoutes(resolveOpenEpoch: OpenEpochResolver, options: Invo
       handler: ({ db, circle, params, body }) => {
         syncInvoices(db, circle.circle_id);
         const inv = findInvoice(db, circle.circle_id, params.hash as string);
-        if (inv.status !== "requested") throw new ApiError(409, "invoice_bad_state", `approve hanya dari requested, keadaan sekarang ${inv.status}`, { status: inv.status });
+        if (inv.status !== "requested") throw new ApiError(409, "invoice_bad_state", `approve only from requested, current state ${inv.status}`, { status: inv.status });
         const vouchers = (body as { vouchers?: unknown } | null)?.vouchers;
-        if (!Array.isArray(vouchers)) throw invalidRequest("vouchers wajib array");
+        if (!Array.isArray(vouchers)) throw invalidRequest("vouchers must be an array");
         if (vouchers.length !== Number(inv.installment_count)) {
-          throw new ApiError(409, "installment_voucher_mismatch", `perlu tepat satu voucher per cicilan (${inv.installment_count}), dapat ${vouchers.length}`, {});
+          throw new ApiError(409, "installment_voucher_mismatch", `exactly one voucher per installment is needed (${inv.installment_count}), got ${vouchers.length}`, {});
         }
         const plan = planOf(circle.contract_id, inv);
         const debtorKey = activeMemberKey(db, circle.circle_id, inv.debtor);
-        const signed = plan.installments.map((it, i) => exactVoucher(vouchers[i] as VoucherInput, installmentVoucher(plan, it.index), debtorKey, `cicilan ${it.index}`));
+        const signed = plan.installments.map((it, i) => exactVoucher(vouchers[i] as VoucherInput, installmentVoucher(plan, it.index), debtorKey, `installment ${it.index}`));
         db.transaction(() => {
           plan.installments.forEach((it, i) => {
             const v = signed[i] as Voucher;
@@ -390,14 +390,14 @@ export function invoiceRoutes(resolveOpenEpoch: OpenEpochResolver, options: Invo
         syncInvoices(db, circle.circle_id);
         const inv = findInvoice(db, circle.circle_id, params.hash as string);
         const { notice, signature } = readNotice(body, now);
-        if (notice.action !== "rejected") throw invalidRequest("notice.action harus rejected");
-        if (notice.circle !== circle.contract_id) throw invalidRequest("notice.circle harus akun kontrak lingkaran", { expected: circle.contract_id, got: notice.circle });
-        if (notice.invoice_hash !== inv.invoice_hash) throw invalidRequest("notice.invoice_hash harus hash invoice ini");
-        if (notice.actor !== inv.debtor) throw new ApiError(403, "invoice_not_party", "Hanya debtor yang menolak invoice", { actor: notice.actor });
+        if (notice.action !== "rejected") throw invalidRequest("notice.action must be rejected");
+        if (notice.circle !== circle.contract_id) throw invalidRequest("notice.circle must be the circle contract account", { expected: circle.contract_id, got: notice.circle });
+        if (notice.invoice_hash !== inv.invoice_hash) throw invalidRequest("notice.invoice_hash must be this invoice's hash");
+        if (notice.actor !== inv.debtor) throw new ApiError(403, "invoice_not_party", "Only the debtor rejects an invoice", { actor: notice.actor });
         if (!verifyNoticeJson(serializeInvoiceNotice(notice), circle.contract_id, signature, activeMemberKey(db, circle.circle_id, inv.debtor))) {
-          throw new ApiError(401, "invalid_signature", "Tanda tangan notice tidak cocok dengan kunci voucher debtor", { account: inv.debtor });
+          throw new ApiError(401, "invalid_signature", "Notice signature does not match the debtor's voucher key", { account: inv.debtor });
         }
-        if (inv.status !== "requested") throw new ApiError(409, "invoice_bad_state", `reject hanya dari requested, keadaan sekarang ${inv.status}`, { status: inv.status });
+        if (inv.status !== "requested") throw new ApiError(409, "invoice_bad_state", `reject only from requested, current state ${inv.status}`, { status: inv.status });
         db.prepare("UPDATE invoices SET status = 'rejected', reject_reason = ?, decided_at_ms = ? WHERE id = ?").run(notice.reason, now(), inv.id);
         return { status: 200, body: invoiceView(db, circle.circle_id, findInvoice(db, circle.circle_id, inv.invoice_hash)) };
       },
@@ -409,9 +409,9 @@ export function invoiceRoutes(resolveOpenEpoch: OpenEpochResolver, options: Invo
       handler: ({ db, circle, params, body }) => {
         syncInvoices(db, circle.circle_id);
         const inv = findInvoice(db, circle.circle_id, params.hash as string);
-        if (!/^[1-9]\d*$/.test(params.index as string)) throw invalidRequest("index cicilan harus bilangan bulat >= 1", { index: params.index });
+        if (!/^[1-9]\d*$/.test(params.index as string)) throw invalidRequest("installment index must be an integer >= 1", { index: params.index });
         const index = Number(params.index);
-        if (inv.status !== "approved" && inv.status !== "missed") throw new ApiError(409, "invoice_bad_state", `catch-up hanya untuk invoice yang disetujui, keadaan sekarang ${inv.status}`, { status: inv.status });
+        if (inv.status !== "approved" && inv.status !== "missed") throw new ApiError(409, "invoice_bad_state", `catch-up is only for approved invoices, current state ${inv.status}`, { status: inv.status });
         const it = installmentsOf(db, circle.circle_id, inv.invoice_hash).find((i) => Number(i.idx) === index);
         const plan = planOf(circle.contract_id, inv);
         let expected: UnsignedVoucher;
@@ -419,15 +419,15 @@ export function invoiceRoutes(resolveOpenEpoch: OpenEpochResolver, options: Invo
           if (!it) installmentVoucher(plan, index); // throws installment_not_found
           const failed = it !== undefined && it.status === "scheduled" && it.reason === "headroom";
           if (!failed && it !== undefined && it.shifted === 0n) {
-            throw new InvoiceError("installment_bad_state", `cicilan ${index} belum gagal (status ${it.status}${it.reason ? `, ${it.reason}` : ""}): voucher susulan hanya sesudah gagal karena headroom`);
+            throw new InvoiceError("installment_bad_state", `installment ${index} has not failed (status ${it.status}${it.reason ? `, ${it.reason}` : ""}): a catch-up voucher is only allowed after a headroom failure`);
           }
           expected = catchUpVoucher(plan, index, pairState(db, circle.circle_id, Number(it?.epoch ?? 0) + 1, inv.debtor, inv.issuer), it?.shifted === 1n);
         } catch (error) {
           return asApiError(error);
         }
         const debtorKey = activeMemberKey(db, circle.circle_id, inv.debtor);
-        const signed = exactVoucher(body as VoucherInput, expected, debtorKey, `cicilan ${index}`);
-        if (epochClosed(db, circle.circle_id, expected.epoch)) throw new ApiError(409, "epoch_not_open", `Epoch ${expected.epoch} sudah ditutup: cicilan tidak bisa digeser`, { epoch: expected.epoch });
+        const signed = exactVoucher(body as VoucherInput, expected, debtorKey, `installment ${index}`);
+        if (epochClosed(db, circle.circle_id, expected.epoch)) throw new ApiError(409, "epoch_not_open", `Epoch ${expected.epoch} is already closed: the installment cannot be shifted`, { epoch: expected.epoch });
         db.prepare(
           `UPDATE invoice_installments SET status = 'shifted', reason = NULL, shifted = 1, v_epoch = ?, v_seq = ?, v_cumulative = ?, catch_up_json = ?, catch_up_signature = ?
            WHERE circle_id = ? AND invoice_hash = ? AND idx = ?`,

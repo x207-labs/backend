@@ -24,7 +24,7 @@ export function nearAccountExists(rpcUrl: string, fetchFn: typeof fetch = fetch)
     const body = (await response.json()) as { result?: { error?: string }; error?: { cause?: { name?: string } } };
     // RPC mainnet saat ini menjawab akun yang tidak ada dengan error tingkat atas UNKNOWN_ACCOUNT, bukan `result.error`
     if (body.error?.cause?.name === "UNKNOWN_ACCOUNT") return false;
-    if (body.error !== undefined) throw new Error(`RPC view_account gagal: ${JSON.stringify(body.error)}`);
+    if (body.error !== undefined) throw new Error(`RPC view_account failed: ${JSON.stringify(body.error)}`);
     const error = body.result?.error;
     if (error === undefined) return true;
     if (/does not exist/i.test(error)) return false;
@@ -53,33 +53,33 @@ interface Request {
 
 function text(body: Record<string, unknown>, field: string): string {
   const value = body[field];
-  if (typeof value !== "string" || value === "") throw invalidRequest(`${field} wajib berupa string`, { field });
+  if (typeof value !== "string" || value === "") throw invalidRequest(`${field} must be a string`, { field });
   return value;
 }
 
 function parse(raw: unknown): Request {
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw invalidRequest("body harus objek JSON");
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw invalidRequest("body must be a JSON object");
   const body = raw as Record<string, unknown>;
   const purpose = body.purpose;
   if (purpose !== "stake" && purpose !== "settle") {
-    throw invalidRequest("purpose harus stake atau settle", { purpose, allowed: ["stake", "settle"] });
+    throw invalidRequest("purpose must be stake or settle", { purpose, allowed: ["stake", "settle"] });
   }
   const refundType = body.refundType ?? "INTENTS";
   if (refundType !== "INTENTS" && refundType !== "ORIGIN_CHAIN") {
-    throw invalidRequest("refundType harus INTENTS atau ORIGIN_CHAIN", { refundType });
+    throw invalidRequest("refundType must be INTENTS or ORIGIN_CHAIN", { refundType });
   }
-  if (body.dry !== undefined && typeof body.dry !== "boolean") throw invalidRequest("dry harus boolean", { dry: body.dry });
+  if (body.dry !== undefined && typeof body.dry !== "boolean") throw invalidRequest("dry must be a boolean", { dry: body.dry });
   let amount: bigint | null = null;
   let epoch: number | null = null;
   if (purpose === "stake") {
     const raw = body.amount;
     if (typeof raw !== "string" || !/^[1-9]\d*$/.test(raw) || BigInt(raw) > U128_MAX) {
-      throw invalidRequest("stake butuh amount: string bilangan bulat > 0 dalam satuan terkecil", { amount: raw });
+      throw invalidRequest("stake needs amount: an integer string > 0 in the smallest unit", { amount: raw });
     }
     amount = BigInt(raw);
   } else {
     if (!Number.isSafeInteger(body.epoch) || (body.epoch as number) < 0) {
-      throw invalidRequest("settle butuh epoch: bilangan bulat >= 0", { epoch: body.epoch });
+      throw invalidRequest("settle needs epoch: an integer >= 0", { epoch: body.epoch });
     }
     epoch = body.epoch as number;
   }
@@ -111,10 +111,10 @@ export function depositQuoteRoutes(options: DepositQuoteOptions): Route[] {
       handler: async ({ db, body, now }) => {
         const req = parse(body);
         if (!row(db, "SELECT 1 AS ok FROM circles WHERE circle_id = ?", req.circle)) {
-          throw new ApiError(404, "circle_not_found", `Lingkaran ${req.circle} tidak ada`, { circle: req.circle });
+          throw new ApiError(404, "circle_not_found", `Circle ${req.circle} not found`, { circle: req.circle });
         }
         if (!row(db, "SELECT 1 AS ok FROM members WHERE circle_id = ? AND account_id = ?", req.circle, req.account)) {
-          throw new ApiError(404, "member_not_found", `Anggota ${req.account} tidak ada`, { circle: req.circle, account: req.account });
+          throw new ApiError(404, "member_not_found", `Member ${req.account} not found`, { circle: req.circle, account: req.account });
         }
 
         // `settle`: jumlah dan batas bayar dari D9, `amount` di body diabaikan.
@@ -129,7 +129,7 @@ export function depositQuoteRoutes(options: DepositQuoteOptions): Route[] {
             req.account,
           );
           if (!due) {
-            throw new ApiError(409, "nothing_due", `${req.account} tidak punya tagihan di epoch ${req.epoch}`, { account: req.account, epoch: req.epoch });
+            throw new ApiError(409, "nothing_due", `${req.account} has nothing due in epoch ${req.epoch}`, { account: req.account, epoch: req.epoch });
           }
           amountOut = due.amount;
           paymentDeadlineNs = due.due_at_ns;
@@ -137,7 +137,7 @@ export function depositQuoteRoutes(options: DepositQuoteOptions): Route[] {
 
         // 1Click menolak refund ke akun yang tidak ada dengan error internal, jadi dicek sebelum quote (aturan 6.1).
         if (req.refundType === "INTENTS" && !(await accountExists(req.refundTo))) {
-          throw new ApiError(422, "refund_account_not_found", `Akun refundTo ${req.refundTo} tidak ada`, { refundTo: req.refundTo });
+          throw new ApiError(422, "refund_account_not_found", `refundTo account ${req.refundTo} not found`, { refundTo: req.refundTo });
         }
 
         let quote;
@@ -214,10 +214,10 @@ export function depositQuoteRoutes(options: DepositQuoteOptions): Route[] {
             paymentDeadline: isoFromNs(paymentDeadlineNs),
             warnings,
             nextSteps: [
-              "kirim amountIn ke depositAddress",
-              "tunggu job berstatus ready_withdraw",
-              "ft_withdraw dari intents.near ke akun NEAR tanpa msg",
-              `ft_transfer_call ke x207-circle dengan msg ${msg}`,
+              "send amountIn to depositAddress",
+              "wait until the job is ready_withdraw",
+              "ft_withdraw from intents.near to the NEAR account without msg",
+              `ft_transfer_call to x207-circle with msg ${msg}`,
             ],
           },
         };

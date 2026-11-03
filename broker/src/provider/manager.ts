@@ -132,14 +132,14 @@ export class ProviderAccessManager {
   /** In `hosted` mode an adapter for a real service is refused here, before any grant can reach it. */
   register(adapter: ProviderAccessAdapter): void {
     if (this.mode === "hosted" && adapter.real) {
-      throw new ProviderAccessError("hosted_mode_real_provider", `penyedia ${adapter.provider} nyata tidak boleh dipasang di broker hosted: token admin harus di mesin pemberi (self-hosted)`);
+      throw new ProviderAccessError("hosted_mode_real_provider", `real provider ${adapter.provider} must not be installed on a hosted broker: the admin token must stay on the grantor's machine (self-hosted)`);
     }
     this.#adapters.set(adapter.provider, adapter);
   }
 
   #adapter(provider: string): ProviderAccessAdapter {
     const a = this.#adapters.get(provider);
-    if (!a) throw new ProviderAccessError("provider_unknown", `tidak ada adapter untuk penyedia ${provider}`);
+    if (!a) throw new ProviderAccessError("provider_unknown", `no adapter for provider ${provider}`);
     return a;
   }
 
@@ -181,7 +181,7 @@ export class ProviderAccessManager {
     // the proof is asked once, when the access is opened; the rent of the next days needs none
     if (!existing && adapter.proveGranteeRef) {
       // one proof at a time per grant, and the challenge is used up only by a verdict: a GitHub error, a rate limit or a timeout leaves it for another try (B4-F6)
-      if (this.#proving.has(grant.grant_id)) throw new ProviderAccessError("grantee_ref_unverified", "bukti grant ini sedang diperiksa; tunggu jawabannya");
+      if (this.#proving.has(grant.grant_id)) throw new ProviderAccessError("grantee_ref_unverified", "proof for this grant is being checked; wait for the result");
       this.#proving.add(grant.grant_id);
       try {
         const challenge = adapter.needsChallenge ? this.#peekChallenge(grant.grant_id, scope.grantee_ref) : null;
@@ -195,7 +195,7 @@ export class ProviderAccessManager {
           throw new ProviderAccessError("grantee_ref_unverified", `${scope.grantee_ref}: ${(error as Error).message}`);
         }
         if (challenge !== null) this.#useUpChallenge(grant.grant_id);
-        if (verdict === false) throw new ProviderAccessError("grantee_ref_unverified", `${scope.grantee_ref}: bukti kepemilikan tidak lolos`);
+        if (verdict === false) throw new ProviderAccessError("grantee_ref_unverified", `${scope.grantee_ref}: ownership proof failed`);
         if (verdict !== true) {
           warnings.push("grantee_unproven");
           proven = `unproven: ${verdict.unproven}`;
@@ -207,7 +207,7 @@ export class ProviderAccessManager {
     // an adapter with no proof at all (S3, AWS) says so, instead of leaving `null` that the page reads as "no information" (B4-F7); anything but `verified` carries the warning, also on a renewal
     if (proven === null && !adapter.proveGranteeRef) proven = "not_applicable";
     if (proven !== "verified" && !warnings.includes("grantee_unproven")) warnings.push("grantee_unproven");
-    if (existing && existing.status !== "active") throw new ProviderAccessError("grant_failed", `akses grant ${grant.grant_id} sudah ${existing.status}`);
+    if (existing && existing.status !== "active") throw new ProviderAccessError("grant_failed", `access for grant ${grant.grant_id} is already ${existing.status}`);
     const now = this.#now();
     const paidUntil = Math.min(Math.max(now, existing?.paidUntilMs ?? 0) + days * DAY_MS, nsToMs(grant.limits.expires_at));
     // two live grants for one thing: the end of the first would take away what the second still pays for (B4-F2)
@@ -216,7 +216,7 @@ export class ProviderAccessManager {
       const other = this.#store.db.prepare(
         `SELECT k.grant_id FROM provider_shared_keys k JOIN provider_access a ON a.grant_id = k.grant_id WHERE k.key = ? AND k.grant_id <> ? AND a.status IN ('active','revoke_pending') LIMIT 1`,
       ).get(key, grant.grant_id) as { grant_id: number } | undefined;
-      if (other) throw new ProviderAccessError("grant_failed", `grant ${other.grant_id} sudah membuka akses yang sama (${scope.provider}, ${scope.grantee_ref}); tunggu sampai berakhir`);
+      if (other) throw new ProviderAccessError("grant_failed", `grant ${other.grant_id} already opened the same access (${scope.provider}, ${scope.grantee_ref}); wait until it ends`);
     }
     let result: ProviderGrantResult;
     try {
@@ -229,7 +229,7 @@ export class ProviderAccessManager {
     if (adapter.nativeExpiry && (result.nativeExpiresAtMs === null || result.nativeExpiresAtMs > paidUntil)) {
       // do not leave an access that outlives the rent
       await adapter.revoke(result.handle).catch(() => undefined);
-      throw new ProviderAccessError("native_expiry_required", `penyedia ${scope.provider} punya kedaluwarsa bawaan tetapi tidak memasangnya sampai ${new Date(paidUntil).toISOString()}`);
+      throw new ProviderAccessError("native_expiry_required", `provider ${scope.provider} has a native expiry but does not set it up to ${new Date(paidUntil).toISOString()}`);
     }
     const access: ProviderAccess = {
       grantId: grant.grant_id, provider: scope.provider, granteeRef: scope.grantee_ref, handle: result.handle, status: "active", paidUntilMs: paidUntil,
@@ -260,10 +260,10 @@ export class ProviderAccessManager {
   /** The live challenge of a grant, NOT used up: it is used up by `#useUpChallenge` once the proof was checked (B4-F6). */
   #peekChallenge(grantId: number, granteeRef: string): { circle: string; grantId: number; granteeRef: string; nonce: string } {
     const row = this.#store.db.prepare("SELECT nonce, expires_at_ms FROM grantee_challenges WHERE grant_id = ?").get(grantId) as { nonce: string; expires_at_ms: number } | undefined;
-    if (!row) throw new ProviderAccessError("grantee_ref_unverified", "tidak ada tantangan: minta GET …/access/challenge dulu");
+    if (!row) throw new ProviderAccessError("grantee_ref_unverified", "no challenge: request GET …/access/challenge first");
     if (row.expires_at_ms <= this.#now()) {
       this.#useUpChallenge(grantId);
-      throw new ProviderAccessError("grantee_ref_unverified", "tantangan sudah kedaluwarsa: minta yang baru");
+      throw new ProviderAccessError("grantee_ref_unverified", "challenge has expired: request a new one");
     }
     return { circle: this.#circle, grantId, granteeRef, nonce: row.nonce };
   }
@@ -275,7 +275,7 @@ export class ProviderAccessManager {
   /** Close the access of a grant now (the contract revoked it, the lessee defaulted, the cap was passed). A provider that fails leaves it `revoke_pending`. */
   async revokeAccess(grantId: number, reason: string): Promise<ProviderAccess> {
     const a = this.access(grantId);
-    if (!a) throw new ProviderAccessError("access_not_found", `grant ${grantId} tidak punya akses`);
+    if (!a) throw new ProviderAccessError("access_not_found", `grant ${grantId} has no access`);
     if (a.status === "revoked") return a;
     return this.#tryRevoke(a, reason);
   }
@@ -315,7 +315,7 @@ export class ProviderAccessManager {
    */
   async settleDay(grant: ProviderGrantInput, dayStartMs: number): Promise<{ amount: bigint; overCap: boolean }> {
     const a = this.access(grant.grant_id);
-    if (!a) throw new ProviderAccessError("access_not_found", `grant ${grant.grant_id} tidak punya akses`);
+    if (!a) throw new ProviderAccessError("access_not_found", `grant ${grant.grant_id} has no access`);
     const scope = parseProviderScope(grant.limits.scope);
     const adapter = this.#adapter(a.provider);
     const day = Math.floor(dayStartMs / DAY_MS);

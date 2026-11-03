@@ -23,13 +23,13 @@ export interface DatabaseCheck {
 /** Opens `path` read-only and says whether it is a healthy copy for THIS build. Never changes the file. */
 export function checkDatabase(path: string): DatabaseCheck {
   const result: DatabaseCheck = { ok: true, problems: [], migrations: { d9: null, marketplace: null }, unknownVersions: [], pendingVersions: [], cursors: [] };
-  if (!existsSync(path)) return { ...result, ok: false, problems: [`${path} tidak ada`] };
+  if (!existsSync(path)) return { ...result, ok: false, problems: [`${path} does not exist`] };
   const db = new Database(path, { readonly: true, fileMustExist: true });
   try {
     const integrity = db.pragma("integrity_check") as Array<{ integrity_check: string }>;
     if (integrity.length !== 1 || integrity[0]?.integrity_check !== "ok") result.problems.push(`integrity_check: ${integrity.map((r) => r.integrity_check).slice(0, 3).join("; ")}`);
     const tables = new Set((db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>).map((r) => r.name));
-    for (const t of ["schema_migrations", "events_raw", "indexer_cursor", "members"]) if (!tables.has(t)) result.problems.push(`tabel ${t} tidak ada`);
+    for (const t of ["schema_migrations", "events_raw", "indexer_cursor", "members"]) if (!tables.has(t)) result.problems.push(`table ${t} is missing`);
     if (tables.has("schema_migrations")) {
       const versions = (db.prepare("SELECT version FROM schema_migrations ORDER BY version").all() as Array<{ version: number }>).map((r) => r.version);
       result.unknownVersions = versions.filter((v) => !KNOWN_MIGRATIONS.includes(v));
@@ -37,13 +37,13 @@ export function checkDatabase(path: string): DatabaseCheck {
       const d9 = versions.filter((v) => v < 1000);
       const market = versions.filter((v) => v >= 1100);
       result.migrations = { d9: d9.length ? Math.max(...d9) : null, marketplace: market.length ? Math.max(...market) : null };
-      if (result.unknownVersions.length > 0) result.problems.push(`migrasi yang tidak dikenal build ini: ${result.unknownVersions.join(", ")} (salinan dari build yang lebih baru)`);
+      if (result.unknownVersions.length > 0) result.problems.push(`migrations unknown to this build: ${result.unknownVersions.join(", ")} (copy is from a newer build)`);
     }
     if (tables.has("indexer_cursor")) {
       result.cursors = (db.prepare("SELECT name, last_block_height FROM indexer_cursor").all() as Array<{ name: string; last_block_height: number }>).map((r) => ({ name: r.name, lastBlockHeight: Number(r.last_block_height) }));
     }
   } catch (error) {
-    result.problems.push(`tidak bisa dibaca: ${(error as Error).message}`);
+    result.problems.push(`cannot be read: ${(error as Error).message}`);
   } finally {
     db.close();
   }
@@ -53,7 +53,7 @@ export function checkDatabase(path: string): DatabaseCheck {
 
 /** A consistent copy of a database that may be in use. The copy is written to a temporary name and renamed, so a copy that was cut short is never mistaken for a good one. */
 export async function backupDatabase(source: Database.Database | string, dest: string): Promise<DatabaseCheck> {
-  if (existsSync(dest)) throw new Error(`${dest} sudah ada: backup tidak menimpa`);
+  if (existsSync(dest)) throw new Error(`${dest} already exists: backup does not overwrite`);
   const own = typeof source === "string";
   const db = own ? new Database(source, { readonly: true, fileMustExist: true }) : source;
   const tmp = `${dest}.partial`;
@@ -73,14 +73,14 @@ export async function backupDatabase(source: Database.Database | string, dest: s
  */
 export function restoreDatabase(backup: string, dest: string, options: { force?: boolean } = {}): DatabaseCheck {
   const check = checkDatabase(backup);
-  if (!check.ok) throw new Error(`salinan tidak sehat: ${check.problems.join("; ")}`);
-  if (existsSync(dest) && options.force !== true) throw new Error(`${dest} sudah ada: pakai force setelah proses dihentikan dan file lama disimpan`);
+  if (!check.ok) throw new Error(`unhealthy copy: ${check.problems.join("; ")}`);
+  if (existsSync(dest) && options.force !== true) throw new Error(`${dest} already exists: use force after the process is stopped and the old file is saved`);
   const tmp = `${dest}.restoring`;
   rmSync(tmp, { force: true });
   copyFileSync(backup, tmp);
   for (const suffix of ["", "-wal", "-shm"]) rmSync(`${dest}${suffix}`, { force: true });
   renameSync(tmp, dest);
   const restored = checkDatabase(dest);
-  if (!restored.ok) throw new Error(`hasil restore tidak sehat: ${restored.problems.join("; ")}`);
+  if (!restored.ok) throw new Error(`unhealthy restore result: ${restored.problems.join("; ")}`);
   return restored;
 }

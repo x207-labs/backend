@@ -66,10 +66,10 @@ describe("BE-057 proof of the grantee_ref in the adapters", () => {
       await expect(m.grantAccess(g, 1, sign({ ...c, nonce: "0".repeat(32) }))).rejects.toMatchObject({ code: "grantee_ref_unverified" }); // another nonce
       c = m.issueChallenge(g)!;
       await expect(m.grantAccess(g, 1, null)).rejects.toMatchObject({ code: "grantee_ref_unverified" }); // no proof
-      await expect(m.grantAccess(g, 1, sign(c))).rejects.toMatchObject({ code: "grantee_ref_unverified", message: expect.stringContaining("tantangan") }); // the challenge went with the try before
+      await expect(m.grantAccess(g, 1, sign(c))).rejects.toMatchObject({ code: "grantee_ref_unverified", message: expect.stringContaining("no challenge") }); // the challenge went with the try before
       c = m.issueChallenge(g)!;
       clock.now += 16 * 60_000;
-      await expect(m.grantAccess(g, 1, sign(c))).rejects.toMatchObject({ code: "grantee_ref_unverified", message: expect.stringContaining("kedaluwarsa") });
+      await expect(m.grantAccess(g, 1, sign(c))).rejects.toMatchObject({ code: "grantee_ref_unverified", message: expect.stringContaining("expired") });
       expect(file.text).toBe("");
       // the proof of the first run, replayed after it worked, is worth nothing: the access exists and the challenge is gone
       clock.now = NOW;

@@ -96,18 +96,18 @@ export function parseProviderScope(scope: string): ProviderScope {
   try {
     raw = JSON.parse(scope);
   } catch {
-    throw new ProviderAccessError("scope_invalid", "scope bukan JSON");
+    throw new ProviderAccessError("scope_invalid", "scope is not JSON");
   }
   const s = raw as Record<string, unknown> | null;
   if (s === null || typeof s !== "object" || typeof s.provider !== "string" || !/^[a-z0-9-]{1,32}$/.test(s.provider) || typeof s.grantee_ref !== "string" || s.grantee_ref.length === 0 || s.grantee_ref.length > 256) {
-    throw new ProviderAccessError("scope_invalid", "scope wajib memuat provider dan grantee_ref");
+    throw new ProviderAccessError("scope_invalid", "scope must contain provider and grantee_ref");
   }
   const text = (v: unknown, name: string): string | null => {
     if (v === undefined || v === null) return null;
-    if (typeof v !== "string" || v.length > 256) throw new ProviderAccessError("scope_invalid", `${name} harus teks paling banyak 256 karakter`);
+    if (typeof v !== "string" || v.length > 256) throw new ProviderAccessError("scope_invalid", `${name} must be text of at most 256 characters`);
     return v;
   };
   const cap = text(s.daily_cap, "daily_cap");
-  if (cap !== null && !/^[1-9]\d*$/.test(cap)) throw new ProviderAccessError("scope_invalid", "daily_cap harus bilangan bulat desimal > 0");
+  if (cap !== null && !/^[1-9]\d*$/.test(cap)) throw new ProviderAccessError("scope_invalid", "daily_cap must be a decimal integer > 0");
   return { provider: s.provider, grantee_ref: s.grantee_ref, resource: text(s.resource, "resource"), permission: text(s.permission, "permission"), daily_cap: cap };
 }

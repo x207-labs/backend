@@ -81,7 +81,7 @@ describe("BE-057 fix B4-F5, B4-F6, B4-F7", () => {
       bad.step.answer = "wrong-owner";
       await expect(bad.m.grantAccess(bad.g, 1, bad.proof)).rejects.toMatchObject({ code: "grantee_ref_unverified" });
       bad.step.answer = "ok";
-      await expect(bad.m.grantAccess(bad.g, 1, bad.proof)).rejects.toThrow(/tantangan/); // used up: ask for a new one
+      await expect(bad.m.grantAccess(bad.g, 1, bad.proof)).rejects.toThrow(/no challenge/); // used up: ask for a new one
       bad.store.close();
     });
 

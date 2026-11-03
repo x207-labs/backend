@@ -114,7 +114,7 @@ export class OneClickClient {
   async assertSupported(assetId: string): Promise<void> {
     await this.listTokens();
     if (!this.#tokens?.ids.has(assetId)) {
-      throw new SettlementError("asset_not_supported", `Aset ${assetId} tidak ada di daftar 1Click`, { asset: assetId });
+      throw new SettlementError("asset_not_supported", `Asset ${assetId} is not in the 1Click list`, { asset: assetId });
     }
   }
 
@@ -125,7 +125,7 @@ export class OneClickClient {
   async quote(params: QuoteParams): Promise<QuoteResponse> {
     const wantsLive = params.dry === false;
     if (wantsLive && this.mode !== "live") {
-      throw new SettlementError("live_mode_disabled", "dry: false butuh X207_SETTLEMENT_MODE=live", { mode: this.mode });
+      throw new SettlementError("live_mode_disabled", "dry: false needs X207_SETTLEMENT_MODE=live", { mode: this.mode });
     }
     await this.assertSupported(params.originAsset);
     await this.assertSupported(params.destinationAsset);
@@ -183,11 +183,11 @@ function toOneClickError(error: unknown): SettlementError {
   if (error instanceof ApiError) {
     const body = error.body as { message?: unknown } | string | undefined;
     const upstream = typeof body === "string" ? body : typeof body?.message === "string" ? body.message : error.statusText;
-    return new SettlementError("one_click_error", `1Click menolak permintaan: ${upstream}`, {
+    return new SettlementError("one_click_error", `1Click rejected the request: ${upstream}`, {
       upstream,
       upstreamStatus: error.status,
     });
   }
   const upstream = error instanceof Error ? error.message : String(error);
-  return new SettlementError("one_click_error", `1Click tidak terjangkau: ${upstream}`, { upstream });
+  return new SettlementError("one_click_error", `1Click unreachable: ${upstream}`, { upstream });
 }
