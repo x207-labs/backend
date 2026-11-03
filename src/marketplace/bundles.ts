@@ -14,7 +14,7 @@ import { effectiveStatus, findListing, type ListingRow } from "./listings.js";
 import { openEpochResolver, type OpenEpochResolver } from "./epoch.js";
 import { findOffer, offerView, type OfferRow } from "./offers.js";
 import { threadReferral } from "./referrals.js";
-import { DEFAULT_CONFIRM_CLASSES, findDelivery, paymentReleased, startDeliveryIfNeeded } from "./delivery-core.js";
+import { autoConfirmDue, DEFAULT_CONFIRM_CLASSES, findDeliveries, paymentReleased, startDeliveriesIfNeeded } from "./delivery-core.js";
 
 const HASH = /^[0-9a-f]{64}$/;
 const PROPOSAL_STATUSES = ["proposed", "ready", "all"] as const;
@@ -125,6 +125,11 @@ function refreshStatus(db: Database.Database, circleId: string, p: ProposalRow):
   db.prepare("UPDATE bundle_proposals SET status = ? WHERE id = ?").run(ready ? "ready" : "proposed", p.id);
 }
 
+/** Deliveries that the receiver left alone past the window are confirmed now; their bundles are looked at again. */
+export function settleDeliveries(db: Database.Database, circleId: string, nowMs: number): void {
+  for (const matchId of autoConfirmDue(db, circleId, Math.floor(nowMs / 1000))) refreshProposalOfMatch(db, circleId, matchId);
+}
+
 /** After the receiver confirmed a delivery: the bundle of that match may become `ready` now. */
 export function refreshProposalOfMatch(db: Database.Database, circleId: string, matchId: bigint | number): void {
   const p = row<ProposalRow>(db, "SELECT * FROM bundle_proposals WHERE circle_id = ? AND match_id = ?", circleId, matchId);
@@ -214,9 +219,12 @@ export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver(),
           .run(circle.circle_id, listingRow.listing_hash, offerRow.offer_hash, listingRow.account_id, offerRow.counterparty, offerRow.mode, plan.kind, open,
             plan.kind === "bundle" ? plan.terms_hash : null, offerRow.value, plan.discount, searcher ?? null, plan.searcher, now());
         const matchId = match.lastInsertRowid;
-        startDeliveryIfNeeded(
+        startDeliveriesIfNeeded(
           db, circle.circle_id,
-          { id: matchId, listing_hash: listingRow.listing_hash, offer_hash: offerRow.offer_hash, seller: listingRow.account_id, counterparty: offerRow.counterparty, offerClass: listingRow.offer_class, deliverBy: Number(offerRow.deliver_by) },
+          {
+            id: matchId, listing_hash: listingRow.listing_hash, offer_hash: offerRow.offer_hash, seller: listingRow.account_id, counterparty: offerRow.counterparty,
+            mode: offerRow.mode, offerClass: listingRow.offer_class, wantClass: listingRow.want_class, deliverBy: Number(offerRow.deliver_by),
+          },
           confirmClasses, now(),
         );
         db.prepare("UPDATE offers SET status = 'accepted' WHERE id = ?").run(offerRow.id);
@@ -235,9 +243,9 @@ export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver(),
       });
       const matchId = commit();
       const match = row<MatchRow>(db, "SELECT * FROM matches WHERE id = ?", matchId) as MatchRow;
-      const delivery = findDelivery(db, circle.circle_id, listingRow.listing_hash);
-      // only a match that needs the confirmation carries `delivery`; the others keep the shape they always had
-      const gate = delivery === undefined ? {} : { delivery: { required: true, payable: delivery.state === "confirmed", state: delivery.state } };
+      const handovers = findDeliveries(db, circle.circle_id, listingRow.listing_hash);
+      // only a match that needs a confirmation carries `delivery`; the others keep the shape they always had
+      const gate = handovers.length === 0 ? {} : { delivery: { required: true, payable: handovers.every((d) => d.state === "confirmed"), sides: Object.fromEntries(handovers.map((d) => [d.side, d.state])) } };
       const result =
         plan.kind === "payment"
           ? { kind: "payment", payer: plan.payer, payee: plan.payee, amount: plan.amount, ...gate }
@@ -323,7 +331,8 @@ export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver(),
     method: "GET",
     pattern: "/x207/circles/{circle}/bundle-proposals",
     circleScoped: true,
-    handler: ({ db, circle, query }) => {
+    handler: ({ db, circle, query, now }) => {
+      settleDeliveries(db, circle.circle_id, now());
       const status = query.get("status") ?? "all";
       if (!(PROPOSAL_STATUSES as readonly string[]).includes(status)) throw invalidRequest("status tidak dikenal", { status, allowed: PROPOSAL_STATUSES });
       const found = rows<ProposalRow>(
@@ -341,16 +350,20 @@ export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver(),
     method: "GET",
     pattern: "/x207/circles/{circle}/bundle-proposals/{termsHash}",
     circleScoped: true,
-    handler: ({ db, circle, params }) => ({
+    handler: ({ db, circle, params, now }) => {
+      settleDeliveries(db, circle.circle_id, now());
+      return {
       status: 200,
       body: proposalView(db, circle.circle_id, findProposal(db, circle.circle_id, params.termsHash as string)),
-    }),
+      };
+    },
   },
   {
     method: "POST",
     pattern: "/x207/circles/{circle}/bundle-proposals/{termsHash}/signatures",
     circleScoped: true,
     handler: async ({ db, circle, params, body, now }) => {
+      settleDeliveries(db, circle.circle_id, now());
       const proposal = findProposal(db, circle.circle_id, params.termsHash as string);
       if (body === null || typeof body !== "object") throw invalidRequest("body harus objek");
       const { account, signature } = body as { account?: unknown; signature?: unknown };

@@ -139,7 +139,7 @@ describe("BE-044 kotak masuk ajakan pencari", () => {
     migrate(db);
     migrate(db, MARKETPLACE_MIGRATIONS.filter((x) => x.version <= 1104));
     db.prepare("INSERT INTO offers (circle_id, offer_hash, listing_hash, proposer, counterparty, awaiting, round, mode, value, quantity, deliver_by, signature, created_at_ms) VALUES ('c','o','l','p','p','a',1,'pay','1',1,1,'s',1)").run();
-    expect(migrate(db, MARKETPLACE_MIGRATIONS)).toEqual([1105, 1106]);
+    expect(migrate(db, MARKETPLACE_MIGRATIONS)).toEqual([1105, 1106, 1107]);
     expect(db.prepare("SELECT offer_hash, referral_hash FROM offers").all()).toEqual([{ offer_hash: "o", referral_hash: null }]);
     db.close();
   });

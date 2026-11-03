@@ -211,6 +211,41 @@ CREATE TABLE delivery_notices (
 );
 `;
 
+// BE-047, second step: a barter match has two handovers (`side` offer: seller to counterparty; `want`: counterparty to seller), and a delivery that
+// the receiver leaves alone past the window is confirmed by the passing of time (`auto_confirmed`).
+const V1107_DELIVERY_SIDES = `
+CREATE TABLE deliveries_new (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  circle_id      TEXT    NOT NULL,
+  listing_hash   TEXT    NOT NULL,
+  side           TEXT    NOT NULL DEFAULT 'offer' CHECK (side IN ('offer','want')),
+  offer_hash     TEXT    NOT NULL,
+  match_id       INTEGER NOT NULL REFERENCES matches(id),
+  deliverer      TEXT    NOT NULL,
+  receiver       TEXT    NOT NULL,
+  deliver_by     INTEGER NOT NULL,
+  state          TEXT    NOT NULL DEFAULT 'awaiting' CHECK (state IN ('awaiting','delivered','confirmed','disputed','cancelled')),
+  proof_hash     TEXT,
+  delivered_at   INTEGER,
+  confirm_by     INTEGER,
+  confirmed_at   INTEGER,
+  auto_confirmed INTEGER NOT NULL DEFAULT 0,
+  disputed_at    INTEGER,
+  dispute_reason TEXT,
+  cancelled_at   INTEGER,
+  cancelled_by   TEXT,
+  created_at_ms  INTEGER NOT NULL,
+  UNIQUE (circle_id, listing_hash, side)
+);
+INSERT INTO deliveries_new (id, circle_id, listing_hash, side, offer_hash, match_id, deliverer, receiver, deliver_by, state, proof_hash, delivered_at, confirm_by,
+    confirmed_at, disputed_at, dispute_reason, cancelled_at, cancelled_by, created_at_ms)
+  SELECT id, circle_id, listing_hash, 'offer', offer_hash, match_id, deliverer, receiver, deliver_by, state, proof_hash, delivered_at, confirm_by,
+    confirmed_at, disputed_at, dispute_reason, cancelled_at, cancelled_by, created_at_ms FROM deliveries;
+DROP TABLE deliveries;
+ALTER TABLE deliveries_new RENAME TO deliveries;
+ALTER TABLE delivery_notices ADD COLUMN side TEXT NOT NULL DEFAULT 'offer';
+`;
+
 export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1101, name: "m11_intents", sql: V1101_INTENTS },
   { version: 1102, name: "m11_listings", sql: V1102_LISTINGS },
@@ -218,4 +253,5 @@ export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1104, name: "m11_solver_proposals", sql: V1104_SOLVER_PROPOSALS },
   { version: 1105, name: "m11_referrals", sql: V1105_REFERRALS },
   { version: 1106, name: "m11_deliveries", sql: V1106_DELIVERIES },
+  { version: 1107, name: "m11_delivery_sides", sql: V1107_DELIVERY_SIDES },
 ];
