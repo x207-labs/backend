@@ -15,7 +15,7 @@ The events of the bond with an arbiter (CT-094), of `freeze_member` (CT-095) and
 | `freeze_cancelled`, `member_unfrozen` | the row is removed |
 | `asset_contracts_set` | `official_contracts` row; an empty list removes it |
 
-**Limit after a ruling.** `rule_deal` ends with `limit = min(limit, stake - bond_locked)` for both parties and the contract emits no event for it (review BE-064 C-9). The indexer applies the same rule after `bond_slashed` and after a `bond_released` with `reason` `ruling`, with the locked bonds taken from `deals`. When the contract emits `limits_updated` for it, the handler of that event must be looked at again (its `reason` is not known yet).
+**Limit after a ruling.** `rule_deal` ends with `limit = min(limit, stake - bond_locked)` for both parties and, since the fix of review BE-064 C-9 (contracts `7d9d689`), emits `limits_updated` for the limits that changed. The handler of `limits_updated` writes it; when the same receipt holds `deal_ruled` the history reason is `ruling` (D9 migration 10 added the value to the `member_limits` table), otherwise `finalize`. The indexer no longer works the limit out by itself. A circle on a wasm from before that fix would show the old limit until the next `limits_updated`.
 
 ## Routes (all under `/x207/circles/{circle}`)
 - `GET /deals?account=&state=open|disputed|closed|all&limit=&cursor=`: newest first; with `account` the answer has `bondLocked`, the sum of the bonds that account has locked now.

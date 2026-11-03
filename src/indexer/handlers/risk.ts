@@ -23,6 +23,8 @@ export const riskHandlers: HandlerMap = {
   },
 
   limits_updated(ctx, e) {
+    // `rule_deal` (CT-094, review BE-064 C-9) lowers limits after a slash and says so with this same event; a ruling in the same receipt gives the reason `ruling`
+    const ruling = ctx.db.prepare("SELECT 1 AS x FROM events_raw WHERE receipt_id = ? AND event = 'deal_ruled'").get(ctx.receiptId) !== undefined;
     const update = ctx.db.prepare(
       "UPDATE members SET credit_limit = ?, updated_block = ? WHERE circle_id = ? AND account_id = ?",
     );
@@ -31,7 +33,7 @@ export const riskHandlers: HandlerMap = {
       requireChange(update.run(newLimit, ctx.block.height, ctx.circleId, change.account_id).changes, `anggota ${change.account_id}`);
       recordLimit(ctx, {
         account: change.account_id, epoch: e.epoch, oldLimit: units(change.old_limit, "old_limit"), newLimit,
-        status: change.status, reason: "finalize",
+        status: change.status, reason: ruling ? "ruling" : "finalize",
       });
     }
   },

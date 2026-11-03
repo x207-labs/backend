@@ -424,6 +424,30 @@ CREATE TABLE official_contracts (
 );
 `;
 
+// BE-065: the limit history has a new reason, `ruling` (the limit that `rule_deal` lowered). SQLite cannot change a CHECK, so the table is made again and copied.
+const V10_LIMIT_REASON_RULING = `
+CREATE TABLE member_limits_new (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  circle_id     TEXT    NOT NULL,
+  account_id    TEXT    NOT NULL,
+  epoch         INTEGER,
+  old_limit     INTEGER NOT NULL,
+  new_limit     INTEGER NOT NULL,
+  status        TEXT    NOT NULL,
+  reason        TEXT    NOT NULL CHECK (reason IN ('stake','finalize','default','ruling')),
+  block_height  INTEGER NOT NULL,
+  receipt_id    TEXT    NOT NULL,
+  log_index     INTEGER NOT NULL,
+  UNIQUE (receipt_id, log_index, account_id),
+  FOREIGN KEY (circle_id, account_id) REFERENCES members(circle_id, account_id)
+);
+INSERT INTO member_limits_new (id, circle_id, account_id, epoch, old_limit, new_limit, status, reason, block_height, receipt_id, log_index)
+  SELECT id, circle_id, account_id, epoch, old_limit, new_limit, status, reason, block_height, receipt_id, log_index FROM member_limits;
+DROP TABLE member_limits;
+ALTER TABLE member_limits_new RENAME TO member_limits;
+CREATE INDEX idx_limits_member ON member_limits (circle_id, account_id, id);
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "d9_initial", sql: V1_D9_INITIAL },
   { version: 2, name: "d9_bundles", sql: V2_BUNDLES },
@@ -434,4 +458,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 7, name: "d9_mt_escrows", sql: V7_MT_ESCROWS },
   { version: 8, name: "d9_event_caller", sql: V8_EVENT_CALLER },
   { version: 9, name: "d9_rules_0_0_12", sql: V9_RULES_0_0_12 },
+  { version: 10, name: "d9_limit_reason_ruling", sql: V10_LIMIT_REASON_RULING },
 ];

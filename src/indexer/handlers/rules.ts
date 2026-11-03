@@ -1,9 +1,8 @@
 // Interface 0.0.12 (BE-065, review BE-064 C-9): the events of the bond with an arbiter (CT-094), of `freeze_member` (CT-095) and of the official contracts (CT-096). The SDK parser
 // does not know them yet, so they are raw handlers (like the escrow events); a later SDK that learns the names does not change what these do. The data is the object of the NEP-297 array.
 //
-// Stake and limit of the two parties are kept equal to the contract: `bond_slashed` carries the new stake of both; the limit is what `rule_deal` does at its end, `limit = min(limit, stake - bond_locked)`
-// (`bound_member_limit`), applied here after a slash and after a release by a ruling, with the locked bonds taken from `deals`. Until the contract emits `limits_updated` for it (C-9), this is how
-// the read model follows.
+// Stake and limit of the two parties are kept equal to the contract: `bond_slashed` carries the new stake of both, and the limit that `rule_deal` lowers (`limit = min(limit, stake - bond_locked)`)
+// comes in the `limits_updated` that `rule_deal` emits since the fix of review BE-064 C-9 (commit `7d9d689` of the contracts): `handlers/risk.ts` writes it, with the reason `ruling`.
 import { IndexerHaltError } from "../errors.js";
 import { units } from "../units.js";
 import type { HandlerContext } from "./context.js";
@@ -28,28 +27,6 @@ function log(ctx: HandlerContext, bundleId: number, event: string, account: stri
       `INSERT OR IGNORE INTO deal_events (circle_id, bundle_id, event, account_id, amount, detail, block_height, receipt_id, log_index) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(ctx.circleId, bundleId, event, account, amount, detail, ctx.block.height, ctx.receiptId, ctx.logIndex);
-}
-
-/** The sum of the bonds of `account` that are still locked in the deals of this circle. */
-function lockedOf(ctx: HandlerContext, account: string): bigint {
-  const r = ctx.db
-    .prepare(
-      `SELECT COALESCE(SUM(CASE WHEN party_a = ? AND locked_a = 1 THEN bond_each ELSE 0 END + CASE WHEN party_b = ? AND locked_b = 1 THEN bond_each ELSE 0 END), 0) AS n
-       FROM deals WHERE circle_id = ? AND state != 'closed'`,
-    )
-    .safeIntegers(true)
-    .get(account, account, ctx.circleId) as { n: bigint };
-  return r.n;
-}
-
-/** `limit <= stake - bond_locked`, as `bound_member_limit` of the contract; only lowers. */
-function boundLimit(ctx: HandlerContext, account: string): void {
-  const m = ctx.db.prepare("SELECT stake, credit_limit FROM members WHERE circle_id = ? AND account_id = ?").safeIntegers(true).get(ctx.circleId, account) as
-    | { stake: bigint; credit_limit: bigint }
-    | undefined;
-  if (!m) return;
-  const room = m.stake > lockedOf(ctx, account) ? m.stake - lockedOf(ctx, account) : 0n;
-  if (m.credit_limit > room) ctx.db.prepare("UPDATE members SET credit_limit = ?, updated_block = ? WHERE circle_id = ? AND account_id = ?").run(room, ctx.block.height, ctx.circleId, account);
 }
 
 /** Clears the lock flag of `account` in the deal; the deal is `closed` once neither bond is locked. */
@@ -104,8 +81,6 @@ export const ruleRawHandlers: Record<string, RawHandler> = {
     }
     // the whole bond leaves the lock of the loser (`slash_then_release`)
     unlock(ctx, bundleId, from);
-    boundLimit(ctx, from);
-    boundLimit(ctx, to);
     log(ctx, bundleId, "bond_slashed", from, amount, `to ${to}`);
   },
   bond_released(ctx, d) {
@@ -113,7 +88,6 @@ export const ruleRawHandlers: Record<string, RawHandler> = {
     const account = str(d, "account_id");
     const reason = str(d, "reason");
     unlock(ctx, bundleId, account);
-    if (reason === "ruling") boundLimit(ctx, account); // `rule_deal` bounds the limit of both parties at its end; the other releases never change a limit
     log(ctx, bundleId, "bond_released", account, units(str(d, "amount"), "amount"), reason);
   },
 

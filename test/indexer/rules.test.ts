@@ -54,12 +54,19 @@ describe("BE-065 events of interface 0.0.12: deals, freezes, official contracts"
     expect(all<{ event: string }>("SELECT event FROM deal_events WHERE bundle_id = 7 ORDER BY id").map((e) => e.event)).toEqual(["bond_locked", "bond_locked", "deal_disputed", "deal_ruled", "bond_slashed", "bond_released"]);
   });
 
-  it("TC-BE-065-02 the limit follows what rule_deal does: limit <= stake - bond_locked, applied to the loser after the slash", async () => {
-    // a limit above the room (what the review calls C-6) is cut to stake - locked by the ruling, as bound_member_limit of the contract does
+  it("TC-BE-065-02 the limit that rule_deal lowers comes in its limits_updated: the limit follows and the history says ruling (a limits_updated of another receipt says finalize)", async () => {
+    const limitsUpdated = (account: string, oldLimit: number, newLimit: number) =>
+      eventLog("limits_updated", { epoch: 42, changes: [{ account_id: account, old_limit: String(oldLimit), new_limit: String(newLimit), status: "active" }], chunk: 0, chunks: 1 });
+    // a limit above the room (what the review calls C-6) is cut to stake - locked by the ruling, and the contract says so
     await ingest([...members("95000000"), events(1002, bondLocked(8, A), bondLocked(8, B)), events(1003, disputed(8, A, B)),
-      events(1004, ruled(8, "accused_guilty"), slashed(8, B, A, 20 * M, 80 * M, 120 * M), released(8, A, "ruling"))]);
-    expect(stakeLimit(B)).toEqual({ stake: BigInt(80 * M), credit_limit: BigInt(80 * M) }); // 95 -> 80 = stake - locked
-    expect(stakeLimit(A)).toEqual({ stake: BigInt(120 * M), credit_limit: BigInt(95 * M) }); // the winner has room, its limit is untouched
+      events(1004, ruled(8, "accused_guilty"), slashed(8, B, A, 20 * M, 80 * M, 120 * M), released(8, A, "ruling"), limitsUpdated(B, 95 * M, 80 * M)),
+      events(1005, limitsUpdated(A, 95 * M, 96 * M))]);
+    expect(stakeLimit(B)).toEqual({ stake: BigInt(80 * M), credit_limit: BigInt(80 * M) });
+    expect(stakeLimit(A)).toEqual({ stake: BigInt(120 * M), credit_limit: BigInt(96 * M) });
+    expect(all("SELECT account_id, reason, old_limit, new_limit FROM member_limits WHERE reason != 'stake' ORDER BY id")).toEqual([
+      { account_id: B, reason: "ruling", old_limit: BigInt(95 * M), new_limit: BigInt(80 * M) },
+      { account_id: A, reason: "finalize", old_limit: BigInt(95 * M), new_limit: BigInt(96 * M) },
+    ]);
   });
 
   it("TC-BE-065-03 confirmation releases the bond of the other party; the deal is closed when nothing is locked; a release by confirmation never changes a limit", async () => {

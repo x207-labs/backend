@@ -45,7 +45,7 @@ export function requireChange(changes: number, what: string): void {
 
 export function recordLimit(
   ctx: HandlerContext,
-  row: { account: string; epoch: number | null; oldLimit: bigint; newLimit: bigint; status: string; reason: "stake" | "finalize" | "default" },
+  row: { account: string; epoch: number | null; oldLimit: bigint; newLimit: bigint; status: string; reason: "stake" | "finalize" | "default" | "ruling" },
 ): void {
   ctx.db
     .prepare(
