@@ -6,7 +6,8 @@ import { settleMsg, simulateIntents, USDT_TOKEN_ID, type ViewFunction } from "..
 // by the debtor, and one `execute_intents` carries all of them. The Intents balances move all-or-nothing; the circle learns of each
 // payment from `mt_on_transfer`, a separate receipt, so the status `paid` is NOT atomic across debtors (CT-058). This module plans the
 // transfers, checks the signed payloads, simulates, executes only in `live` mode, and reconciles against the positions of the circle.
-// The `mt_on_transfer` method of the circle does not exist yet, so a real run cannot mark anybody `paid`; see docs/residual-batch.md.
+// The circle has `mt_on_transfer` since interface 0.0.9 (spec 18, contracts `35dfca5`): `dry` shows the exact notification each debtor
+// causes, `mock` delivers them through an injected function (a sandbox or a mock Intents) and reconciles; see docs/residual-batch.md.
 
 /** A debtor with a `due` residual in the payment window of `epoch` (read model D9 / view `net_position`). */
 export interface DuePosition {
@@ -88,13 +89,29 @@ function sortKeys(value: unknown): unknown {
   return value;
 }
 
-export type DebtorOutcome = { debtor: string; status: "paid" | "pending" };
+/** The NEP-245 call that Intents makes on the circle after the `transfer` of one debtor: `mt_on_transfer` (spec 18). */
+export interface MtNotification {
+  debtor: string;
+  args: { sender_id: string; previous_owner_ids: string[]; token_ids: string[]; amounts: string[]; msg: string };
+}
+
+/** What `mt_on_transfer` receives for `transfer`; `token_ids` is the single `nep141:<usdt>` key of the transfer. */
+export function mtNotification(transfer: ResidualTransfer): MtNotification {
+  const [token, amount] = Object.entries(transfer.intent.tokens)[0] ?? ["", "0"];
+  return {
+    debtor: transfer.debtor,
+    args: { sender_id: transfer.debtor, previous_owner_ids: [transfer.debtor], token_ids: [token], amounts: [amount], msg: transfer.intent.msg },
+  };
+}
+
+export type DebtorOutcome = { debtor: string; status: "paid" | "pending"; error?: string; refunded?: string };
 
 export type BatchResult =
   | { status: "rejected"; problems: Array<{ debtor: string; reason: string }> }
   | { status: "simulation_failed"; message: string }
   | { status: "invariant_violated"; violation: unknown }
-  | { status: "dry_run_ok"; debtors: string[]; simulation: unknown }
+  | { status: "dry_run_ok"; debtors: string[]; simulation: unknown; notifications: MtNotification[] }
+  | { status: "mock_run"; debtors: string[]; notifications: MtNotification[]; outcomes: DebtorOutcome[] }
   | { status: "executed"; debtors: string[]; txHash: string; outcomes: DebtorOutcome[] };
 
 export interface RunOptions {
@@ -105,6 +122,11 @@ export interface RunOptions {
   signed: ReadonlyMap<string, SignedPayload>;
   /** Sends `execute_intents(signed)` from the relayer and returns the transaction hash. Only called in `live` mode. */
   execute?: (signed: SignedPayload[]) => Promise<string>;
+  /**
+   * `mock` only: delivers one `mt_on_transfer` notification to the circle (in a sandbox, through a mock Intents) and returns the amount handed back.
+   * Throws when the circle refuses it. Without it `mock` stops at `dry_run_ok` like `dry`.
+   */
+  deliver?: (notification: MtNotification) => Promise<string>;
   /** Position of the debtor in the epoch right now, read from the circle or the read model. */
   readStatus?: (debtor: string) => Promise<string>;
   /** Reconciliation tries and the wait between them. */
@@ -140,7 +162,24 @@ export async function runResidualBatch(batch: readonly ResidualTransfer[], optio
   if (violation !== null && violation !== undefined) return { status: "invariant_violated", violation };
 
   const debtors = batch.map((t) => t.debtor);
-  if (options.mode !== "live") return { status: "dry_run_ok", debtors, simulation: simulation.result };
+  const notifications = batch.map(mtNotification);
+  if (options.mode === "mock" && options.deliver !== undefined) {
+    // each notification is its own receipt on the circle, so one refusal leaves the others paid: the outcome per debtor says which
+    const outcomes: DebtorOutcome[] = [];
+    for (const notification of notifications) {
+      try {
+        const refunded = await options.deliver(notification);
+        outcomes.push({ debtor: notification.debtor, status: "pending", refunded });
+      } catch (error) {
+        outcomes.push({ debtor: notification.debtor, status: "pending", error: (error as Error).message });
+      }
+    }
+    for (const outcome of outcomes) {
+      if (outcome.error === undefined && options.readStatus !== undefined && (await options.readStatus(outcome.debtor)) === "paid") outcome.status = "paid";
+    }
+    return { status: "mock_run", debtors, notifications, outcomes };
+  }
+  if (options.mode !== "live") return { status: "dry_run_ok", debtors, simulation: simulation.result, notifications };
   if (options.execute === undefined) throw new SettlementError("live_mode_disabled", "live mode needs an execute function and a human confirmation");
 
   const txHash = await options.execute(signed);

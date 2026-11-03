@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SettlementError } from "../../src/settlement/errors.js";
-import { checkSignedPayload, planResidualBatches, runResidualBatch, type ResidualTransfer, type SignedPayload } from "../../src/settlement/residual/batch.js";
+import { checkSignedPayload, mtNotification, planResidualBatches, runResidualBatch, type ResidualTransfer, type SignedPayload } from "../../src/settlement/residual/batch.js";
 
 const CIRCLE = "x207-circle.near";
 const VERIFIER = "intents.near";
@@ -112,5 +112,49 @@ describe("BE-034 run", () => {
 
   it("TC-BE-034-09 live without an execute function is live_mode_disabled", async () => {
     await expect(runResidualBatch(batch, { mode: "live", verifier: VERIFIER, view: okView, signed: allSigned })).rejects.toBeInstanceOf(SettlementError);
+  });
+
+  it("TC-BE-034-10 dry shows the mt_on_transfer notification of each debtor exactly as Intents will send it, and sends nothing", async () => {
+    const result = await runResidualBatch(batch, { mode: "dry", verifier: VERIFIER, view: okView, signed: allSigned });
+    expect(result).toMatchObject({ status: "dry_run_ok" });
+    const notifications = (result as { notifications: unknown[] }).notifications;
+    expect(notifications).toEqual(batch.map(mtNotification));
+    expect(notifications[1]).toEqual({
+      debtor: "gpu.near",
+      args: {
+        sender_id: "gpu.near", previous_owner_ids: ["gpu.near"], token_ids: ["nep141:usdt.tether-token.near"], amounts: ["15000000"], msg: '{"action":"settle","epoch":42}',
+      },
+    });
+  });
+
+  it("TC-BE-034-11 mock delivers each notification to the circle and reconciles: a refusal leaves only that debtor pending", async () => {
+    const delivered: string[] = [];
+    const deliver = async (n: { debtor: string; args: { amounts: string[] } }) => {
+      if (n.debtor === "gpu.near") throw new Error("ERR_UNDERPAYMENT: sent 14000000 due 15000000");
+      delivered.push(n.debtor);
+      return n.debtor === "scraper.near" ? "5000000" : "0";
+    };
+    const result = await runResidualBatch(batch, {
+      mode: "mock", verifier: VERIFIER, view: okView, signed: allSigned, deliver, readStatus: async (d) => (d === "gpu.near" ? "due" : "paid"),
+    });
+    expect(delivered).toEqual(["cleaner.near", "scraper.near"]);
+    expect(result).toMatchObject({
+      status: "mock_run",
+      outcomes: [
+        { debtor: "cleaner.near", status: "paid", refunded: "0" },
+        { debtor: "gpu.near", status: "pending", error: expect.stringContaining("ERR_UNDERPAYMENT") },
+        { debtor: "scraper.near", status: "paid", refunded: "5000000" },
+      ],
+    });
+  });
+
+  it("TC-BE-034-12 mock never delivers when the simulation fails or a payload is wrong", async () => {
+    let delivered = 0;
+    const deliver = async () => (delivered += 1, "0");
+    await runResidualBatch(batch, { mode: "mock", verifier: VERIFIER, view: async () => { throw new Error("nonce reused"); }, signed: allSigned, deliver });
+    const partial = new Map(allSigned);
+    partial.delete("gpu.near");
+    await runResidualBatch(batch, { mode: "mock", verifier: VERIFIER, view: okView, signed: partial, deliver });
+    expect(delivered).toBe(0);
   });
 });
