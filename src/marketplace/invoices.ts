@@ -18,6 +18,7 @@ import type { Route } from "../api/router.js";
 import { activeMemberKey } from "./auth.js";
 import { nowSeconds } from "./common.js";
 import type { OpenEpochResolver } from "./epoch.js";
+import { eventData, eventField } from "./event-data.js";
 import { ACCOUNT, badNotice, HASH, NOTICE_SKEW_SECONDS, NoticeFormatError, verifyNoticeJson } from "./notice.js";
 
 /** Default of the contract (`DEFAULT_BOND_THRESHOLD`): an invoice at or above this amount needs the bond of CT-094. */
@@ -126,10 +127,10 @@ function registeredOnChain(db: Database.Database, contractId: string, debtor: st
   const events = rows<{ data_json: string }>(
     db,
     `SELECT data_json FROM events_raw WHERE contract_id = ? AND event = 'voucher_registered'
-       AND json_extract(data_json, '$.payer') = ? AND json_extract(data_json, '$.payee') = ? AND json_extract(data_json, '$.epoch') = ? AND json_extract(data_json, '$.seq') = ?`,
+       AND ${eventField('payer')} = ? AND ${eventField('payee')} = ? AND ${eventField('epoch')} = ? AND ${eventField('seq')} = ?`,
     contractId, debtor, issuer, epoch, seq,
   );
-  return events.some((e) => String((JSON.parse(e.data_json) as { cumulative_amount?: unknown }).cumulative_amount) === cumulative);
+  return events.some((e) => String(eventData<{ cumulative_amount?: unknown }>(e.data_json).cumulative_amount) === cumulative);
 }
 
 /**

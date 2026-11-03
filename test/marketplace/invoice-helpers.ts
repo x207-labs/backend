@@ -13,7 +13,7 @@ export function chainVoucher(m: Market, v: { payer: string; payee: string; epoch
       `INSERT INTO events_raw (receipt_id, log_index, block_height, block_hash, block_timestamp_ns, tx_hash, contract_id, standard, version, event, data_json, handled)
        VALUES (?, 0, 1, 'h', 1, ?, ?, 'x207', '0.0.1', 'voucher_registered', ?, 1)`,
     )
-    .run(`r${++receipt}`, `tx${receipt}`, CONTRACT, JSON.stringify({ payer: acct(v.payer), payee: acct(v.payee), epoch: v.epoch, seq: v.seq, cumulative_amount: v.cumulative, delta: "0", obligation: v.cumulative, outstanding_debt: "0", mode: "cumulative" }));
+    .run(`r${++receipt}`, `tx${receipt}`, CONTRACT, JSON.stringify([{ payer: acct(v.payer), payee: acct(v.payee), epoch: v.epoch, seq: v.seq, cumulative_amount: v.cumulative, delta: "0", obligation: v.cumulative, outstanding_debt: "0", mode: "cumulative" }]));
   const old = m.db.prepare("SELECT seq FROM obligations WHERE circle_id = ? AND epoch = ? AND debtor = ? AND creditor = ?").get(CIRCLE, v.epoch, acct(v.payer), acct(v.payee)) as { seq: number } | undefined;
   if (!old) m.db.prepare("INSERT INTO obligations (circle_id, epoch, debtor, creditor, seq, cumulative_amount, cleared, registration_mode, registered_block, receipt_id) VALUES (?, ?, ?, ?, ?, ?, NULL, 'cumulative', 1, 'r')").run(CIRCLE, v.epoch, acct(v.payer), acct(v.payee), v.seq, v.cumulative);
   else if (v.seq > old.seq) m.db.prepare("UPDATE obligations SET seq = ?, cumulative_amount = ? WHERE circle_id = ? AND epoch = ? AND debtor = ? AND creditor = ?").run(v.seq, v.cumulative, CIRCLE, v.epoch, acct(v.payer), acct(v.payee));
