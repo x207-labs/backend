@@ -3,7 +3,9 @@
 //   resource "owner/repo" + permission pull|triage|push|maintain|admin  -> PUT /repos/{owner}/{repo}/collaborators/{login}   (an invitation the user accepts)
 //   resource "org:<org>"                                                -> PUT /orgs/{org}/memberships/{login}             (a seat, role member)
 // GitHub has no expiry for either: the broker removes the access at the end of the paid day (`revoke`, with the retry of the manager).
-import type { AccessState, ProviderAccessAdapter, ProviderGrantRequest, ProviderGrantResult } from "./adapter.js";
+import { parseGranteeProof, verifyNearGistProof } from "@x207/core";
+import type { AccessState, ProveGranteeArgs, ProviderAccessAdapter, ProviderGrantRequest, ProviderGrantResult } from "./adapter.js";
+import { guardedGet, type Resolver, type Transport } from "./ssrf.js";
 import { call, ProviderHttpError, type FetchLike } from "./http.js";
 
 const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
@@ -16,6 +18,8 @@ export interface GithubOptions {
   allowedOwners: readonly string[];
   baseUrl?: string;
   fetch?: FetchLike;
+  /** For the fetch of a gist (behind the SSRF guard): replace the resolver and the transport (tests). */
+  gistFetch?: { resolver?: Resolver; transport?: Transport };
 }
 
 type Target = { kind: "repo"; owner: string; repo: string } | { kind: "org"; owner: string };
@@ -36,6 +40,7 @@ export class GithubAdapter implements ProviderAccessAdapter {
   readonly provider = "github";
   readonly real = true;
   readonly nativeExpiry = false;
+  readonly needsChallenge = true;
   readonly #o: GithubOptions;
   readonly #base: string;
   readonly #fetch: FetchLike;
@@ -61,6 +66,31 @@ export class GithubAdapter implements ProviderAccessAdapter {
       if (error instanceof ProviderHttpError && error.status === 404) return { ok: false, reason: "pengguna GitHub tidak ada" };
       throw error;
     }
+  }
+
+  /**
+   * `near-gist` (SD-071): the lessee put the challenge of the grant, signed with its voucher key, in a public gist of the account that is the `grantee_ref`. The gist is fetched
+   * from `https://api.github.com/gists/<id>` ONLY (the host is fixed here, the id is a hex string taken from the proof), through the SSRF guard (https, public addresses, no redirect,
+   * size and time limits). The owner must be the login; the signature must be valid for the voucher key that the circle has for the lessee.
+   */
+  async proveGranteeRef(args: ProveGranteeArgs): Promise<boolean> {
+    if (args.proof === null || args.challenge === null || args.voucherPublicKey === null) return false;
+    const proof = parseGranteeProof(args.proof);
+    if (proof.kind !== "near-gist") return false;
+    const id = /(?:^|\/)([0-9a-f]{20,40})(?:[/?#.].*)?$/i.exec(proof.gist)?.[1];
+    if (id === undefined) return false;
+    await verifyNearGistProof({
+      proof, challenge: args.challenge, voucherPublicKey: args.voucherPublicKey,
+      fetchGist: async () => {
+        const res = await guardedGet(`https://api.github.com/gists/${id}`, { ...(this.#o.gistFetch?.resolver ? { resolver: this.#o.gistFetch.resolver } : {}), ...(this.#o.gistFetch?.transport ? { transport: this.#o.gistFetch.transport } : {}), maxBytes: 262_144 });
+        if (!res.reachable || res.status !== 200) throw new Error(`GitHub menjawab ${res.reachable ? res.status : "tidak terjangkau"}`);
+        const gist = JSON.parse(res.body) as { owner?: { login?: string }; files?: Record<string, { content?: string; truncated?: boolean }> };
+        const owner = gist.owner?.login;
+        if (typeof owner !== "string") throw new Error("gist tanpa pemilik");
+        return { owner, files: Object.values(gist.files ?? {}).filter((f) => f.truncated !== true && typeof f.content === "string").map((f) => f.content as string) };
+      },
+    });
+    return true;
   }
 
   async grant(request: ProviderGrantRequest): Promise<ProviderGrantResult> {

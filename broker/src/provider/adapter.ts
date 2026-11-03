@@ -16,6 +16,16 @@ export interface ProviderGrantRequest {
   expiresAtMs: number;
 }
 
+export interface ProveGranteeArgs {
+  ref: string;
+  proof: string | null;
+  /** The challenge of this grant (circle, grant id, `ref`, nonce of the broker). */
+  challenge: { circle: string; grantId: number; granteeRef: string; nonce: string } | null;
+  /** The NEAR account of the lessee (the grantee of the grant on the contract) and its voucher public key (`ed25519:…`), read from the circle. */
+  granteeAccount: string | null;
+  voucherPublicKey: string | null;
+}
+
 export interface ProviderGrantResult {
   /** The provider's own identifier of the access, kept to revoke it (an invitation id, a key fingerprint, a role member id). Not a secret. */
   handle: string;
@@ -37,10 +47,13 @@ export interface ProviderAccessAdapter {
   /** Does the reference name an account that exists on the provider? Called before every grant (ADR-47: a grantee that cannot be checked cannot be granted). */
   verifyGranteeRef(ref: string): Promise<{ ok: true } | { ok: false; reason: string }>;
   /**
-   * Optional: does the lessee control the reference? Called with the `proof` the lessee sent when it asked for the access (a signed challenge, a gist, a code placed on the account).
-   * When an adapter has it, the first grant of an access needs a proof that passes; a grant cannot be pointed at an account the lessee only knows the name of.
+   * Optional: does the lessee control the reference? Called once, when the access is opened, with the proof the lessee sent (`encodeGranteeProof` of the SDK, a text) and the context
+   * below. `true` for a reference that is proven, `{unproven}` for one that this provider cannot prove at all (the grant goes on with a warning that the answer carries and the
+   * record keeps), `false` (or a thrown `GranteeProofError`) for a proof that fails. A grant cannot be pointed at an account the lessee only knows the name of (ADR-47).
    */
-  proveGranteeRef?(ref: string, proof: string | null): Promise<boolean>;
+  proveGranteeRef?(args: ProveGranteeArgs): Promise<boolean | { unproven: string }>;
+  /** `true` when the proof binds the challenge of the broker (a nonce per grant): the lessee must ask `GET …/access/challenge` first. */
+  readonly needsChallenge?: boolean;
   /** Open the access. Idempotent by `grantId`: a second call (the next day's rent) moves the expiry and returns the same `handle`. */
   grant(request: ProviderGrantRequest): Promise<ProviderGrantResult>;
   /** Close the access. Idempotent: an access that is already gone is a success. Throws when the provider could not be reached. */

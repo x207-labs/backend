@@ -5,7 +5,8 @@
 // The broker writes this file, so this adapter runs on the machine of the grantor only (self-hosted); it counts as `real`.
 import { randomBytes } from "node:crypto";
 import { readFile, rename, writeFile } from "node:fs/promises";
-import type { AccessState, ProviderAccessAdapter, ProviderGrantRequest, ProviderGrantResult } from "./adapter.js";
+import { parseGranteeProof, verifySshProof } from "@x207/core";
+import type { AccessState, ProveGranteeArgs, ProviderAccessAdapter, ProviderGrantRequest, ProviderGrantResult } from "./adapter.js";
 
 /** Where the lines are kept. The default writes a file; tests keep it in memory. */
 export interface AuthorizedKeysFile {
@@ -78,6 +79,7 @@ export class SshAdapter implements ProviderAccessAdapter {
   readonly provider = "ssh";
   readonly real = true;
   readonly nativeExpiry = true;
+  readonly needsChallenge = true;
   readonly #o: SshAdapterOptions;
   readonly #now: () => number;
   /** Writes of one file run one after the other: two grants must not overwrite each other's line. */
@@ -91,6 +93,18 @@ export class SshAdapter implements ProviderAccessAdapter {
   async verifyGranteeRef(ref: string): Promise<{ ok: true } | { ok: false; reason: string }> {
     const parsed = parsePublicKey(ref);
     return parsed.ok ? { ok: true } : parsed;
+  }
+
+  /** `ssh-signature` (SD-071): a raw ed25519 signature of the challenge of the grant by the private key of the key that is the reference. A signature of another grant, another nonce or another key fails. */
+  async proveGranteeRef(args: ProveGranteeArgs): Promise<boolean> {
+    if (args.proof === null || args.challenge === null) return false;
+    const proof = parseGranteeProof(args.proof);
+    if (proof.kind !== "ssh-signature") return false;
+    const parsed = parsePublicKey(args.ref);
+    if (!parsed.ok) return false;
+    if (args.challenge.granteeRef !== args.ref) return false;
+    verifySshProof(proof, args.challenge); // throws GranteeProofError (bad signature, other key) which the manager turns into grantee_ref_unverified
+    return true;
   }
 
   #locked<T>(fn: () => Promise<T>): Promise<T> {

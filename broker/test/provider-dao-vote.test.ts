@@ -39,7 +39,7 @@ const registry = parseDaoRegistry(JSON.stringify({
   "self-dao.near": { rentable_vote_kinds: [{ kind: "gauge_weight", contract: "self-dao.near" }] },
 }));
 const input = (resource: string, permission: string | null, id = 1, ref = "delegate.near") => ({
-  grant_id: id, limits: { scope: JSON.stringify({ provider: "dao-vote", grantee_ref: ref, resource, permission }), expires_at: NS(NOW + 10 * DAY) },
+  grant_id: id, grantee: ref, limits: { scope: JSON.stringify({ provider: "dao-vote", grantee_ref: ref, resource, permission }), expires_at: NS(NOW + 10 * DAY) },
 });
 function setup() {
   const dao = mockDao();

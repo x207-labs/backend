@@ -1,6 +1,7 @@
 // HTTP routes of the rent of a P2 access (BE-060, ADR-47), on the same server as the lease of class B:
 //   POST /grants/{grantId}/access        pays one day (x402, like the lease) and asks for the access: body {grantee_ref, proof?}
 //   GET  /grants/{grantId}/access        status, the bill of today, and the state of a revoke that is pending
+//   GET  /grants/{grantId}/access/challenge   the challenge to sign for the proof of the reference (BE-057): `{required, challenge, nonce, expiresAt, circle, granteeRef}`
 //   POST /grants/{grantId}/access/stop   the lessee ends the rent: body {notice, signature}, signed with its voucher key
 // Everything goes through `ProviderAccessManager`: the same checks (`verifyGranteeRef`, native expiry), the same retry of a revoke. Errors are `{error, message}`; the codes are in the README.
 import { createHash } from "node:crypto";
@@ -12,7 +13,7 @@ import { guardVoucher } from "../in-flight.js";
 import { ProviderAccessError, parseProviderScope, type ProviderAccessErrorCode } from "./adapter.js";
 import type { ProviderAccessManager } from "./manager.js";
 
-export const ACCESS_PATH = /^\/grants\/(0|[1-9]\d*)\/access(\/stop)?$/;
+export const ACCESS_PATH = /^\/grants\/(0|[1-9]\d*)\/access(\/stop|\/challenge)?$/;
 const SKEW_SECONDS = 600;
 
 export interface ProviderRoutesOptions {
@@ -57,7 +58,7 @@ export function createProviderRoutes(options: ProviderRoutesOptions): (request: 
     const day = Math.floor(now() / 86_400_000);
     return {
       grantId: grant.grant_id, provider: a.provider, granteeRef: a.granteeRef, status: a.status, paidUntil: iso(a.paidUntilMs), providerExpiresAt: iso(a.nativeExpiresMs), reason: a.reason,
-      revokePending: a.status === "revoke_pending" ? { attempts: a.attempts, nextRetryAt: iso(a.nextRetryMs), lastError: a.lastError } : null,
+      proof: a.proof, revokePending: a.status === "revoke_pending" ? { attempts: a.attempts, nextRetryAt: iso(a.nextRetryMs), lastError: a.lastError } : null,
       today: { day, cost: cost === null ? null : cost.toString(), billed: manager.charges(grant.grant_id).find((c) => c.day === day)?.amount.toString() ?? null },
       unit: "credit", decimals: 6,
     };
@@ -68,7 +69,20 @@ export function createProviderRoutes(options: ProviderRoutesOptions): (request: 
     const match = ACCESS_PATH.exec(url.pathname);
     if (match === null) return json(404, { error: "not_found" });
     const grantId = Number(match[1]);
-    const stop = match[2] !== undefined;
+    const stop = match[2] === "/stop";
+    const challengePath = match[2] === "/challenge";
+
+    if (request.method === "GET" && challengePath) {
+      try {
+        const grant = await options.dispatcher.open(grantId);
+        parseProviderScope(grant.limits.scope);
+        const c = manager.issueChallenge(grant);
+        if (c === null) return json(200, { required: false });
+        return json(200, { required: true, grantId, circle: c.circle, granteeRef: c.granteeRef, nonce: c.nonce, challenge: c.text, expiresAt: iso(c.expiresAtMs) });
+      } catch (error) {
+        return fail(error);
+      }
+    }
 
     if (request.method === "GET" && !stop) {
       try {
@@ -159,8 +173,8 @@ export function createProviderRoutes(options: ProviderRoutesOptions): (request: 
         }
         if (payer !== grant.grantee) return json(403, { error: "payer_not_grantee", message: `grant ${grantId} disewa oleh ${grant.grantee}` });
         try {
-          const { access, delivery } = await manager.grantAccess(grant, 1, typeof body.proof === "string" ? body.proof : null);
-          return json(200, { ...(await view(grant)), paidUntil: iso(access.paidUntilMs), delivery });
+          const { access, delivery, warnings } = await manager.grantAccess(grant, 1, typeof body.proof === "string" ? body.proof : null);
+          return json(200, { ...(await view(grant)), paidUntil: iso(access.paidUntilMs), delivery, warnings });
         } catch (error) {
           return fail(error);
         }

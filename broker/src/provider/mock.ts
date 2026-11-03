@@ -1,5 +1,5 @@
 // A generic mock provider (BE-057): the whole P2 flow without any real service. It keeps its access list in memory, can fail on demand, and can have a native expiry and a cost per day.
-import type { AccessState, ProviderAccessAdapter, ProviderGrantRequest, ProviderGrantResult } from "./adapter.js";
+import type { AccessState, ProveGranteeArgs, ProviderAccessAdapter, ProviderGrantRequest, ProviderGrantResult } from "./adapter.js";
 
 export interface MockProviderOptions {
   provider?: string;
@@ -39,12 +39,13 @@ export class MockProviderAdapter implements ProviderAccessAdapter {
     this.nativeExpiry = options.nativeExpiry ?? false;
     this.#now = options.now ?? Date.now;
     this.#cost = options.costPerDay;
-    if (options.requireProof) this.proveGranteeRef = async (ref, proof) => proof === `own:${ref}`;
+    // the mock proves anything, unless a test asks for a proof of the form `own:<ref>`
+    this.proveGranteeRef = options.requireProof ? async ({ ref, proof }) => proof === `own:${ref}` : async () => true;
     if (options.costPerDay) this.cost = async (handle, from, to) => (BigInt(Math.max(0, to - from)) * (this.#cost as (h: string) => bigint)(handle)) / 86_400_000n;
   }
 
   cost?: (handle: string, fromMs: number, toMs: number) => Promise<bigint>;
-  proveGranteeRef?: (ref: string, proof: string | null) => Promise<boolean>;
+  proveGranteeRef?: (args: ProveGranteeArgs) => Promise<boolean | { unproven: string }>;
 
   async verifyGranteeRef(ref: string): Promise<{ ok: true } | { ok: false; reason: string }> {
     return /^[a-z0-9][a-z0-9_-]{1,38}$/.test(ref) ? { ok: true } : { ok: false, reason: "no such user on the mock provider" };

@@ -4,6 +4,8 @@
 //   - `settleDay` asks the provider for the REAL cost of a day of a costly access, writes it down for the bill, and closes the access when a day went over the cap of the grantor.
 // Mode: `self-hosted` (the default) is the broker that the grantor runs; the administrator credential of a provider lives on that machine only. `hosted` is the broker that x207 runs
 // for a demo: it refuses every adapter that talks to a real service, because it would need the credential of somebody else.
+import { randomBytes } from "node:crypto";
+import { granteeChallenge } from "@x207/core";
 import type { BrokerStore } from "../store.js";
 import {
   ProviderAccessError, parseProviderScope, type ProviderAccessAdapter, type ProviderGrantResult, type ProviderScope,
@@ -14,6 +16,8 @@ export type AccessStatus = "active" | "revoke_pending" | "revoked";
 const DAY_MS = 86_400_000;
 export const RETRY_BASE_MS = 30_000;
 export const RETRY_MAX_MS = 3_600_000;
+/** How long a challenge of a grant lasts. */
+export const CHALLENGE_MS = 900_000;
 
 export interface ProviderAccess {
   grantId: number;
@@ -28,6 +32,8 @@ export interface ProviderAccess {
   nextRetryMs: number | null;
   lastError: string | null;
   reason: string | null;
+  /** `verified`, or the warning when the provider could not prove the reference (`unproven: …`). */
+  proof: string | null;
 }
 
 interface Row {
@@ -42,21 +48,28 @@ interface Row {
   next_retry_ms: number | null;
   last_error: string | null;
   reason: string | null;
+  proof: string | null;
 }
 
 const toAccess = (r: Row): ProviderAccess => ({
   grantId: r.grant_id, provider: r.provider, granteeRef: r.grantee_ref, handle: r.handle, status: r.status as AccessStatus, paidUntilMs: r.paid_until_ms,
-  nativeExpiresMs: r.native_expires_ms, attempts: r.attempts, nextRetryMs: r.next_retry_ms, lastError: r.last_error, reason: r.reason,
+  nativeExpiresMs: r.native_expires_ms, attempts: r.attempts, nextRetryMs: r.next_retry_ms, lastError: r.last_error, reason: r.reason, proof: r.proof,
 });
 
 /** The part of a grant that the manager needs. */
 export interface ProviderGrantInput {
   grant_id: number;
+  /** The NEAR account of the lessee (`grantee` of the grant). Needed by adapters that tie the reference to it. */
+  grantee?: string | null;
   limits: { scope: string; expires_at: string };
 }
 
 export interface ManagerOptions {
   store: BrokerStore;
+  /** Account of the circle contract: the `circle` of the challenges and of the notices. */
+  circle?: string;
+  /** Voucher public key of an account, from the read API (for the proofs that are signed with it). */
+  voucherKeyOf?: (account: string) => Promise<string | null>;
   mode?: BrokerMode;
   now?: () => number;
   log?: (line: string) => void;
@@ -70,13 +83,22 @@ export class ProviderAccessManager {
   readonly #now: () => number;
   readonly #log: ((line: string) => void) | undefined;
   readonly #adapters = new Map<string, ProviderAccessAdapter>();
+  readonly #circle: string;
+  readonly #voucherKeyOf: ((account: string) => Promise<string | null>) | undefined;
 
   constructor(options: ManagerOptions) {
     this.#store = options.store;
     this.mode = options.mode ?? "self-hosted";
     this.#now = options.now ?? Date.now;
     this.#log = options.log;
+    this.#circle = options.circle ?? "";
+    this.#voucherKeyOf = options.voucherKeyOf;
     this.#store.db.exec(`
+      CREATE TABLE IF NOT EXISTS grantee_challenges (
+        grant_id      INTEGER PRIMARY KEY,
+        nonce         TEXT    NOT NULL,
+        expires_at_ms INTEGER NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS provider_access (
         grant_id          INTEGER PRIMARY KEY,
         provider          TEXT    NOT NULL,
@@ -88,7 +110,8 @@ export class ProviderAccessManager {
         attempts          INTEGER NOT NULL DEFAULT 0,
         next_retry_ms     INTEGER,
         last_error        TEXT,
-        reason            TEXT
+        reason            TEXT,
+        proof             TEXT
       );
       CREATE TABLE IF NOT EXISTS provider_charges (
         grant_id INTEGER NOT NULL,
@@ -127,13 +150,13 @@ export class ProviderAccessManager {
   #save(a: ProviderAccess): void {
     this.#store.db
       .prepare(
-        `INSERT INTO provider_access (grant_id, provider, grantee_ref, handle, status, paid_until_ms, native_expires_ms, attempts, next_retry_ms, last_error, reason)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO provider_access (grant_id, provider, grantee_ref, handle, status, paid_until_ms, native_expires_ms, attempts, next_retry_ms, last_error, reason, proof)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (grant_id) DO UPDATE SET provider = excluded.provider, grantee_ref = excluded.grantee_ref, handle = excluded.handle, status = excluded.status,
            paid_until_ms = excluded.paid_until_ms, native_expires_ms = excluded.native_expires_ms, attempts = excluded.attempts, next_retry_ms = excluded.next_retry_ms,
-           last_error = excluded.last_error, reason = excluded.reason`,
+           last_error = excluded.last_error, reason = excluded.reason, proof = excluded.proof`,
       )
-      .run(a.grantId, a.provider, a.granteeRef, a.handle, a.status, a.paidUntilMs, a.nativeExpiresMs, a.attempts, a.nextRetryMs, a.lastError, a.reason);
+      .run(a.grantId, a.provider, a.granteeRef, a.handle, a.status, a.paidUntilMs, a.nativeExpiresMs, a.attempts, a.nextRetryMs, a.lastError, a.reason, a.proof);
   }
 
   /**
@@ -141,15 +164,29 @@ export class ProviderAccessManager {
    * of the grant. A provider with native expiry must report the instant at which it closes the access, and it must not be later than the paid end: otherwise the grant is undone
    * and the call fails (`native_expiry_required`), because an access that the provider would keep open past the rent is not safe.
    */
-  async grantAccess(grant: ProviderGrantInput, days = 1, proof: string | null = null): Promise<{ access: ProviderAccess; delivery: Record<string, unknown> }> {
+  async grantAccess(grant: ProviderGrantInput, days = 1, proof: string | null = null): Promise<{ access: ProviderAccess; delivery: Record<string, unknown>; warnings: string[] }> {
     const scope: ProviderScope = parseProviderScope(grant.limits.scope);
     const adapter = this.#adapter(scope.provider);
     const check = await adapter.verifyGranteeRef(scope.grantee_ref);
     if (!check.ok) throw new ProviderAccessError("grantee_ref_unverified", `${scope.grantee_ref}: ${check.reason}`);
     const existing = this.access(grant.grant_id);
+    const warnings: string[] = [];
+    let proven: string | null = existing?.proof ?? null;
     // the proof is asked once, when the access is opened; the rent of the next days needs none
-    if (!existing && adapter.proveGranteeRef && !(await adapter.proveGranteeRef(scope.grantee_ref, proof))) {
-      throw new ProviderAccessError("grantee_ref_unverified", `${scope.grantee_ref}: bukti kepemilikan tidak lolos`);
+    if (!existing && adapter.proveGranteeRef) {
+      const challenge = adapter.needsChallenge ? this.#takeChallenge(grant.grant_id, scope.grantee_ref) : null;
+      const voucherPublicKey = grant.grantee && this.#voucherKeyOf ? await this.#voucherKeyOf(grant.grantee) : null;
+      let verdict: boolean | { unproven: string };
+      try {
+        verdict = await adapter.proveGranteeRef({ ref: scope.grantee_ref, proof, challenge, granteeAccount: grant.grantee ?? null, voucherPublicKey });
+      } catch (error) {
+        throw new ProviderAccessError("grantee_ref_unverified", `${scope.grantee_ref}: ${(error as Error).message}`);
+      }
+      if (verdict === false) throw new ProviderAccessError("grantee_ref_unverified", `${scope.grantee_ref}: bukti kepemilikan tidak lolos`);
+      if (verdict !== true) {
+        warnings.push("grantee_unproven");
+        proven = `unproven: ${verdict.unproven}`;
+      } else proven = "verified";
     }
     if (existing && existing.status !== "active") throw new ProviderAccessError("grant_failed", `akses grant ${grant.grant_id} sudah ${existing.status}`);
     const now = this.#now();
@@ -169,11 +206,35 @@ export class ProviderAccessManager {
     }
     const access: ProviderAccess = {
       grantId: grant.grant_id, provider: scope.provider, granteeRef: scope.grantee_ref, handle: result.handle, status: "active", paidUntilMs: paidUntil,
-      nativeExpiresMs: result.nativeExpiresAtMs, attempts: 0, nextRetryMs: null, lastError: null, reason: null,
+      nativeExpiresMs: result.nativeExpiresAtMs, attempts: 0, nextRetryMs: null, lastError: null, reason: null, proof: proven,
     };
     this.#save(access);
     this.#log?.(`provider access grant=${grant.grant_id} provider=${scope.provider} ref=${scope.grantee_ref} until=${new Date(paidUntil).toISOString()}`);
-    return { access, delivery: result.delivery };
+    return { access, delivery: result.delivery, warnings };
+  }
+
+  /**
+   * The challenge of a grant: a fixed text (`granteeChallenge` of the SDK) that binds the circle, the grant, the reference and a nonce of the broker. One live challenge per grant;
+   * it lasts 15 minutes and is used up by the first proof that is checked (a proof cannot be tried again, nor replayed). Returns `null` when the provider needs none.
+   */
+  issueChallenge(grant: ProviderGrantInput): { text: string; nonce: string; expiresAtMs: number; circle: string; granteeRef: string } | null {
+    const scope = parseProviderScope(grant.limits.scope);
+    const adapter = this.#adapter(scope.provider);
+    if (!adapter.needsChallenge) return null;
+    const now = this.#now();
+    const live = this.#store.db.prepare("SELECT nonce, expires_at_ms FROM grantee_challenges WHERE grant_id = ?").get(grant.grant_id) as { nonce: string; expires_at_ms: number } | undefined;
+    const nonce = live && live.expires_at_ms > now ? live.nonce : randomBytes(16).toString("hex");
+    const expiresAtMs = live && live.expires_at_ms > now ? live.expires_at_ms : now + CHALLENGE_MS;
+    if (!live || live.nonce !== nonce) this.#store.db.prepare("INSERT INTO grantee_challenges (grant_id, nonce, expires_at_ms) VALUES (?, ?, ?) ON CONFLICT (grant_id) DO UPDATE SET nonce = excluded.nonce, expires_at_ms = excluded.expires_at_ms").run(grant.grant_id, nonce, expiresAtMs);
+    return { text: granteeChallenge({ circle: this.#circle, grantId: grant.grant_id, granteeRef: scope.grantee_ref, nonce }), nonce, expiresAtMs, circle: this.#circle, granteeRef: scope.grantee_ref };
+  }
+
+  #takeChallenge(grantId: number, granteeRef: string): { circle: string; grantId: number; granteeRef: string; nonce: string } {
+    const row = this.#store.db.prepare("SELECT nonce, expires_at_ms FROM grantee_challenges WHERE grant_id = ?").get(grantId) as { nonce: string; expires_at_ms: number } | undefined;
+    if (!row) throw new ProviderAccessError("grantee_ref_unverified", "tidak ada tantangan: minta GET …/access/challenge dulu");
+    this.#store.db.prepare("DELETE FROM grantee_challenges WHERE grant_id = ?").run(grantId);
+    if (row.expires_at_ms <= this.#now()) throw new ProviderAccessError("grantee_ref_unverified", "tantangan sudah kedaluwarsa: minta yang baru");
+    return { circle: this.#circle, grantId, granteeRef, nonce: row.nonce };
   }
 
   /** Close the access of a grant now (the contract revoked it, the lessee defaulted, the cap was passed). A provider that fails leaves it `revoke_pending`. */

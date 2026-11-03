@@ -4,7 +4,7 @@
 // a registry that lists them is refused when it is loaded, and the adapter refuses them again at the grant. The holder may take the delegation back at any time on the DAO itself (the adapter
 // reports it as `absent`), and every vote is public on the DAO: the delivery names where.
 import { readFileSync } from "node:fs";
-import type { AccessState, ProviderAccessAdapter, ProviderGrantRequest, ProviderGrantResult } from "./adapter.js";
+import type { AccessState, ProveGranteeArgs, ProviderAccessAdapter, ProviderGrantRequest, ProviderGrantResult } from "./adapter.js";
 import { ProviderAccessError } from "./adapter.js";
 
 /** Kinds of vote that no DAO can put up for rent. */
@@ -106,6 +106,11 @@ export class DaoVoteAdapter implements ProviderAccessAdapter {
   async verifyGranteeRef(ref: string): Promise<{ ok: true } | { ok: false; reason: string }> {
     if (!ACCOUNT.test(ref)) return { ok: false, reason: "bukan akun NEAR" };
     return (await this.#o.client.accountExists(ref)) ? { ok: true } : { ok: false, reason: "akun penerima delegasi tidak ada" };
+  }
+
+  /** The account that receives the delegation must be the account that signs the vouchers of the lessee: the vote cannot be rented on to another account. No proof is sent. */
+  async proveGranteeRef(args: ProveGranteeArgs): Promise<boolean> {
+    return args.granteeAccount !== null && args.granteeAccount === args.ref;
   }
 
   async grant(request: ProviderGrantRequest): Promise<ProviderGrantResult> {

@@ -81,6 +81,8 @@ describe("BE-059 GitHub adapter (mock HTTP)", () => {
     const clock = { now: NOW };
     const store = new BrokerStore(":memory:");
     const manager = new ProviderAccessManager({ store, now: () => clock.now });
+    (adapter as { needsChallenge: boolean }).needsChallenge = false;
+    adapter.proveGranteeRef = async () => true; // about the revoke here; the proof has its own tests
     manager.register(adapter);
     await manager.grantAccess(input("github", "alice-dev", "x207-test-org/site", { permission: "pull" }));
     clock.now = NOW + DAY + 1;

@@ -32,7 +32,10 @@ describe("BE-058 SSH adapter: authorized_keys with restrict, command= and expiry
     const file = memoryFile();
     const store = new BrokerStore(":memory:");
     const manager = new ProviderAccessManager({ store, now: () => clock.now });
-    manager.register(new SshAdapter({ file, now: () => clock.now }));
+    const ssh = new SshAdapter({ file, now: () => clock.now });
+    (ssh as { needsChallenge: boolean }).needsChallenge = false;
+    ssh.proveGranteeRef = async () => true; // these tests are about the line in authorized_keys; the proof has its own tests (provider-proof.test.ts)
+    manager.register(ssh);
     return { file, manager, store };
   }
 

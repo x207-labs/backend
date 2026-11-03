@@ -168,4 +168,13 @@ describe("BE-060 HTTP rent of a P2 access: pay, ask, look, stop", () => {
     void creditPrice;
     void X207ExtraSource;
   });
+
+  it("TC-BE-060-07 the challenge route says no challenge is needed for a provider that needs none, and refuses a grant that is not a provider grant", async () => {
+    const { handler, chain } = setup();
+    const r = await handler(new Request(url(1, "/challenge")));
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ required: false });
+    chain.grants.set(3, grant({ grant_id: 3 }));
+    expect((await handler(new Request(url(3, "/challenge")))).status).toBe(400);
+  });
 });

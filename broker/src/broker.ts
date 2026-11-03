@@ -74,12 +74,12 @@ export async function startBroker(options: StartOptions): Promise<RunningBroker>
   const extra = new X207ExtraSource({
     facilitatorUrl: config.facilitatorUrl, ...(options.fetch ? { fetch: options.fetch } : {}), ...(options.extraCacheMs === undefined ? {} : { cacheMs: options.extraCacheMs }),
   });
-  const provider = new ProviderAccessManager({ store, now, mode: config.mode ?? "self-hosted", ...(options.log ? { log: options.log } : {}) });
-  for (const adapter of options.providerAdapters ?? []) provider.register(adapter);
   const voucherKeyOf = async (account: string): Promise<string | null> => {
     const r = await (options.fetch ?? fetch)(`${config.readApiUrl.replace(/\/+$/, "")}/x207/circles/${encodeURIComponent(config.circleId)}/members/${encodeURIComponent(account)}`, { signal: AbortSignal.timeout(10_000) });
     return r.ok ? ((await r.json()) as { pubkeyVoucher?: string }).pubkeyVoucher ?? null : null;
   };
+  const provider = new ProviderAccessManager({ store, now, circle: config.contractId, voucherKeyOf, mode: config.mode ?? "self-hosted", ...(options.log ? { log: options.log } : {}) });
+  for (const adapter of options.providerAdapters ?? []) provider.register(adapter);
   const handler = createBrokerHandler({
     provider: { manager: provider, contractId: config.contractId, voucherKeyOf, now },
     dispatcher, classB, facilitatorUrl: config.facilitatorUrl, circleId: config.circleId, brokerAccount: config.brokerAccount, extra,

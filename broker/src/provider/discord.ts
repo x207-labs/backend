@@ -1,6 +1,7 @@
 // Discord adapter (BE-059, ADR-47 group D): a role on a server (guild) for a member, given and taken back by the bot of the grantor. `grantee_ref` is the user id (a snowflake) and must
 // already be a member of the guild; `resource` is the role id. The bot token lives on the machine that runs the broker (self-hosted). A role gives no expiry of its own: the broker removes it.
-import type { AccessState, ProviderAccessAdapter, ProviderGrantRequest, ProviderGrantResult } from "./adapter.js";
+import { parseGranteeProof, verifyOAuthProof, type OAuthVerifier } from "@x207/core";
+import type { AccessState, ProveGranteeArgs, ProviderAccessAdapter, ProviderGrantRequest, ProviderGrantResult } from "./adapter.js";
 import { call, ProviderHttpError, type FetchLike } from "./http.js";
 
 const SNOWFLAKE = /^\d{15,21}$/;
@@ -12,6 +13,21 @@ export interface DiscordOptions {
   allowedRoleIds?: readonly string[];
   baseUrl?: string;
   fetch?: FetchLike;
+  /** Checks an OAuth token of Discord and says whose it is (`discordIdentify`). Without it the reference cannot be proven and the grant carries a warning. */
+  oauth?: OAuthVerifier;
+}
+
+/** The verifier of OAuth tokens of Discord: `GET /users/@me` with the token of the user (scope `identify`); the subject is the user id. Only discord.com, a fixed host. */
+export function discordIdentify(options: { baseUrl?: string; fetch?: FetchLike } = {}): OAuthVerifier {
+  const base = options.baseUrl ?? "https://discord.com/api/v10";
+  const doFetch = options.fetch ?? ((input, init) => fetch(input, init));
+  return async (provider, token) => {
+    if (provider !== "discord") throw new Error(`penyedia OAuth ${provider} bukan discord`);
+    const r = await call(doFetch, base, { authorization: `Bearer ${token}`, "user-agent": "x207-broker" }, { method: "GET", path: "/users/@me" }, [200]);
+    const id = (JSON.parse(r.text) as { id?: unknown }).id;
+    if (typeof id !== "string") throw new Error("jawaban Discord tanpa id");
+    return { subject: id };
+  };
 }
 
 export class DiscordAdapter implements ProviderAccessAdapter {
@@ -42,6 +58,15 @@ export class DiscordAdapter implements ProviderAccessAdapter {
       if (error instanceof ProviderHttpError && error.status === 404) return { ok: false, reason: "pengguna bukan anggota server ini" };
       throw error;
     }
+  }
+
+  /** `oauth` (SD-071): the user id that Discord reports for the token must be the reference. With no verifier the reference cannot be proven: the grant goes on with a warning. */
+  async proveGranteeRef(args: ProveGranteeArgs): Promise<boolean | { unproven: string }> {
+    if (this.#o.oauth === undefined) return { unproven: "Discord OAuth tidak dipasang di broker ini: grantee_ref hanya dicek ada di server, bukan milik penyewa" };
+    if (args.proof === null) return false;
+    const proof = parseGranteeProof(args.proof);
+    if (proof.kind !== "oauth") return false;
+    return verifyOAuthProof(proof, args.ref, this.#o.oauth);
   }
 
   #role(resource: string | null): string {
