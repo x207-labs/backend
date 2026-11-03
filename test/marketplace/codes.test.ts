@@ -264,6 +264,18 @@ describe("BE-069 one-time codes: the code book on the fair exchange of BE-056", 
     expect((m.db.prepare("SELECT COUNT(*) AS n FROM code_seen").get() as { n: number }).n).toBe(0);
   });
 
+  it("TC-BE-069-13 a release of a code that is not short (a payload of megabytes) is refused: a code is a salt and at most 1024 bytes", async () => {
+    const m = await start();
+    const s = await sell(m);
+    const id = (await buy(m, s)).json.purchase_id as string;
+    await postCipher(m, id, s);
+    await check(m, s);
+    const big = createRelease({ circle: CONTRACT, license_hash: s.docHash, buyer: acct("budi"), buyerPublicKey: m.keys.budi!.publicKey, content_hash: s.doc.code_commitment, content_size: 5_000_000, purchase_id: id, ciphertext: s.enc.ciphertext, contentKey: s.enc.key, at: at(m), sellerSecretKey: m.keys.andi!.secretKey });
+    const refused = await m.post(`/purchases/${id}`, { notice: big.release, signature: big.signature });
+    expect([refused.status, refused.json.error.code]).toEqual([400, "invalid_request"]);
+    expect((await release(m, id, s).post()).status).toBe(201); // the honest release goes through
+  });
+
   it("TC-BE-069-10 a seller who encrypts another code than the commitment is caught by the proof of cheating of the fair exchange", async () => {
     const m = await start();
     const s = await sell(m);

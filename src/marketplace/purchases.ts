@@ -538,6 +538,10 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
           if (typeof r.key_commitment !== "string" || !HASH.test(r.key_commitment)) throw invalidRequest("release.key_commitment harus 64 heksadesimal huruf kecil");
           if (r.license_hash !== p.license_doc && r.license_hash !== detail?.license_hash) throw invalidRequest("release.license_hash harus license_doc atau license_hash dari listing");
           if (!verifyRelease(r, signature, activeMemberKey(db, circle.circle_id, p.seller))) throw new ApiError(401, "invalid_signature", "Tanda tangan rilis tidak cocok dengan kunci penjual", { account: p.seller });
+          // a code is short: the payload is a salt of 32 bytes and at most 1024 bytes of code, so a seller cannot ship the buyer a "code" of a gigabyte or a wall of control characters (B6-F5)
+          if (p.kind === "code" && (r.content_size < 32 + 8 || r.content_size > 32 + 1024 || r.cipher_size > r.content_size + 64)) {
+            throw invalidRequest("kode: content_size harus 40 sampai 1056 byte (salt 32 + kode 8 sampai 1024) dan cipher_size paling banyak content_size + 64", { contentSize: r.content_size, cipherSize: r.cipher_size });
+          }
           // a code that the issuer can check is checked before the key goes to the buyer (ADR-48)
           if (p.kind === "code") assertCodeGood(db, circle.circle_id, p, d, now());
           db.transaction(() => {
