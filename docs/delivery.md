@@ -19,6 +19,9 @@ In `barter` mode both sides hand something over. The offered asset is the `offer
 ## Notice format
 Canonical JSON with the keys in this order: `circle, listing_hash, offer_hash, side, actor, action, at, proof_hash, reason`. `circle` is the contract account, `side` is `offer` or `want`, the hashes are 64 lowercase hex, `at` is unix seconds, `proof_hash` is set only for `delivered`, `reason` only for `disputed` (both `null` otherwise). The signature is ed25519 over the NEP-413 style hash of the JSON, as for offers and listings (`nep413SigningHash(json, sha256(json), circle)`), made with the voucher key of the actor. Code: `src/marketplace/delivery-core.ts` (`signDeliveryNotice`, `verifyDeliveryNoticeSignature`); it should move into `@x207/core` with test vectors.
 
+## Bond flag (UM-097)
+A deal at or above the bond threshold (default 100 credit, `bondThreshold` of the operator) says `needsBond: true`, in `result.delivery` of `accept` and in the `GET …/delivery` answer. It is a flag like `needsBond` of invoices and orders: the bond of CT-094 (a bundle of two legs with an arbiter) is not built into this flow, so the parties and their tools must ask for it before they register the payment. Below the threshold it is `false`.
+
 ## What this does not do
 - It does not decide who is right in a dispute. `disputed` is final here; a ruling needs the arbiter of `docs/reputation-and-disputes.md` (option 4) and a contract change (see `contracts/docs/payment-hold.md`).
 - A listing that was matched is not reopened after a cancellation.

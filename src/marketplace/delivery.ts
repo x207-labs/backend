@@ -6,6 +6,7 @@ import type { Route } from "../api/router.js";
 import { activeMemberKey } from "./auth.js";
 import { isoSeconds, nowSeconds } from "./common.js";
 import { refreshProposalOfMatch, settleDeliveries } from "./bundles.js";
+import { DEFAULT_BOND_THRESHOLD } from "./invoices.js";
 import { findListing } from "./listings.js";
 import {
   DEFAULT_DISPUTE_WINDOW_SECONDS, deliveryNoticeHash, DeliveryFormatError, findDeliveries, findDelivery, MAX_NOTICE_SKEW_SECONDS, validateDeliveryNotice,
@@ -48,18 +49,22 @@ function sideView(db: Database.Database, circleId: string, d: DeliveryRow) {
   };
 }
 
-function matchView(db: Database.Database, circleId: string, listingHashHex: string) {
+function matchView(db: Database.Database, circleId: string, listingHashHex: string, bondThreshold: bigint) {
   const list = findDeliveries(db, circleId, listingHashHex);
+  const match = db.prepare("SELECT listing_value FROM matches WHERE circle_id = ? AND listing_hash = ? ORDER BY id DESC LIMIT 1").get(circleId, listingHashHex) as { listing_value: string | number | bigint } | undefined;
   return {
     listingHash: listingHashHex,
+    // CT-094: a deal at or above the bond threshold asks for a bond (an arbiter). Only flagged here, like `needsBond` of invoices and orders; the bond itself is a bundle of two legs on the contract.
+    needsBond: match !== undefined && BigInt(match.listing_value) >= bondThreshold,
     // the voucher or the bundle of this match may be registered only when this is true: every handover of the match is confirmed
     payable: list.every((d) => d.state === "confirmed"),
     deliveries: list.map((d) => sideView(db, circleId, d)),
   };
 }
 
-export function deliveryRoutes(options: { disputeWindowSeconds?: number } = {}): Route[] {
+export function deliveryRoutes(options: { disputeWindowSeconds?: number; bondThreshold?: bigint } = {}): Route[] {
   const window = options.disputeWindowSeconds ?? DEFAULT_DISPUTE_WINDOW_SECONDS;
+  const bondThreshold = options.bondThreshold ?? DEFAULT_BOND_THRESHOLD;
   return [
     {
       method: "GET",
@@ -68,7 +73,7 @@ export function deliveryRoutes(options: { disputeWindowSeconds?: number } = {}):
       handler: ({ db, circle, params, now }) => {
         const listing = findListing(db, circle.circle_id, params.hash as string);
         settleDeliveries(db, circle.circle_id, now());
-        const view = matchView(db, circle.circle_id, listing.listing_hash);
+        const view = matchView(db, circle.circle_id, listing.listing_hash, bondThreshold);
         if (view.deliveries.length === 0) {
           throw new ApiError(404, "delivery_not_found", "This listing has no delivery flow (not matched yet, or its asset class does not need one)", { listingHash: listing.listing_hash });
         }
@@ -154,7 +159,7 @@ export function deliveryRoutes(options: { disputeWindowSeconds?: number } = {}):
           db.prepare(`UPDATE deliveries SET ${update} WHERE id = ?`).run(...args, d.id);
           if (n.action === "confirmed") refreshProposalOfMatch(db, circle.circle_id, d.match_id);
         })();
-        return { status: 201, body: matchView(db, circle.circle_id, listing.listing_hash) };
+        return { status: 201, body: matchView(db, circle.circle_id, listing.listing_hash, bondThreshold) };
       },
     },
   ];

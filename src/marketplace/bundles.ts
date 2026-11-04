@@ -14,6 +14,7 @@ import { effectiveStatus, findListing, type ListingRow } from "./listings.js";
 import { openEpochResolver, type OpenEpochResolver } from "./epoch.js";
 import { findOffer, offerView, type OfferRow } from "./offers.js";
 import { threadReferral } from "./referrals.js";
+import { DEFAULT_BOND_THRESHOLD } from "./invoices.js";
 import { autoConfirmDue, DEFAULT_CONFIRM_CLASSES, findDeliveries, paymentReleased, startDeliveriesIfNeeded } from "./delivery-core.js";
 
 const HASH = /^[0-9a-f]{64}$/;
@@ -176,8 +177,9 @@ async function planAccept(
   return { open, searcher, shareBps, plan };
 }
 
-export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver(), options: { confirmClasses?: readonly string[] } = {}): Route[] {
+export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver(), options: { confirmClasses?: readonly string[]; bondThreshold?: bigint } = {}): Route[] {
   const confirmClasses = options.confirmClasses ?? DEFAULT_CONFIRM_CLASSES;
+  const bondThreshold = options.bondThreshold ?? DEFAULT_BOND_THRESHOLD;
   return [
   {
     method: "POST",
@@ -245,7 +247,7 @@ export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver(),
       const match = row<MatchRow>(db, "SELECT * FROM matches WHERE id = ?", matchId) as MatchRow;
       const handovers = findDeliveries(db, circle.circle_id, listingRow.listing_hash);
       // only a match that needs a confirmation carries `delivery`; the others keep the shape they always had
-      const gate = handovers.length === 0 ? {} : { delivery: { required: true, payable: handovers.every((d) => d.state === "confirmed"), sides: Object.fromEntries(handovers.map((d) => [d.side, d.state])) } };
+      const gate = handovers.length === 0 ? {} : { delivery: { required: true, payable: handovers.every((d) => d.state === "confirmed"), needsBond: BigInt(offerRow.value) >= bondThreshold, sides: Object.fromEntries(handovers.map((d) => [d.side, d.state])) } };
       const result =
         plan.kind === "payment"
           ? { kind: "payment", payer: plan.payer, payee: plan.payee, amount: plan.amount, ...gate }
