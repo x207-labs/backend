@@ -346,6 +346,28 @@ describe("BE-069 one-time codes: the code book on the fair exchange of BE-056", 
     expect((await m.get(`/purchases/${id}`)).json.status).toBe("confirmed"); // the seller is paid
   });
 
+  it("TC-BE-078-C2 the key of a code is not released for a source that serves other bytes, and a source that no longer serves the signed ciphertext ends the sale disputed whatever the reason (B7-C2)", async () => {
+    const m = await start();
+    const s = await sell(m);
+    const id = (await buy(m, s)).json.purchase_id as string;
+    await postCipher(m, id, s);
+    await check(m, s);
+    const key = `store.example.com/${s.doc.nonce}.bin`;
+    files.set(key, new Uint8Array(s.enc.ciphertext.length).fill(7));
+    const bad = await release(m, id, s).post();
+    expect([bad.status, bad.json.error.code]).toEqual([400, "proof_invalid"]);
+    expect((await m.get(`/purchases/${id}`)).json.status).toBe("cipher_posted");
+    files.set(key, s.enc.ciphertext);
+    expect((await release(m, id, s).post()).status).toBe(201);
+    // the source goes away: the buyer cannot open the code, and a complaint of any kind holds the voucher
+    files.delete(key);
+    const disputed = await buyerNotice(m, id, "disputed", "budi", "other", null);
+    expect([disputed.status, disputed.json.status, disputed.json.notDelivered]).toEqual([201, "disputed", true]);
+    expect("voucher" in disputed.json).toBe(false);
+    m.clock.now += 61 * 60_000;
+    expect((await m.get(`/purchases/${id}`)).json.status).toBe("disputed"); // no automatic confirmation, the seller is not paid
+  });
+
   it("TC-BE-069-10 a seller who encrypts another code than the commitment is caught by the proof of cheating of the fair exchange", async () => {
     const m = await start();
     const s = await sell(m);

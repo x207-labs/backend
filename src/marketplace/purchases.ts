@@ -564,6 +564,9 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
           }
           // a code that the issuer can check is checked before the key goes to the buyer (ADR-48)
           if (p.kind === "code") assertCodeGood(db, circle.circle_id, p, d, now());
+          // B7-C2: a code is at most 1120 bytes, so the ciphertext is downloaded and checked against the signed cipher_hash and cipher_size before the key goes: a seller whose source serves
+          // other bytes, or nothing, is not paid for a code that the buyer cannot open
+          if (p.kind === "code") await withCiphertext({ kind: p.source_kind as "https" | "ipfs", ref: p.source_ref as string }, p.cipher_hash as string, r.cipher_size, () => undefined);
           db.transaction(() => {
             record(db, circle.circle_id, p, p.seller, "key_released", at, signature, now(), JSON.stringify(r));
             db.prepare("UPDATE purchases SET status = 'key_released', release_json = ?, release_signature = ?, released_at = ?, dispute_until = ? WHERE id = ?").run(JSON.stringify(r), signature, at, at + (p.kind === "code" ? codeWindow : window), p.id);
@@ -632,6 +635,19 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
           if (typeof reason !== "string" || !(DISPUTE_REASONS as readonly string[]).includes(reason)) throw invalidRequest("reason is required: content_mismatch, contains_pii, or other", { allowed: [...DISPUTE_REASONS] });
           // ADR-48 points 5 to 7: for a code only a proof of cheating can stop the sale. "Used", "other" or "pii" without a proof is a complaint against the seller (one per purchase); the sale
           // goes on to the automatic confirmation, because nobody can tell who used a code and a buyer who holds a working code could otherwise keep it unpaid
+          // B7-C2: the seller signed cipher_hash and cipher_size. A source that does not serve those bytes at dispute time is proof of non-delivery, and the backend has the download to decide
+          // it itself: the sale ends `disputed` (the voucher stays held), whatever the reason says and whether or not the buyer has a proof
+          let notDelivered = false;
+          if (p.kind === "code") {
+            notDelivered = !(await withCiphertext({ kind: p.source_kind as "https" | "ipfs", ref: p.source_ref as string }, p.cipher_hash as string, (JSON.parse(p.release_json as string) as LicenseRelease).cipher_size, () => true).catch(() => false));
+          }
+          if (notDelivered) {
+            db.transaction(() => {
+              record(db, circle.circle_id, p, actor, String(action), at, signature, now(), text);
+              db.prepare("UPDATE purchases SET status = 'disputed', dispute_reason = ?, closed_at_ms = ? WHERE id = ?").run(reason, now(), p.id);
+            })();
+            return { status: 201, body: { ...purchaseView(findPurchase(db, circle.circle_id, params.id as string)), notDelivered: true } };
+          }
           if (p.kind === "code" && reason !== "content_mismatch") {
             if (proof !== null) throw invalidRequest("proof is only for content_mismatch");
             const exists = row(db, "SELECT 1 AS x FROM purchase_complaints WHERE circle_id = ? AND purchase_id = ?", circle.circle_id, p.id);
