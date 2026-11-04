@@ -29,6 +29,9 @@ All 15 members: stake 99979000 in the contract, 100000000 in the read model. `co
 
 A prune of an epoch of this circle was **not** read: the early `prune_epoch` was refused by the contract (`prune_delay_epochs`, B8-F1), so `edges_unavailable` after a real prune is covered by the unit tests (TC-BE-078-F1) and not by the chain.
 
+## Replay on 2026-11-04 (BE-081 evidence)
+`REBUILD=1` on the kept database (467 stored events from block 276141741, first transaction of the circle), then the follow to block 276159601: the events replayed from the start with the current handlers, no hand edit. The chain had moved on (other runs): 24 members, 4 epochs. Result: members 24 in the contract, 24 in the read model, all equal (`stake`, `limit`, status, voucher key); `members.stale` 0 and `fee_mismatches` 0; epoch 1 and 2 `finalized`, 210 obligations each equal; epoch 2 `clearing_edges.edges_hash` = `proposal_hash` `3dadebb9…21c9`, 210 edges, `edges_unavailable` 0. The only differences are epoch 3 and 4, which the chain advanced after the last block read (the report says so: "a transaction came after the block that was read to"). A from-zero network read of the same range was not repeated: neardata served about 50 blocks per minute that day, so it would have taken hours.
+
 ## What this run does not show yet
 - A prune of an epoch of this circle (the delay of the contract has not passed); `edges_unavailable` after a real prune stays covered by the unit tests (TC-BE-078-F1) only.
 - An epoch with a non-zero position (every epoch so far is a balanced ring), so the positions are compared only as "none".
