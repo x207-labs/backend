@@ -52,6 +52,9 @@ READMODEL_DB=/tmp/x207-testnet-v013.sqlite node scripts/testnet-v013.mjs x207-v0
 
 A second run with the same `READMODEL_DB` reads only new blocks; `REBUILD=1` replays the stored events with the current handlers (no network). The free neardata endpoint is slow (500 blocks take 8 to 10 minutes). Details and a recorded run: [`docs/testnet-v013.md`](docs/testnet-v013.md). Demo data for this read model: [`docs/demo-seed.md`](docs/demo-seed.md) (demo only).
 
+## Public testnet API (BE-089)
+The read API and the indexer of the testnet circle `x207-v013.testnet` (interface 0.0.13) run on Railway, GET only, at **https://x207-backend-production.up.railway.app** (for example `/healthz`, `/x207/circles/agents-main/epochs`, `/x207/circles/agents-main/members`). CORS is open for `https://x207-dashboard.vercel.app` only. It is a read model of a testnet: no signing key, no broker, no settlement endpoints, only public values in its variables. How it is built and set up: [`deploy/railway/README.md`](deploy/railway/README.md).
+
 ## Limits against abuse (BE-066)
 All limits live in the memory of one process. **With two instances behind a balancer each one counts for itself**, so the real ceiling is the number of instances times the value; a shared store (Redis) is not part of this version. Set them in `.env`; a value of 0 turns a rate limit off.
 
