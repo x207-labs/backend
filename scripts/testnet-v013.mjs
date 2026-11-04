@@ -1,9 +1,10 @@
 // BE-079: the read model against the circle of interface 0.0.13 on testnet (CT-100). Reads blocks (neardata) and views (RPC) only; no transaction, no key.
-//   node scripts/testnet-v013.mjs [contract]            READMODEL_DB=<file> keeps the database between runs (a second run reads only the new blocks)
+//   node scripts/testnet-v013.mjs [contract]            READMODEL_DB=<file> keeps the database between runs (a second run reads only the new blocks); REBUILD=1 replays the kept events with the
+//   handlers of this build first (no network): the way to test a change of a handler on the events that were already read
 // It follows the chain from the first transaction of the account with the real indexer (with the reader of `list_obligations` for the summary `clearing_applied`), then compares the read model
 // with the views of the contract: members, epochs, obligations (`cleared`), the cleared edges against `get_proposal` (`proposal_hash`, `edge_count`), the positions against `list_positions`, and
 // the epochs whose pairs were pruned (`edges_unavailable`). Prints a JSON report.
-import { createApiServer, Indexer, NeardataBlockSource, openDatabase, viewClearedEdges } from "../dist/index.js";
+import { createApiServer, Indexer, NeardataBlockSource, openDatabase, rebuildReadModel, viewClearedEdges, viewMembers } from "../dist/index.js";
 import { marketplaceRoutes } from "../dist/marketplace/index.js";
 
 const CONTRACT = process.argv[2] ?? "x207-v013.testnet";
@@ -78,7 +79,7 @@ const source = { endpoint: inner.endpoint, finalHeight: async () => endBlock, ge
 
 const db = openDatabase(process.env.READMODEL_DB || "/tmp/x207-testnet-v013.sqlite");
 const indexer = new Indexer({
-  db, source, circleId: CIRCLE_ID, contractId: CONTRACT, startBlock, fetchParams: async () => params, fetchClearedEdges: (epoch) => viewClearedEdges(RPC, CONTRACT, epoch),
+  db, source, circleId: CIRCLE_ID, contractId: CONTRACT, startBlock, fetchParams: async () => params, fetchClearedEdges: (epoch) => viewClearedEdges(RPC, CONTRACT, epoch), fetchMembers: () => viewMembers(RPC, CONTRACT),
   prefetch: { attempts: 5, delayMs: 2000 },
 });
 await indexer.bootstrap();
@@ -89,6 +90,7 @@ for (;;) {
   await indexer.drain(1);
   if (wanted.has(cur) && (cur - startBlock) % 50 === 0) console.error(`block ${cur} of ${endBlock}`);
 }
+if (process.env.REBUILD === "1") rebuildReadModel(db, CIRCLE_ID);
 const cursor = Number(db.prepare("SELECT last_block_height AS h FROM indexer_cursor WHERE contract_id = ?").get(CONTRACT).h);
 
 const server = createApiServer({ db, extraRoutes: marketplaceRoutes(db) });
@@ -101,6 +103,7 @@ const note = (area, what, detail = {}) => diffs.push({ area, what, ...detail });
 const report = { contract: CONTRACT, circleId: CIRCLE_ID, interface: interfaceVersion, startBlock, readUpTo: endBlock, indexedTo: cursor, followedSeconds: Math.round((Date.now() - started) / 1000), counts: {}, epochs: [], diffs };
 if (interfaceVersion !== "0.0.13") note("interface", "the contract is not 0.0.13", { interface: interfaceVersion });
 
+report.counts.staleMembers = db.prepare("SELECT COALESCE(SUM(stale), 0) AS stale, COALESCE(SUM(fee_mismatches), 0) AS mismatches FROM members").get();
 // ---- events: every row handled, none unknown
 report.counts.eventsByName = Object.fromEntries(db.prepare("SELECT event, COUNT(*) AS n FROM events_raw GROUP BY event ORDER BY event").all().map((r) => [r.event, r.n]));
 const unhandled = db.prepare("SELECT event, handled, COUNT(*) AS n FROM events_raw WHERE handled <> 1 GROUP BY event, handled").all();

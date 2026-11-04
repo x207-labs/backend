@@ -22,6 +22,7 @@ All 15 members: stake 99979000 in the contract, 100000000 in the read model. `co
 - No event carries it. `clearing_applied` has the two totals (`clearing_fee` `"210000"`, `solver_fee` `"105000"`), `epoch_committed.positions[]` has `{account_id, net, role, status, amount, outstanding_debt}` and no stake, and no other event of the commit or the finalization names a stake (`stake_added`, `stake_withdrawn` and `member_defaulted` are the only ones; `limits_updated` has limits).
 - A new event for each member does not fit the receipt: the logs of `commit_epoch` in the worst case are about 13.8 KB of the 16 KiB, and 64 members would add about 6 KB.
 - Decision of the coordinator: the indexer computes the charge itself from what it has (BE-081), and this script keeps comparing the stake with the view `member` as the watch.
+- **After BE-081** (`REBUILD=1 node scripts/testnet-v013.mjs`, the kept events of the same run replayed with the new handler, no network): all 15 stakes are 99979000 and all limits 80000000, equal to the view `member`; `members.stale` 0 and `fee_mismatches` 0. The only differences left in that run were the epoch 3, which the chain had closed after the last block that was read (`cutoff` against `open`).
 
 ## What this run does not show yet
 - `finalize_epoch` and a prune of an epoch of this circle (the run stopped at epoch 3 open); `edges_unavailable` after a real prune stays covered by the unit tests (TC-BE-078-F1) only.
