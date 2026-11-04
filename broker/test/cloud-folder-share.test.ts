@@ -155,3 +155,17 @@ describe("BE-084: cloud-folder-share adapter (ADR-47 group B, catalog #81), mock
     expect((error as Error).message).not.toContain(TOKEN);
   });
 });
+
+describe("X-6 cross review: only a share that was made (201) is adopted", () => {
+  it("TC-BE-084-X6 a provider that answers 200 to the creation (a share that already existed) is not adopted, so revoke cannot delete what the grantor made", async () => {
+    const calls: string[] = [];
+    const fetchImpl: FetchLike = async (url, init) => {
+      calls.push(`${init?.method ?? "GET"} ${new URL(url).pathname}`);
+      return new Response(JSON.stringify({ id: "sh-existing", expires_at: "2030-01-01T00:00:00Z" }), { status: 200 });
+    };
+    const a = new CloudFolderShareAdapter({ baseUrl: "https://storage.test/api", token: "TOKEN-0123456789", allowedFolders: ["shared"], fetch: fetchImpl });
+    await expect(a.grant({ grantId: 3, granteeRef: "b@example.org", resource: "shared/x", permission: "read", expiresAtMs: NOW + 86_400_000 })).rejects.toThrow();
+    expect(calls).toHaveLength(1); // the POST only
+    expect(calls.some((c) => c.startsWith("DELETE"))).toBe(false);
+  });
+});

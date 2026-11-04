@@ -28,11 +28,14 @@ const USER_NAME = /^[A-Za-z0-9][A-Za-z0-9._+@-]{0,127}$/;
 
 /** `sc:<grant id>:<user id>:<group id>`: all that `revoke` and `status` need. Not a secret. */
 const handleOf = (grantId: number, user: string, group: string): string => `sc:${grantId}:${user}:${group}`;
-const parseHandle = (handle: string): { user: string; group: string } => {
+const parseHandle = (handle: string): { grantId: number; user: string; group: string } => {
   const m = /^sc:(\d+):([A-Za-z0-9_-]{1,128}):([A-Za-z0-9_-]{1,64})$/.exec(handle);
   if (!m) throw new Error("unknown SCIM handle");
-  return { user: m[2] as string, group: m[3] as string };
+  return { grantId: Number(m[1]), user: m[2] as string, group: m[3] as string };
 };
+
+/** X-6: a user is a seat of this grant unless the provider says it carries another `externalId`. */
+const isOurs = (user: Record<string, unknown>, grantId: number): boolean => user.externalId === undefined || user.externalId === `x207-${grantId}`;
 
 type Resource = Record<string, unknown> & { members?: Array<{ value?: unknown }> };
 
@@ -119,7 +122,7 @@ export class SaasSeatScimAdapter implements ProviderAccessAdapter {
     if (request.existingHandle) {
       const old = parseHandle(request.existingHandle);
       const user = await this.#get(`/Users/${old.user}`);
-      if (user !== null && user.active === true && old.group === group) {
+      if (user !== null && user.active === true && old.group === group && isOurs(user, request.grantId)) {
         await this.#member(group, old.user, true); // a seat that was taken out of its group at the provider goes back in: the lessee paid for it
         return { handle: request.existingHandle, nativeExpiresAtMs: null, delivery };
       }
@@ -127,11 +130,13 @@ export class SaasSeatScimAdapter implements ProviderAccessAdapter {
     const made = await call(
       this.#fetch, "", this.#headers(),
       { method: "POST", path: `${this.#base}/Users`, body: JSON.stringify({ schemas: [USER_SCHEMA], userName: request.granteeRef, externalId: `x207-${request.grantId}`, active: true }) },
-      [200, 201, 409],
+      [201, 409], // X-6: a 200 is not a creation; it may be a user that already existed
     );
     // a user that already exists was not made for this grant: revoke would delete a real person
     if (made.status === 409) throw new Error(`userName ${request.granteeRef} already exists at the provider and is not a seat of this broker; it was not changed`);
-    const id = (JSON.parse(made.text) as { id?: unknown }).id;
+    const created = JSON.parse(made.text) as { id?: unknown; externalId?: unknown };
+    if (created.externalId !== undefined && created.externalId !== `x207-${request.grantId}`) throw new Error("the provider answered a user that carries another externalId; it was not adopted");
+    const id = created.id;
     if (typeof id !== "string" || !ID.test(id)) throw new Error("the provider answered the user without a usable id");
     try {
       await this.#member(group, id, true);
@@ -150,6 +155,8 @@ export class SaasSeatScimAdapter implements ProviderAccessAdapter {
   async revoke(handle: string): Promise<void> {
     const h = parseHandle(handle);
     const user = await this.#get(`/Users/${h.user}`);
+    // X-6: a user that carries another externalId is not the seat that this broker made: it is not touched
+    if (user !== null && !isOurs(user, h.grantId)) return;
     if (user !== null && user.active !== false) {
       await call(this.#fetch, "", this.#headers(), { method: "PUT", path: `${this.#base}/Users/${h.user}`, body: JSON.stringify({ ...user, active: false }) }, [200, 404]);
     }

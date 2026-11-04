@@ -103,7 +103,7 @@ export class CloudFolderShareAdapter implements ProviderAccessAdapter {
         if (moved.status === 200) return { handle: request.existingHandle, nativeExpiresAtMs: request.expiresAtMs, delivery: { provider: "cloud-folder-share", folder, role, grantee: request.granteeRef, expiresAt } };
       }
     }
-    const made = await call(this.#fetch, "", this.#headers(), { method: "POST", path: shares, body: JSON.stringify({ grantee: request.granteeRef, role, expires_at: expiresAt }) }, [200, 201]);
+    const made = await call(this.#fetch, "", this.#headers(), { method: "POST", path: shares, body: JSON.stringify({ grantee: request.granteeRef, role, expires_at: expiresAt }) }, [201]); // X-6: only a share that was MADE is adopted; a 200 may be a share that already existed, and the revoke would delete what the grantor made
     const body = JSON.parse(made.text) as { id?: unknown };
     if (typeof body.id !== "string" || !SHARE_ID.test(body.id)) throw new Error("the provider answered the share without a usable id");
     return { handle: handleOf(request.grantId, folder, body.id), nativeExpiresAtMs: request.expiresAtMs, delivery: { provider: "cloud-folder-share", folder, role, grantee: request.granteeRef, expiresAt } };

@@ -203,3 +203,41 @@ describe("BE-087: saas-seat-scim adapter (ADR-47 group B, catalog #17), mock SCI
     store.close();
   });
 });
+
+describe("X-6 cross review: a seat is adopted and deleted only when it is the one this broker made", () => {
+  const base = { baseUrl: "https://saas.test/scim/v2", token: "TOKEN-0123456789", allowedGroups: ["grp-team"] };
+  const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
+  const request = { grantId: 7, granteeRef: "andi@example.org", resource: "grp-team", permission: null, expiresAtMs: NOW + 86_400_000 };
+
+  it("TC-BE-087-X6a a provider that answers 200 to the creation (a user that already exists) or a user with another externalId is not adopted", async () => {
+    const calls: string[] = [];
+    const answer = (status: number, body: Record<string, unknown>): FetchLike => async (url, init) => {
+      const path = new URL(url).pathname.replace(/^\/scim\/v2/, "");
+      calls.push(`${init?.method ?? "GET"} ${path}`);
+      return path === "/Users" ? json(status, body) : json(200, { id: "grp-team", members: [] });
+    };
+    await expect(new SaasSeatScimAdapter({ ...base, fetch: answer(200, { id: "real-person", externalId: "x207-7" }) }).grant(request)).rejects.toThrow(/200/);
+    await expect(new SaasSeatScimAdapter({ ...base, fetch: answer(201, { id: "real-person", externalId: "hr-4711" }) }).grant(request)).rejects.toThrow(/another externalId/);
+    expect(calls.filter((c) => c.startsWith("DELETE") || c.startsWith("PUT"))).toEqual([]); // nothing of the real person was touched
+  });
+
+  it("TC-BE-087-X6b revoke leaves alone a user that carries another externalId, and does the work for one that carries ours", async () => {
+    const calls: string[] = [];
+    const users: Record<string, Record<string, unknown>> = { "u-theirs": { id: "u-theirs", active: true, externalId: "hr-4711" }, "u-ours": { id: "u-ours", active: true, externalId: "x207-7" } };
+    const fetchImpl: FetchLike = async (url, init) => {
+      const path = new URL(url).pathname.replace(/^\/scim\/v2/, "");
+      const method = init?.method ?? "GET";
+      calls.push(`${method} ${path}`);
+      const um = /^\/Users\/([\w-]+)$/.exec(path);
+      if (um && method === "GET") return users[um[1]!] ? json(200, users[um[1]!]) : json(404, {});
+      if (path === "/Groups/grp-team" && method === "GET") return json(200, { id: "grp-team", members: [{ value: "u-ours" }] });
+      return method === "DELETE" ? new Response(null, { status: 204 }) : json(200, {});
+    };
+    const a = new SaasSeatScimAdapter({ ...base, fetch: fetchImpl });
+    await a.revoke("sc:7:u-theirs:grp-team");
+    expect(calls).toEqual(["GET /Users/u-theirs"]);
+    calls.length = 0;
+    await a.revoke("sc:7:u-ours:grp-team");
+    expect(calls).toContain("DELETE /Users/u-ours");
+  });
+});
