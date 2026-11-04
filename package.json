@@ -1,7 +1,7 @@
 {
   "name": "backend",
   "version": "0.0.1",
-  "description": "x207 backend: indexer M6, read API, laporan HTTP 207, settlement worker M5",
+  "description": "x207 backend: indexer M6, read API, HTTP 207 report, settlement worker M5",
   "scripts": {
     "test": "vitest run --passWithNoTests",
     "build": "tsc -p tsconfig.json",

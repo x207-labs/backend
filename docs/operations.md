@@ -40,6 +40,10 @@ Both read the environment; neither reads a file of settings. Secrets only in the
 | `API_WRITE_RATE_PER_MINUTE_ACCOUNT` | backend | default `60` | no | accepted writes per minute per account |
 | `API_MAX_BODY_BYTES` | backend | default `65536` | no | largest body (413 above) |
 | `API_MAX_PAGE_LIMIT` | backend | default `200` | no | largest `limit` of a list |
+| `X207_BLOCK_SOURCE` | backend | default `rpc` | no | where the indexer reads blocks: `rpc` (every transaction is traced: near-sandbox and small networks only), `neardata` (one request per block) or `account-index` (testnet, BE-089: Neardata, but only the blocks of the transactions that the FastNEAR index of the account lists) |
+| `NEARDATA_URL` | backend | required for `neardata` and `account-index` | no | e.g. `https://testnet.neardata.xyz` |
+| `FASTNEAR_TX_URL` | backend | required for `account-index` | no | the transaction index of the account, e.g. `https://tx.test.fastnear.com/v0/account` |
+| `X207_NEARDATA_MIN_INTERVAL_MS` | backend | default `2100` | no | least time between two Neardata requests of `account-index` (the free Neardata answers 429 above 30 blocks a minute) |
 | `X207_READ_ONLY` | backend | default off (`1` to turn on) | no | public read API (BE-089): only GET routes are served (a POST is `404 not_found`), no settlement endpoints and no job monitor; the preflight answers `GET, OPTIONS` |
 | `X207_CORS_ORIGINS` | backend | default empty = `*` | no | exact browser origins allowed to read the API, comma separated (`scheme://host[:port]`, no path, no wildcard); another origin gets no `Access-Control-Allow-Origin` |
 | `API_TRUST_PROXY` | backend | default off (`1` to turn on) | no | take the last `X-Forwarded-For` hop as the caller |

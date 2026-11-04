@@ -1,6 +1,7 @@
 import type { Server } from "node:http";
 import type Database from "better-sqlite3";
 import type { ContractAbi } from "@x207/core";
+import type { BlockSource } from "./indexer/block-source.js";
 import { apiOptionsFromEnv, createApiServer } from "./api/server.js";
 import { openDatabase } from "./db/index.js";
 import { daoRegistryFromFile } from "./marketplace/dao-registry.js";
@@ -10,6 +11,8 @@ import { marketplaceRoutes } from "./marketplace/index.js";
 import { FailoverRpcClient } from "./indexer/rpc-client.js";
 import { Indexer } from "./indexer/indexer.js";
 import { RpcBlockSource, rpcChainReader } from "./indexer/rpc-source.js";
+import { NeardataBlockSource } from "./indexer/neardata-source.js";
+import { AccountIndexBlockSource } from "./indexer/account-index-source.js";
 import { settlementConfigFromEnv } from "./settlement/config.js";
 import { nearAccountExists } from "./settlement/deposit/quote.js";
 import { startJobMonitor } from "./settlement/deposit/monitor.js";
@@ -38,6 +41,10 @@ function required(env: NodeJS.ProcessEnv, name: string): string {
   return value;
 }
 
+const missing = (name: string): never => {
+  throw new Error(`${name} is required`);
+};
+
 function integer(env: NodeJS.ProcessEnv, name: string, fallback?: number): number {
   const raw = env[name];
   if (raw === undefined || raw === "") {
@@ -65,6 +72,19 @@ export function appConfigFromEnv(env: NodeJS.ProcessEnv = process.env): AppConfi
     port: integer(env, "X207_API_PORT", 8080),
     jobPollMs: integer(env, "X207_JOB_POLL_MS", 15_000),
   };
+}
+
+/**
+ * `X207_BLOCK_SOURCE`: `rpc` (default, near-sandbox and small networks: every transaction is traced), `neardata` (mainnet: one request per block, `NEARDATA_URL`) or `account-index`
+ * (testnet, BE-089: Neardata, but only the blocks of the transactions that the FastNEAR index of the account lists, `NEARDATA_URL` and `FASTNEAR_TX_URL`).
+ */
+export function blockSourceFromEnv(env: NodeJS.ProcessEnv, config: AppConfig, rpc: FailoverRpcClient): BlockSource {
+  const mode = env.X207_BLOCK_SOURCE || "rpc";
+  if (mode === "rpc") return new RpcBlockSource(rpcChainReader(rpc), config.contractId, config.startBlock);
+  if (mode !== "neardata" && mode !== "account-index") throw new Error(`X207_BLOCK_SOURCE must be rpc, neardata or account-index, got "${mode}"`);
+  const neardata = new NeardataBlockSource({ baseUrl: (env.NEARDATA_URL || missing("NEARDATA_URL")), contractId: config.contractId, timeoutMs: 30_000 });
+  if (mode === "neardata") return neardata;
+  return new AccountIndexBlockSource({ inner: neardata, txIndexUrl: (env.FASTNEAR_TX_URL || missing("FASTNEAR_TX_URL")), contractId: config.contractId, minIntervalMs: integer(env, "X207_NEARDATA_MIN_INTERVAL_MS", 2_100) });
 }
 
 async function viewGetParams(rpcUrl: string, contractId: string): Promise<ContractAbi.Params> {
@@ -104,7 +124,7 @@ export async function startApp(env: NodeJS.ProcessEnv = process.env, log: (line:
   const primary = config.rpcEndpoints[0] as string;
   const indexer = new Indexer({
     db,
-    source: new RpcBlockSource(rpcChainReader(rpc), config.contractId, config.startBlock),
+    source: blockSourceFromEnv(env, config, rpc),
     circleId: config.circleId,
     contractId: config.contractId,
     startBlock: config.startBlock,
