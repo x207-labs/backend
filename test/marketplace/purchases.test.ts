@@ -336,7 +336,7 @@ describe("BE-056 license handover: fair exchange with encryption", () => {
     const left = before().length;
     // other test files run at the same time and make their own temporary files (a code is downloaded before its key is released, B7-C2): wait for those to go before counting
     const gone = async (): Promise<number> => {
-      for (let i = 0; i < 30 && before().length > left; i++) await new Promise((r) => setTimeout(r, 100));
+      for (let i = 0; i < 100 && before().length > left; i++) await new Promise((r) => setTimeout(r, 100));
       return before().length;
     };
     files.clear();

@@ -7570,6 +7570,237 @@
         }
       }
     },
+    "/x207/circles/{circle}/listings/{hash}/transfers": {
+      "post": {
+        "operationId": "post_listings_hash_transfers",
+        "summary": "Send listings by hash transfers",
+        "tags": [
+          "marketplace"
+        ],
+        "parameters": [
+          {
+            "name": "circle",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hash",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_request",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "invalid_request"
+            ]
+          },
+          "401": {
+            "description": "A signature does not match the voucher key of the account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_signature",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "invalid_signature"
+            ]
+          },
+          "404": {
+            "description": "Not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "circle_not_found",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "circle_not_found",
+              "transfer_not_found"
+            ]
+          },
+          "409": {
+            "description": "The state does not allow this.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "epoch_not_open",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "epoch_not_open",
+              "open_limit_reached"
+            ]
+          },
+          "413": {
+            "description": "The body is larger than `API_MAX_BODY_BYTES` (BE-066).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "payload_too_large",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "payload_too_large"
+            ]
+          },
+          "429": {
+            "description": "Too many requests; see the header `Retry-After` (BE-066).",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "rate_limited",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "rate_limited"
+            ]
+          },
+          "503": {
+            "description": "A dependency is not ready.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "indexer_unavailable",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "indexer_unavailable"
+            ]
+          }
+        },
+        "x-source": "src/marketplace/transfers.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
     "/x207/circles/{circle}/listings/{hash}": {
       "get": {
         "operationId": "get_listings_hash",
@@ -14283,6 +14514,515 @@
           }
         },
         "x-source": "src/marketplace/reputation.ts"
+      }
+    },
+    "/x207/circles/{circle}/transfers/{id}/proof": {
+      "post": {
+        "operationId": "post_transfers_id_proof",
+        "summary": "Send transfers by id proof",
+        "tags": [
+          "marketplace"
+        ],
+        "parameters": [
+          {
+            "name": "circle",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_request",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "invalid_request"
+            ]
+          },
+          "404": {
+            "description": "Not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "circle_not_found",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "circle_not_found",
+              "transfer_not_found"
+            ]
+          },
+          "413": {
+            "description": "The body is larger than `API_MAX_BODY_BYTES` (BE-066).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "payload_too_large",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "payload_too_large"
+            ]
+          },
+          "429": {
+            "description": "Too many requests; see the header `Retry-After` (BE-066).",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "rate_limited",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "rate_limited"
+            ]
+          },
+          "503": {
+            "description": "A dependency is not ready.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "indexer_unavailable",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "indexer_unavailable"
+            ]
+          }
+        },
+        "x-source": "src/marketplace/transfers.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/x207/circles/{circle}/transfers/{id}": {
+      "get": {
+        "operationId": "get_transfers_id",
+        "summary": "Read transfers by id",
+        "tags": [
+          "marketplace"
+        ],
+        "parameters": [
+          {
+            "name": "circle",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "circle_not_found",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "circle_not_found",
+              "transfer_not_found"
+            ]
+          },
+          "429": {
+            "description": "Too many requests; see the header `Retry-After` (BE-066).",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "rate_limited",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "rate_limited"
+            ]
+          },
+          "503": {
+            "description": "A dependency is not ready.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "indexer_unavailable",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "indexer_unavailable"
+            ]
+          }
+        },
+        "x-source": "src/marketplace/transfers.ts"
+      },
+      "post": {
+        "operationId": "post_transfers_id",
+        "summary": "Send transfers by id",
+        "tags": [
+          "marketplace"
+        ],
+        "parameters": [
+          {
+            "name": "circle",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_request",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "invalid_request"
+            ]
+          },
+          "401": {
+            "description": "A signature does not match the voucher key of the account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_signature",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "invalid_signature"
+            ]
+          },
+          "404": {
+            "description": "Not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "circle_not_found",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "circle_not_found",
+              "transfer_not_found"
+            ]
+          },
+          "413": {
+            "description": "The body is larger than `API_MAX_BODY_BYTES` (BE-066).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "payload_too_large",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "payload_too_large"
+            ]
+          },
+          "429": {
+            "description": "Too many requests; see the header `Retry-After` (BE-066).",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "rate_limited",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "rate_limited"
+            ]
+          },
+          "503": {
+            "description": "A dependency is not ready.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "indexer_unavailable",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "indexer_unavailable"
+            ]
+          }
+        },
+        "x-source": "src/marketplace/transfers.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
       }
     },
     "/x207/health": {

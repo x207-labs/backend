@@ -22,8 +22,11 @@ Both read the environment; neither reads a file of settings. Secrets only in the
 | `X207_SETTLEMENT_MODE` | backend | default `dry` | no | `mock`, `dry` or `live` (1Click); `live` moves money |
 | `X207_APP_FEES` | backend | none (no app fee) | no | JSON list of 1Click app fees |
 | `X207_DAO_REGISTRY_PATH` | backend | none (empty registry) | no | JSON file of the DAOs that rent votes (BE-061) |
-| `X207_CODE_SEEN_KEY` | backend | none (duplicate-code check off, warning at start) | yes | key of the HMAC of `code_seen` (BE-069) |
+| `X207_CODE_SEEN_KEY` | backend | none (duplicate-code check off, warning at start) | yes | key of the HMAC of `code_seen` (BE-069); at least 32 bytes, a shorter one stops the start (B7-C7) |
 | `X207_CODE_MOCK_ISSUER` | backend | none (no issuer registered, warning at start) | no | demo only (B7-C10): register the in-memory mock issuer under this name; it checks nothing at a real issuer |
+| `X207_DOH_URL` | backend | default `https://dns.google/resolve` | no | DNS over HTTPS (JSON) for the TXT proof of a domain transfer (BE-074) |
+| `X207_RDAP_BASE_URL` | backend | default `https://rdap.verisign.com/com/v1/domain/` | no | RDAP of the registry of the TLD (ends with a slash; `.com` and `.net` by default) |
+| `X207_STEAM_API_KEY` | backend | none (game item transfers answer `transfer_proof_not_configured`) | yes | Web API key of Steam for the trade offer proof (BE-074) |
 | `X207_CODE_MOCK_CODES` | backend | none | no | demo only: comma separated codes that the mock issuer says are valid |
 | `NEAR_RPC_PRIMARY_URL` | backend | required | maybe | main RPC; the URL may carry an API key |
 | `NEAR_RPC_FALLBACK_URL` | backend | none | maybe | second RPC for the failover |

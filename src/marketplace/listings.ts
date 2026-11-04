@@ -70,6 +70,8 @@ export function findListing(db: Database.Database, circleId: string, hash: strin
 
 /** Fungsi pemeriksa tambahan sebelum format listing divalidasi (mis. kelas aset, BE-042). */
 export type ListingCheck = (listing: Listing, context: { db: Database.Database; circleId: string; nowS: number }) => void;
+/** BE-074: a check that asks the outside (the DNS of a domain) and so is async; it runs after the signature and the duplicate, with the hash of the listing. */
+export type ListingAsyncCheck = (listing: Listing, hash: string, context: { db: Database.Database; circleId: string; nowS: number }) => Promise<void>;
 
 function parseListingBody(body: unknown): { listing: Listing; signature: string } {
   if (body === null || typeof body !== "object") throw invalidRequest("body must be an object");
@@ -91,10 +93,11 @@ function boolParam(query: URLSearchParams, name: string): boolean | null {
  * resource), the format, the circle, the time, the signature and the duplicate. One function, so that the dry run (`POST listings/check`) cannot say anything else.
  * Returns the listing, its signature and its hash; throws the same `ApiError` as the POST.
  */
-function checkListingRequest(
+async function checkListingRequest(
   { db, circle, body, nowMs }: { db: Database.Database; circle: { circle_id: string; contract_id: string }; body: unknown; nowMs: number },
   checks: readonly ListingCheck[],
-): { listing: Listing; signature: string; hash: string; nowS: number } {
+  asyncChecks: readonly ListingAsyncCheck[] = [],
+): Promise<{ listing: Listing; signature: string; hash: string; nowS: number }> {
   const { listing, signature } = parseListingBody(body);
   const nowS = nowSeconds(nowMs);
   for (const check of checks) check(listing, { db, circleId: circle.circle_id, nowS });
@@ -116,17 +119,18 @@ function checkListingRequest(
   if (row(db, "SELECT 1 AS x FROM listings WHERE circle_id = ? AND listing_hash = ?", circle.circle_id, hash)) {
     throw new ApiError(409, "already_exists", "A listing with this hash is already recorded", { listingHash: hash });
   }
+  for (const check of asyncChecks) await check(listing, hash, { db, circleId: circle.circle_id, nowS });
   return { listing, signature, hash, nowS };
 }
 
-export function listingRoutes(checks: readonly ListingCheck[] = []): Route[] {
+export function listingRoutes(checks: readonly ListingCheck[] = [], asyncChecks: readonly ListingAsyncCheck[] = []): Route[] {
   return [
     {
       method: "POST",
       pattern: "/x207/circles/{circle}/listings",
       circleScoped: true,
-      handler: ({ db, circle, body, now }) => {
-        const { listing, signature, hash, nowS } = checkListingRequest({ db, circle, body, nowMs: now() }, checks);
+      handler: async ({ db, circle, body, now }) => {
+        const { listing, signature, hash, nowS } = await checkListingRequest({ db, circle, body, nowMs: now() }, checks, asyncChecks);
         const inserted = db
           .prepare(
             `INSERT OR IGNORE INTO listings (circle_id, listing_hash, account_id, offer_asset_type, offer_class, offer_quantity, offer_value,
@@ -148,8 +152,8 @@ export function listingRoutes(checks: readonly ListingCheck[] = []): Route[] {
       method: "POST",
       pattern: "/x207/circles/{circle}/listings/check",
       circleScoped: true,
-      handler: ({ db, circle, body, now }) => {
-        const { listing, hash } = checkListingRequest({ db, circle, body, nowMs: now() }, checks);
+      handler: async ({ db, circle, body, now }) => {
+        const { listing, hash } = await checkListingRequest({ db, circle, body, nowMs: now() }, checks, asyncChecks);
         return { status: 200, body: { valid: true, listingHash: hash, account: listing.account, offerAssetType: listing.offer.asset_type, expiresAt: listing.expires_at, stored: false } };
       },
     },
