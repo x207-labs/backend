@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { CATALOG } from "../../../scripts/lib/asset-catalog.mjs";
+import { CATALOG } from "../helpers/asset-catalog.js";
 import { endpointProblem, RESOURCE_ASSET_TYPES, RESOURCE_UNITS } from "../../src/marketplace/resource-listing.js";
 import { NOW_S, signedListing, startMarket, type Market } from "./helpers.js";
 

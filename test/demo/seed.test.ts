@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { demoKeys, seedDemo, type DemoClient, type DemoOptions } from "../../src/demo/seed.js";
 import { MockCodeIssuer } from "../../src/marketplace/code-issuers.js";
-import { CATALOG } from "../../../scripts/lib/asset-catalog.mjs";
+import { CATALOG } from "../helpers/asset-catalog.js";
 import { acct, CIRCLE, CONTRACT, NOW_S, openEpoch, startMarket, type Market } from "../marketplace/helpers.js";
 
 // BE-080: the demo seed fills a market with one example of every pipeline, and a second run adds nothing.

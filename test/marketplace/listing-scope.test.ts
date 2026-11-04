@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { buildAssetTemplate, type AssetInput } from "@x207/core";
-import { CATALOG } from "../../../scripts/lib/asset-catalog.mjs";
+import { CATALOG } from "../helpers/asset-catalog.js";
 import { ESCROW_ASSET_TYPES } from "../../src/marketplace/listing-scope.js";
 import { CIRCLE, NOW_S, signedListing, startMarket, type Market } from "./helpers.js";
 
@@ -15,7 +15,7 @@ describe("BE-049 validation of a listing per kind of asset (catalogue #1 to #10)
     market?.db.close();
   });
 
-  async function start(options: Parameters<typeof startMarket>[4] = { rwaWhitelist: ["rwa.token.near"] }) {
+  async function start(options: Parameters<typeof startMarket>[3] = { rwaWhitelist: ["rwa.token.near"] }) {
     market = await startMarket(["andi", "budi"], [], undefined, options);
     for (const e of CATALOG.filter((c: { cls: string }) => c.cls === "A")) {
       market.db.prepare("INSERT INTO asset_classes (circle_id, asset_type, class, block_height, receipt_id, log_index) VALUES (?, ?, 'A', 1, 'r', 0)").run(CIRCLE, e.assetType);
@@ -54,7 +54,7 @@ describe("BE-049 validation of a listing per kind of asset (catalogue #1 to #10)
   const message = (r: { status: number; json: any }) => [r.status, r.json.error?.code, r.json.error?.message as string];
 
   it("TC-BE-049-00 the table of asset types is the registry D10: same names, same delivery methods", () => {
-    const escrow = CATALOG.filter((c: { delivery: string[] }) => c.delivery.some((d) => d.startsWith("escrow_") && ["escrow_nft", "escrow_ft", "escrow_mt"].includes(d)) && c.cls === "A");
+    const escrow = CATALOG.filter((c: { delivery: string[]; cls: string }) => c.delivery.some((d) => d.startsWith("escrow_") && ["escrow_nft", "escrow_ft", "escrow_mt"].includes(d)) && c.cls === "A");
     expect(escrow.map((c: { assetType: string }) => c.assetType).sort()).toEqual(Object.keys(ESCROW_ASSET_TYPES).sort());
     for (const c of escrow as Array<{ assetType: string; delivery: string[] }>) expect(ESCROW_ASSET_TYPES[c.assetType]!.delivery, c.assetType).toEqual(c.delivery);
   });
