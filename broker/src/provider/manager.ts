@@ -346,7 +346,7 @@ export class ProviderAccessManager {
       const wait = Math.min(RETRY_BASE_MS * 2 ** (attempts - 1), RETRY_MAX_MS);
       const pending: ProviderAccess = { ...a, status: "revoke_pending", attempts, nextRetryMs: now + wait, lastError: redactString((error as Error).message), reason: a.reason ?? reason };
       this.#save(pending);
-      this.#log?.(`provider access revoke_pending grant=${a.grantId} attempt=${attempts} retry in ${wait} ms: ${(error as Error).message}`);
+      this.#log?.(`provider access revoke_pending grant=${a.grantId} attempt=${attempts} retry in ${wait} ms: ${redactString((error as Error).message)}`);
       return pending;
     }
   }

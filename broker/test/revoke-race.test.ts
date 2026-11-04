@@ -86,3 +86,26 @@ describe("security review batch 8: a revoke and a renewal of one grant do not in
     store.close();
   });
 });
+
+describe("security review batch 8: what a failed revoke writes to the log", () => {
+  it("TC-BE-057-L1 the log line of a revoke that fails is redacted like the stored last_error (a provider error may carry a credential)", async () => {
+    class Failing extends SlowAdapter {
+      override async revoke(): Promise<void> {
+        throw new Error("provider said: invalid Bearer sk-or-v1-0123456789abcdefghijklmnop for ed25519:3QQQca1upKxNLNijkZD3dTsVsYP1QmDhofHk6tnfPZiy");
+      }
+    }
+    const lines: string[] = [];
+    const store = new BrokerStore(":memory:");
+    const m = new ProviderAccessManager({ store, now: () => NOW, log: (l) => lines.push(l) });
+    m.register(new Failing());
+    await m.grantAccess(input);
+    const pending = await m.revokeAccess(1, "stopped");
+    expect(pending.status).toBe("revoke_pending");
+    expect(pending.lastError).not.toContain("sk-or-v1-0123456789abcdefghijklmnop");
+    const text = lines.join("\n");
+    expect(text).toMatch(/revoke_pending/);
+    expect(text).not.toContain("sk-or-v1-0123456789abcdefghijklmnop");
+    expect(text).not.toContain("3QQQca1upKxNLNijkZD3dTsVsYP1QmDhofHk6tnfPZiy");
+    store.close();
+  });
+});
