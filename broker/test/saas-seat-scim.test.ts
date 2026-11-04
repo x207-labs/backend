@@ -9,7 +9,7 @@ const NS = (ms: number): string => (BigInt(ms) * 1_000_000n).toString();
 const input = (over: Record<string, unknown> = {}, id = 1) => ({ grant_id: id, limits: { scope: JSON.stringify({ provider: "saas-seat-scim", grantee_ref: "andi@example.org", resource: "grp-team", permission: null, ...over }), expires_at: NS(NOW + 10 * DAY) } });
 
 /** A mock SCIM 2.0 service: Users (with `active`) and Groups (with `members`); userName is unique (409). */
-function scim() {
+function scim(groupDelayMs = 0) {
   const users = new Map<string, { userName: string; active: boolean; externalId?: string }>();
   const groups = new Map<string, { displayName: string; members: Array<{ value: string }> }>([["grp-team", { displayName: "Team", members: [{ value: "existing-1" }] }], ["grp-admin", { displayName: "Admins", members: [] }]]);
   users.set("existing-1", { userName: "owner@example.org", active: true });
@@ -47,7 +47,11 @@ function scim() {
     if (gm) {
       const g = groups.get(gm[1] as string);
       if (!g) return json(404, {});
-      if (method === "GET") return json(200, { id: gm[1], displayName: g.displayName, members: g.members });
+      if (method === "GET") {
+        const snapshot = { id: gm[1], displayName: g.displayName, members: [...g.members] };
+        if (groupDelayMs > 0) await new Promise((r) => setTimeout(r, groupDelayMs)); // the answer is old by the time it is used
+        return json(200, snapshot);
+      }
       if (method === "PUT") {
         g.members = JSON.parse(init!.body!).members;
         return json(200, {});
@@ -169,5 +173,33 @@ describe("BE-087: saas-seat-scim adapter (ADR-47 group B, catalog #17), mock SCI
     const error = await b.grant({ grantId: 1, granteeRef: "x@y.z", resource: "g1", permission: null, expiresAtMs: NOW + DAY }).catch((e: Error) => e);
     expect((error as Error).message).toMatch(/HTTP 503/);
     expect((error as Error).message).not.toContain(TOKEN);
+  });
+
+  it("TC-BE-087-09 (security review batch 8) two seats made at the same time for one group are both in the group: the read and the write of the group are one step", async () => {
+    const p = scim(30);
+    const store = new BrokerStore(":memory:");
+    const m = new ProviderAccessManager({ store, now: () => NOW });
+    m.register(p.adapter());
+    await Promise.all([m.grantAccess(input({ grantee_ref: "a@example.org" }, 1)), m.grantAccess(input({ grantee_ref: "b@example.org" }, 2))]);
+    const members = p.groups.get("grp-team")!.members.map((x) => x.value).sort();
+    expect(members).toEqual(["existing-1", "usr0001", "usr0002"]);
+    store.close();
+  });
+
+  it("TC-BE-087-10 (security review batch 8) the rent of the next day puts a seat back into its group when it was taken out at the provider", async () => {
+    const p = scim();
+    const clock = { now: NOW };
+    const store = new BrokerStore(":memory:");
+    const m = new ProviderAccessManager({ store, now: () => clock.now });
+    m.register(p.adapter());
+    const first = await m.grantAccess(input());
+    p.groups.get("grp-team")!.members = [{ value: "existing-1" }]; // an administrator of the SaaS removed the seat from the group
+    expect(await p.adapter().status(first.access.handle)).toBe("absent");
+    clock.now += DAY - 1000;
+    const second = await m.grantAccess(input());
+    expect(second.access.handle).toBe(first.access.handle);
+    expect(p.groups.get("grp-team")!.members).toContainEqual({ value: "usr0001" });
+    expect(await p.adapter().status(second.access.handle)).toBe("active");
+    store.close();
   });
 });

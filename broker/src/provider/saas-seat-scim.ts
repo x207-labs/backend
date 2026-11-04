@@ -44,6 +44,8 @@ export class SaasSeatScimAdapter implements ProviderAccessAdapter {
   readonly #base: string;
   readonly #allowed: ReadonlySet<string>;
   readonly #fetch: FetchLike;
+  /** One writer per group at a time in this process: the read and the write of a group are one step (security review batch 8). */
+  readonly #groupLocks = new Map<string, Promise<void>>();
 
   constructor(options: SaasSeatScimOptions) {
     if (!/^https:\/\/[^\s/]+(\/\S*)?$/.test(options.baseUrl)) throw new Error("baseUrl must be an https URL");
@@ -83,6 +85,21 @@ export class SaasSeatScimAdapter implements ProviderAccessAdapter {
 
   /** Adds or removes one member of the group by reading the group and writing it back (RFC 7644 3.5.1). */
   async #member(group: string, user: string, present: boolean): Promise<void> {
+    // Two seats made at the same time for one group read the same list and the second PUT erased the first member; now the second reads after the first has written
+    const before = this.#groupLocks.get(group) ?? Promise.resolve();
+    let release!: () => void;
+    const mine = before.then(() => new Promise<void>((resolve) => (release = resolve)));
+    this.#groupLocks.set(group, mine);
+    await before;
+    try {
+      await this.#memberNow(group, user, present);
+    } finally {
+      release();
+      if (this.#groupLocks.get(group) === mine) this.#groupLocks.delete(group);
+    }
+  }
+
+  async #memberNow(group: string, user: string, present: boolean): Promise<void> {
     const g = await this.#get(`/Groups/${group}`);
     if (g === null) {
       if (present) throw new Error(`group ${group} does not exist at the provider`);
@@ -102,7 +119,10 @@ export class SaasSeatScimAdapter implements ProviderAccessAdapter {
     if (request.existingHandle) {
       const old = parseHandle(request.existingHandle);
       const user = await this.#get(`/Users/${old.user}`);
-      if (user !== null && user.active === true && old.group === group) return { handle: request.existingHandle, nativeExpiresAtMs: null, delivery };
+      if (user !== null && user.active === true && old.group === group) {
+        await this.#member(group, old.user, true); // a seat that was taken out of its group at the provider goes back in: the lessee paid for it
+        return { handle: request.existingHandle, nativeExpiresAtMs: null, delivery };
+      }
     }
     const made = await call(
       this.#fetch, "", this.#headers(),
