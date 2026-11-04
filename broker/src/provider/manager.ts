@@ -179,19 +179,28 @@ export class ProviderAccessManager {
   async grantAccess(grant: ProviderGrantInput, days = 1, proof: string | null = null): Promise<{ access: ProviderAccess; delivery: Record<string, unknown>; warnings: string[] }> {
     // B7-P2: one call per grant at a time. Two paid first requests at once both saw no access and both opened one at the provider (two OpenRouter keys, one remembered, the other alive after the rent);
     // now the second waits and finds the access of the first, so it is a renewal of the same handle
-    const before = this.#granting.get(grant.grant_id) ?? Promise.resolve();
+    return this.#exclusive(grant.grant_id, () => this.#grantAccessNow(grant, days, proof));
+  }
+
+  /**
+   * Runs `fn` when every earlier call of this grant has finished: `grantAccess`, `revokeAccess` and the revoke of the clock and of the cap take their turn in one queue per grant
+   * (security review batch 8). Before this a revoke could run in the middle of a paid renewal: the renewal had read the access as active, the revoke closed it at the provider and saved
+   * `revoked`, and then the renewal opened it again and saved `active`, so a defaulted lessee kept an open access. In the queue the revoke waits for the renewal and closes what it made.
+   */
+  async #exclusive<T>(grantId: number, fn: () => Promise<T>): Promise<T> {
+    const before = this.#granting.get(grantId) ?? Promise.resolve();
     let open!: () => void;
     const turn = new Promise<void>((resolve) => {
       open = resolve;
     });
     const mine = before.then(() => turn);
-    this.#granting.set(grant.grant_id, mine);
+    this.#granting.set(grantId, mine);
     await before;
     try {
-      return await this.#grantAccessNow(grant, days, proof);
+      return await fn();
     } finally {
       open();
-      if (this.#granting.get(grant.grant_id) === mine) this.#granting.delete(grant.grant_id);
+      if (this.#granting.get(grantId) === mine) this.#granting.delete(grantId);
     }
   }
 
@@ -316,10 +325,12 @@ export class ProviderAccessManager {
 
   /** Close the access of a grant now (the contract revoked it, the lessee defaulted, the cap was passed). A provider that fails leaves it `revoke_pending`. */
   async revokeAccess(grantId: number, reason: string): Promise<ProviderAccess> {
-    const a = this.access(grantId);
-    if (!a) throw new ProviderAccessError("access_not_found", `grant ${grantId} has no access`);
-    if (a.status === "revoked") return a;
-    return this.#tryRevoke(a, reason);
+    return this.#exclusive(grantId, async () => {
+      const a = this.access(grantId); // read when it is this call's turn, not before
+      if (!a) throw new ProviderAccessError("access_not_found", `grant ${grantId} has no access`);
+      if (a.status === "revoked") return a;
+      return this.#tryRevoke(a, reason);
+    });
   }
 
   async #tryRevoke(a: ProviderAccess, reason: string): Promise<ProviderAccess> {
@@ -344,9 +355,15 @@ export class ProviderAccessManager {
   async sweep(): Promise<ProviderAccess[]> {
     const now = this.#now();
     const touched: ProviderAccess[] = [];
-    for (const a of this.list()) {
-      if (a.status === "active" && now >= a.paidUntilMs) touched.push(await this.#tryRevoke(a, "paid_until"));
-      else if (a.status === "revoke_pending" && (a.nextRetryMs ?? 0) <= now) touched.push(await this.#tryRevoke(a, a.reason ?? "retry"));
+    for (const listed of this.list()) {
+      const done = await this.#exclusive(listed.grantId, async () => {
+        const a = this.access(listed.grantId); // the row as it is now: a renewal may have moved the end since the list was read
+        if (a === undefined) return undefined;
+        if (a.status === "active" && now >= a.paidUntilMs) return this.#tryRevoke(a, "paid_until");
+        if (a.status === "revoke_pending" && (a.nextRetryMs ?? 0) <= now) return this.#tryRevoke(a, a.reason ?? "retry");
+        return undefined;
+      });
+      if (done !== undefined) touched.push(done);
     }
     return touched;
   }
@@ -366,7 +383,10 @@ export class ProviderAccessManager {
     const amount = adapter.cost ? await adapter.cost(a.handle, day * DAY_MS, (day + 1) * DAY_MS) : 0n;
     const overCap = scope.daily_cap !== null && amount > BigInt(scope.daily_cap);
     this.#store.db.prepare("INSERT INTO provider_charges (grant_id, day, amount, over_cap) VALUES (?, ?, ?, ?)").run(grant.grant_id, day, amount.toString(), overCap ? 1 : 0);
-    if (overCap && a.status === "active") await this.#tryRevoke(a, "cap_exceeded");
+    if (overCap && a.status === "active") await this.#exclusive(grant.grant_id, async () => {
+      const fresh = this.access(grant.grant_id);
+      if (fresh?.status === "active") await this.#tryRevoke(fresh, "cap_exceeded");
+    });
     return { amount, overCap };
   }
 
