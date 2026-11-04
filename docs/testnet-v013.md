@@ -32,10 +32,24 @@ A prune of an epoch of this circle was **not** read: the early `prune_epoch` was
 ## Replay on 2026-11-04 (BE-081 evidence)
 `REBUILD=1` on the kept database (467 stored events from block 276141741, first transaction of the circle), then the follow to block 276159601: the events replayed from the start with the current handlers, no hand edit. The chain had moved on (other runs): 24 members, 4 epochs. Result: members 24 in the contract, 24 in the read model, all equal (`stake`, `limit`, status, voucher key); `members.stale` 0 and `fee_mismatches` 0; epoch 1 and 2 `finalized`, 210 obligations each equal; epoch 2 `clearing_edges.edges_hash` = `proposal_hash` `3dadebb9…21c9`, 210 edges, `edges_unavailable` 0. The only differences are epoch 3 and 4, which the chain advanced after the last block read (the report says so: "a transaction came after the block that was read to"). A from-zero network read of the same range was not repeated: neardata served about 50 blocks per minute that day, so it would have taken hours.
 
-## What this run does not show yet
-- A prune of an epoch of this circle (the delay of the contract has not passed); `edges_unavailable` after a real prune stays covered by the unit tests (TC-BE-078-F1) only.
-- An epoch with a non-zero position (every epoch so far is a balanced ring), so the positions are compared only as "none".
+## Run to block 276185503 (epoch 13 open): partial clearing, positions, a real prune
+The kept database followed the chain up to block 276185503 (the report of the last attempt: 595 transactions listed, 1,395 blocks read, 1,413 s; the first attempt stopped on a local `EADDRNOTAVAIL` of the network stack and the second continued from the kept cursor). 28 members, 13 epochs, 577 events of the circle by name (459 `voucher_registered`, 28 `member_joined`, 8 `clearing_applied`, 8 `epoch_finalized`, 2 `member_defaulted`, 7 `residual_paid`, 5 `residual_claimed`, and so on): none unknown, `members.stale` 0.
+
+| Check | Contract | Read model | Result |
+| --- | --- | --- | --- |
+| members | 28 | 28 | equal (`stake`, `limit`, status, voucher key); the report lists no member difference |
+| epoch 8, the realistic epoch (UM-106): obligations | 24 | 24 | equal, with `cleared` |
+| epoch 8: the clearing | `get_proposal` `edge_count` 18, `proposal_hash` | `clearing_edges` 18 edges, `edges_hash` | **the same hash**, `edges_unavailable` 0 |
+| epoch 8: positions with non-zero amounts (six debtors, eight creditors, one default) | `list_positions` 14 | 15 rows | not a difference: the 15th is `m14` with net 0, which the view leaves out (the read model keeps a row with role `none`); the 14 others equal in net, role, status and amount |
+| epoch 4: positions | 4 | 6 | the same case: two members with net 0 |
+| epoch 7: a real prune | `prune_epoch(7)` sent on 2026-11-04 (transaction `5bDVKRKGJvemHiVdiN1Kjjxuj4zdfZh9MhSvWD5EbEPW`, 3 items removed); `list_obligations` returns 0 pairs | 1 obligation kept from the events, `epochs.edges_unavailable = 1`, `clearing_edges.unavailable` | as designed (B8-F1): the indexer saw the epoch after the prune, could not read the cleared edges, marked the epoch and kept what the events had said |
+| the other epochs 9 to 12 | `clearing` / `open` | same | equal |
+
+The only differences the report lists are the three of epoch 13 (`cutoff` against `open`, edge count and total not written yet): the chain closed it after the last block that was read, as in the earlier runs. A pruned epoch whose pairs the hosted indexer had already read stays `edgesUnavailable: false` in the hosted read API (the flag is set when the summary of the clearing is read, not when the prune happens); only an indexer that reads the epoch after the prune, as this run did, marks it.
+
+## What this run does not show
 - The comparison is at one moment, and the free neardata is slow: a run of 500 blocks takes 8 to 10 minutes.
+- The cleared edges of epoch 8 were compared by hash and count against `get_proposal`; the individual edges of the proposal are not listed by any view after the commit, so they are not compared one by one.
 
 ## Run it again
 ```bash
