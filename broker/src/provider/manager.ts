@@ -125,6 +125,16 @@ export class ProviderAccessManager {
         grant_id INTEGER PRIMARY KEY,
         key      TEXT    NOT NULL
       );
+      CREATE TABLE IF NOT EXISTS provider_caps (
+        grant_id  INTEGER PRIMARY KEY,
+        daily_cap TEXT    NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS provider_cost_seen (
+        grant_id INTEGER NOT NULL,
+        day      INTEGER NOT NULL,
+        amount   TEXT    NOT NULL,
+        PRIMARY KEY (grant_id, day)
+      );
       CREATE TABLE IF NOT EXISTS provider_charges (
         grant_id INTEGER NOT NULL,
         day      INTEGER NOT NULL,
@@ -280,6 +290,9 @@ export class ProviderAccessManager {
       nativeExpiresMs: result.nativeExpiresAtMs, attempts: 0, nextRetryMs: null, lastError: null, reason: null, proof: proven,
     };
     this.#save(access);
+    // X-1: the cap of the grantor is kept with the access, so that the clock can enforce it without the grant at hand
+    if (scope.daily_cap !== null) this.#store.db.prepare("INSERT INTO provider_caps (grant_id, daily_cap) VALUES (?, ?) ON CONFLICT (grant_id) DO UPDATE SET daily_cap = excluded.daily_cap").run(grant.grant_id, scope.daily_cap);
+    else this.#store.db.prepare("DELETE FROM provider_caps WHERE grant_id = ?").run(grant.grant_id);
     // a secret that the provider shows once is pending until `confirmDelivery`: the answer that carries it has to go out
     if (adapter.oneTimeKey === true && result.delivery.key !== null && result.delivery.key !== undefined) this.#store.db.prepare("INSERT OR IGNORE INTO provider_delivery_pending (grant_id) VALUES (?)").run(grant.grant_id);
     if (key !== null) this.#store.db.prepare("INSERT INTO provider_shared_keys (grant_id, key) VALUES (?, ?) ON CONFLICT (grant_id) DO UPDATE SET key = excluded.key").run(grant.grant_id, key);
@@ -365,7 +378,43 @@ export class ProviderAccessManager {
       });
       if (done !== undefined) touched.push(done);
     }
+    touched.push(...(await this.#enforceCaps(now)));
     return touched;
+  }
+
+  /**
+   * X-1 (security review 8, cross review): `daily_cap` was enforced only by `settleDay`, which nothing called, so a lessee could run up the cost of a costly access (messaging, cloud role) with no
+   * limit. Every round of the clock now asks the provider for the real cost of today for each active access that has a cap; the most seen is kept for the bill (an adapter cannot always say what
+   * an earlier day cost), and an access past its cap is closed (`cap_exceeded`). A provider that does not answer is tried again at the next round.
+   */
+  async #enforceCaps(now: number): Promise<ProviderAccess[]> {
+    const closed: ProviderAccess[] = [];
+    const capped = this.#store.db.prepare("SELECT c.grant_id AS grant_id, c.daily_cap AS daily_cap FROM provider_caps c JOIN provider_access a ON a.grant_id = c.grant_id WHERE a.status = 'active' ORDER BY c.grant_id").all() as Array<{ grant_id: number; daily_cap: string }>;
+    const day = Math.floor(now / DAY_MS);
+    for (const { grant_id: grantId, daily_cap: cap } of capped) {
+      const a = this.access(grantId);
+      if (a === undefined || a.status !== "active") continue;
+      const adapter = this.#adapters.get(a.provider);
+      if (adapter?.cost === undefined) continue;
+      let cost: bigint;
+      try {
+        cost = await adapter.cost(a.handle, day * DAY_MS, now);
+      } catch (error) {
+        this.#log?.(`provider cost read failed grant=${grantId}: ${redactString((error as Error).message)}`);
+        continue;
+      }
+      const seen = this.#store.db.prepare("SELECT amount FROM provider_cost_seen WHERE grant_id = ? AND day = ?").get(grantId, day) as { amount: string } | undefined;
+      if (seen === undefined || BigInt(seen.amount) < cost) this.#store.db.prepare("INSERT INTO provider_cost_seen (grant_id, day, amount) VALUES (?, ?, ?) ON CONFLICT (grant_id, day) DO UPDATE SET amount = excluded.amount").run(grantId, day, cost.toString());
+      if (cost <= BigInt(cap)) continue;
+      const done = await this.#exclusive(grantId, async () => {
+        const fresh = this.access(grantId);
+        if (fresh?.status !== "active") return undefined;
+        this.#store.db.prepare("INSERT OR IGNORE INTO provider_charges (grant_id, day, amount, over_cap) VALUES (?, ?, ?, 1)").run(grantId, day, cost.toString());
+        return this.#tryRevoke(fresh, "cap_exceeded");
+      });
+      if (done !== undefined) closed.push(done);
+    }
+    return closed;
   }
 
   /**
@@ -380,7 +429,10 @@ export class ProviderAccessManager {
     const day = Math.floor(dayStartMs / DAY_MS);
     const known = this.#store.db.prepare("SELECT amount, over_cap FROM provider_charges WHERE grant_id = ? AND day = ?").get(grant.grant_id, day) as { amount: string; over_cap: number } | undefined;
     if (known) return { amount: BigInt(known.amount), overCap: known.over_cap === 1 };
-    const amount = adapter.cost ? await adapter.cost(a.handle, day * DAY_MS, (day + 1) * DAY_MS) : 0n;
+    let amount = adapter.cost ? await adapter.cost(a.handle, day * DAY_MS, (day + 1) * DAY_MS) : 0n;
+    // X-1: an adapter may not know a day that is over (it answers 0); the most that the clock saw while the day ran is the floor of the bill
+    const seen = this.#store.db.prepare("SELECT amount FROM provider_cost_seen WHERE grant_id = ? AND day = ?").get(grant.grant_id, day) as { amount: string } | undefined;
+    if (seen !== undefined && BigInt(seen.amount) > amount) amount = BigInt(seen.amount);
     const overCap = scope.daily_cap !== null && amount > BigInt(scope.daily_cap);
     this.#store.db.prepare("INSERT INTO provider_charges (grant_id, day, amount, over_cap) VALUES (?, ?, ?, ?)").run(grant.grant_id, day, amount.toString(), overCap ? 1 : 0);
     if (overCap && a.status === "active") await this.#exclusive(grant.grant_id, async () => {

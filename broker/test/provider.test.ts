@@ -116,6 +116,30 @@ describe("BE-057 P2 provider access: one interface, mock provider, revoke_pendin
     await expect(manager.settleDay(input({}, 77), NOW)).rejects.toMatchObject({ code: "access_not_found" });
   });
 
+  it("TC-BE-057-X1 the clock enforces daily_cap: an access whose real cost today passes the cap is closed by sweep, without anybody calling settleDay; the cost seen is the floor of the bill", async () => {
+    const price = new Map<string, bigint>([["mock-1", 1_000_000n], ["mock-2", 1_000_000n], ["mock-3", 1_000_000n]]);
+    const adapter = new MockProviderAdapter({ now: () => clock.now, costPerDay: (h) => price.get(h) ?? 0n });
+    const { manager } = setup({ adapter });
+    const midday = Math.floor(NOW / DAY) * DAY + DAY / 2; // the mock bills in proportion to the time since the start of the day
+    clock.now = midday;
+    const g3 = input({ daily_cap: "2000000" }, 3);
+    await manager.grantAccess(input({ daily_cap: "2000000" }, 1));
+    await manager.grantAccess(input({}, 2)); // no cap: never closed by cost
+    await manager.grantAccess(g3);
+    expect(await manager.sweep()).toEqual([]); // 0.5 credit so far, under the cap
+    price.set("mock-1", 6_000_000n); // 3 credit so far, over the cap of 2
+    price.set("mock-2", 18_000_000n);
+    price.set("mock-3", 3_000_000n); // 1.5 so far: under the cap
+    const closed = await manager.sweep();
+    expect(closed.map((a) => [a.grantId, a.status, a.reason])).toEqual([[1, "revoked", "cap_exceeded"]]);
+    expect(manager.access(2)?.status).toBe("active");
+    expect(manager.access(3)?.status).toBe("active");
+    expect(manager.charges(1)).toEqual([{ day: Math.floor(midday / DAY), amount: 3_000_000n, overCap: true }]);
+    // a provider that cannot say what a finished day cost (it answers 0): the bill keeps what the clock saw
+    price.set("mock-3", 0n);
+    expect(await manager.settleDay(g3, midday)).toEqual({ amount: 1_500_000n, overCap: false });
+  });
+
   it("TC-BE-078-P2 two paid first requests at once open ONE access at the provider: the second waits and renews the handle of the first (B7-P2)", async () => {
     const adapter = new MockProviderAdapter({ now: () => clock.now });
     const calls: Array<string | null> = [];
