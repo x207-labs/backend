@@ -11,3 +11,4 @@ export * from "./routes.js";
 export * from "./dao-vote.js";
 export * from "./openrouter-subkey.js";
 export * from "./oauth-scoped.js";
+export * from "./cloud-folder-share.js";
