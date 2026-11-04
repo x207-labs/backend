@@ -119,3 +119,31 @@ describe("BE-070 the proxy of secrets (ADR-48)", () => {
     expect((await t.handler(new Request("http://broker.test/grants/1/usage", { method: "POST" }))).status).toBe(404);
   });
 });
+
+describe("BE-070 fixes of batch 7 (P8, P9, P10)", () => {
+  it("TC-BE-078-P8 the redaction works on bytes and covers the common encodings of the secret; the content-type is redacted", () => {
+    const SECRET = "sk-test-0123456789abcdef";
+    const provider = { assetType: "x:y", baseUrl: "https://p.test", secretEnv: "K" };
+    const registry = new ProviderRegistry([provider], { K: SECRET });
+    const text = (body: string): string => Buffer.from(registry.redact(provider, Buffer.from(body, "utf8").buffer.slice(0) as ArrayBuffer)).toString("utf8");
+    for (const echoed of [SECRET, encodeURIComponent(`${SECRET}/a b`), Buffer.from(SECRET).toString("base64"), Buffer.from(SECRET).toString("hex"), SECRET.toUpperCase(), JSON.stringify(`${SECRET}"`).slice(1, -1)]) {
+      expect(text(`{"echo":"${echoed}"}`), echoed).not.toContain(echoed.slice(0, 12));
+    }
+    // a binary body that also holds the key keeps its other bytes
+    const binary = Buffer.concat([Buffer.from([0xff, 0xfe, 0x00, 0x80]), Buffer.from(SECRET), Buffer.from([0x81, 0x00])]);
+    const out = Buffer.from(registry.redact(provider, binary.buffer.slice(binary.byteOffset, binary.byteOffset + binary.byteLength) as ArrayBuffer));
+    expect([...out.subarray(0, 4)]).toEqual([0xff, 0xfe, 0x00, 0x80]);
+    expect(out.subarray(4).toString("latin1")).toBe("[redacted]\x81\x00");
+    expect(registry.redactText(provider, `text/plain; x=${SECRET}`)).toBe("text/plain; x=[redacted]");
+  });
+
+  it("TC-BE-078-P9 a hosted broker needs more than the mock label: a loopback or test host, and a secret that starts with mock-", () => {
+    const entry = (baseUrl: string) => ({ assetType: "a:b", baseUrl, secretEnv: "K", mock: true });
+    expect(hostedForbidden("hosted", [entry("https://api.openai.com")], { K: "mock-1" })).toEqual(["a:b"]); // a real URL under the demo label
+    expect(hostedForbidden("hosted", [entry("https://provider.test")], { K: "sk-real-key" })).toEqual(["a:b"]); // a real-looking key
+    expect(hostedForbidden("hosted", [entry("https://provider.test")], { K: "mock-key" })).toEqual([]);
+    expect(hostedForbidden("hosted", [entry("http://127.0.0.1:9000")], { K: "mock-key" })).toEqual([]);
+    expect(hostedForbidden("hosted", [{ assetType: "a:b", baseUrl: "https://provider.test", secretEnv: "K" }], { K: "mock-key" })).toEqual(["a:b"]); // no label
+    expect(hostedForbidden("self-hosted", [entry("https://api.openai.com")])).toEqual([]);
+  });
+});

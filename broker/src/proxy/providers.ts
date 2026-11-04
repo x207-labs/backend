@@ -101,10 +101,36 @@ export class ProviderRegistry {
   redact(provider: ProviderConfig, body: ArrayBuffer): ArrayBuffer {
     const secret = this.#env[provider.secretEnv];
     if (secret === undefined || secret === "") return body;
-    const bytes = Buffer.from(body);
-    if (!bytes.includes(secret)) return body;
-    const clean = Buffer.from(bytes.toString("utf8").split(secret).join("[redacted]"), "utf8");
-    return clean.buffer.slice(clean.byteOffset, clean.byteOffset + clean.byteLength) as ArrayBuffer;
+    // B7-P8: the replacement works on the bytes (a binary body is not rewritten through UTF-8) and covers the common encodings of the secret, not only the plain string. It is a net
+    // for a provider that echoes the request headers, not a guarantee against a provider that transforms the key in its own way.
+    let bytes = Buffer.from(body);
+    let changed = false;
+    for (const form of secretForms(secret)) {
+      const needle = Buffer.from(form, "utf8");
+      let at = bytes.indexOf(needle);
+      if (at < 0) continue;
+      changed = true;
+      const parts: Buffer[] = [];
+      let from = 0;
+      while (at >= 0) {
+        parts.push(bytes.subarray(from, at), Buffer.from("[redacted]"));
+        from = at + needle.length;
+        at = bytes.indexOf(needle, from);
+      }
+      parts.push(bytes.subarray(from));
+      bytes = Buffer.concat(parts);
+    }
+    if (!changed) return body;
+    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  }
+
+  /** B7-P8: a header value of the answer (`content-type`) with the secret taken out. */
+  redactText(provider: ProviderConfig, text: string): string {
+    const secret = this.#env[provider.secretEnv];
+    if (secret === undefined || secret === "") return text;
+    let out = text;
+    for (const form of secretForms(secret)) out = out.split(form).join("[redacted]");
+    return out;
   }
 
   /**
@@ -126,9 +152,38 @@ export class ProviderRegistry {
   }
 }
 
-/** The asset types of the providers that a `hosted` broker may not serve (BE-070, ADR-48): every provider that is not marked `mock`. Empty for `self-hosted`. */
-export function hostedForbidden(mode: "self-hosted" | "hosted", providers: readonly ProviderConfig[]): string[] {
-  return mode === "hosted" ? providers.filter((p) => p.mock !== true).map((p) => p.assetType) : [];
+/** The plain secret and its common encodings: percent, base64, hex, JSON-escaped, lower and upper case. Longest first, so a form that contains another is replaced whole. */
+function secretForms(secret: string): string[] {
+  const forms = new Set<string>([
+    secret, encodeURIComponent(secret), Buffer.from(secret, "utf8").toString("base64"), Buffer.from(secret, "utf8").toString("base64url"), Buffer.from(secret, "utf8").toString("hex"),
+    JSON.stringify(secret).slice(1, -1), secret.toLowerCase(), secret.toUpperCase(),
+  ]);
+  return [...forms].filter((f) => f.length >= 4).sort((a, b) => b.length - a.length);
+}
+
+/** B7-P9: the host of a provider that may carry the `mock` label in a hosted broker: loopback or a name ending in `.test`, `.localhost` or `.example`. */
+const MOCK_HOST = /^(localhost|127\.\d+\.\d+\.\d+|\[::1\]|.+\.(test|localhost|example))$/;
+
+/**
+ * The asset types of the providers that a `hosted` broker may not serve (BE-070, ADR-48): every provider that is not marked `mock`. A `mock` label is a claim of the operator (B7-P9), so
+ * it also needs a base URL that is loopback or a test name, and, when `env` is given, a secret that starts with `mock-`. Empty for `self-hosted`.
+ */
+export function hostedForbidden(mode: "self-hosted" | "hosted", providers: readonly ProviderConfig[], env?: Record<string, string | undefined>): string[] {
+  if (mode !== "hosted") return [];
+  return providers
+    .filter((p) => {
+      if (p.mock !== true) return true;
+      let host = "";
+      try {
+        host = new URL(p.baseUrl).hostname;
+      } catch {
+        return true;
+      }
+      if (!MOCK_HOST.test(host)) return true;
+      const secret = env?.[p.secretEnv];
+      return env !== undefined && secret !== undefined && secret !== "" && !secret.startsWith("mock-");
+    })
+    .map((p) => p.assetType);
 }
 
 /** Reads `BROKER_PROVIDERS`, a JSON list of `{asset_type, base_url, secret_env, header?, prefix?}`. */

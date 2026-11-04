@@ -148,3 +148,31 @@ describe("BE-057 P2 provider access: one interface, mock provider, revoke_pendin
     expect(Object.keys(ERROR_STATUS)).not.toContain("grant_failed");
   });
 });
+
+describe("BE-070 fix B7-P10 the text of a provider error is redacted before it is kept or shown", () => {
+  it("TC-BE-078-P10 lastError and provider_grant_failed hold [redacted], not the Bearer key", async () => {
+    const store = new BrokerStore(":memory:");
+    const clock = { now: NOW };
+    const adapter = new MockProviderAdapter({ now: () => clock.now });
+    const manager = new ProviderAccessManager({ store, now: () => clock.now });
+    manager.register(adapter);
+    const key = "sk-or-v1-0123456789abcdef0123456789abcdef";
+    const failing = adapter.revoke.bind(adapter);
+    adapter.revoke = async () => {
+      throw new Error(`500 {"error":"bad Bearer ${key}"}`);
+    };
+    await manager.grantAccess(input());
+    const revoked = await manager.revokeAccess(1, "stopped");
+    expect(revoked.status).toBe("revoke_pending");
+    expect(revoked.lastError).not.toContain(key);
+    expect(revoked.lastError).toContain("[redacted]");
+    adapter.revoke = failing;
+    adapter.grant = async () => {
+      throw new Error(`401 Bearer ${key}`);
+    };
+    const refused = await manager.grantAccess(input({}, 2)).catch((e: Error) => e);
+    expect(refused).toMatchObject({ code: "provider_grant_failed" });
+    expect((refused as Error).message).not.toContain(key);
+    store.close();
+  });
+});

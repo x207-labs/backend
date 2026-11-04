@@ -4,6 +4,7 @@
 //   - `settleDay` asks the provider for the REAL cost of a day of a costly access, writes it down for the bill, and closes the access when a day went over the cap of the grantor.
 // Mode: `self-hosted` (the default) is the broker that the grantor runs; the administrator credential of a provider lives on that machine only. `hosted` is the broker that x207 runs
 // for a demo: it refuses every adapter that talks to a real service, because it would need the credential of somebody else.
+import { redactString } from "../log.js";
 import { randomBytes } from "node:crypto";
 import { GranteeProofError, granteeChallenge } from "@x207/core";
 import type { BrokerStore } from "../store.js";
@@ -258,7 +259,7 @@ export class ProviderAccessManager {
     } catch (error) {
       // a refusal that the adapter names itself (a vote kind that is not for rent) keeps its code
       if (error instanceof ProviderAccessError) throw error;
-      throw new ProviderAccessError("provider_grant_failed", (error as Error).message);
+      throw new ProviderAccessError("provider_grant_failed", redactString((error as Error).message));
     }
     if (adapter.nativeExpiry && (result.nativeExpiresAtMs === null || result.nativeExpiresAtMs > paidUntil)) {
       // do not leave an access that outlives the rent
@@ -332,7 +333,7 @@ export class ProviderAccessManager {
     } catch (error) {
       const attempts = a.attempts + 1;
       const wait = Math.min(RETRY_BASE_MS * 2 ** (attempts - 1), RETRY_MAX_MS);
-      const pending: ProviderAccess = { ...a, status: "revoke_pending", attempts, nextRetryMs: now + wait, lastError: (error as Error).message, reason: a.reason ?? reason };
+      const pending: ProviderAccess = { ...a, status: "revoke_pending", attempts, nextRetryMs: now + wait, lastError: redactString((error as Error).message), reason: a.reason ?? reason };
       this.#save(pending);
       this.#log?.(`provider access revoke_pending grant=${a.grantId} attempt=${attempts} retry in ${wait} ms: ${(error as Error).message}`);
       return pending;

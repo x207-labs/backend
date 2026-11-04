@@ -41,7 +41,7 @@ const PROXY_PATH = /^\/grants\/(0|[1-9]\d*)\/proxy(\/.*)?$/;
 const json = (status: number, body: unknown): Response => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 /** Hop-by-hop and payment headers do not go to the provider; the secret header is set by the broker only. */
 const STRIP = new Set([
-  "host", "connection", "content-length", "payment-signature", "authorization", "cookie", "transfer-encoding", "proxy-authorization", "forwarded", "via", "x-real-ip",
+  "host", "connection", "content-length", "accept-encoding", "payment-signature", "authorization", "cookie", "transfer-encoding", "proxy-authorization", "forwarded", "via", "x-real-ip",
   // headers that make a provider change the method or the route of the call after the scope was checked (security review 2)
   "x-http-method-override", "x-method-override", "x-http-method", "x-original-url", "x-rewrite-url",
 ]);
@@ -210,13 +210,13 @@ export function createProxyHandler(options: ProxyOptions): (request: Request, ta
       }
       if (upstream.status >= 400) {
         release();
-        return new Response(text, { status: upstream.status, headers: { "content-type": upstream.headers.get("content-type") ?? "application/octet-stream" } });
+        return new Response(text, { status: upstream.status, headers: { "content-type": options.providers.redactText(provider, upstream.headers.get("content-type") ?? "application/octet-stream") } });
       }
       // B7-P3: 204, 205 and the answer to a HEAD have no body, and the Response constructor throws on a body for them
       const bodyless = upstream.status === 204 || upstream.status === 205 || request.method === "HEAD";
       let out: Response;
       try {
-        out = new Response(bodyless ? null : text, { status: upstream.status, headers: { "content-type": upstream.headers.get("content-type") ?? "application/octet-stream" } });
+        out = new Response(bodyless ? null : text, { status: upstream.status, headers: { "content-type": options.providers.redactText(provider, upstream.headers.get("content-type") ?? "application/octet-stream") } });
       } catch (error) {
         release();
         return json(502, { error: "provider_response_invalid", message: (error as Error).message });

@@ -64,7 +64,7 @@ export async function startBroker(options: StartOptions): Promise<RunningBroker>
   const classCProviders = config.providers ?? [];
   const audit = options.audit ?? (config.auditPath ? new FileAudit(config.auditPath) : undefined);
   // BE-070 (ADR-48): the hosted broker is for the demo; a real secret is not put in it, so it does not even start with one
-  const real = hostedForbidden(config.mode ?? "self-hosted", classCProviders);
+  const real = hostedForbidden(config.mode ?? "self-hosted", classCProviders, options.env ?? process.env);
   if (real.length > 0) throw new ConfigError(`BROKER_MODE hosted is only for mock providers (mock: true); real providers: ${real.join(", ")}`);
   const providers = new ProviderRegistry(classCProviders, options.env ?? process.env, audit);
   const classC = new ClassCAdapter({ baseUrl: "", store });
