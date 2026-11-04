@@ -6,6 +6,20 @@ The indexer, read API, HTTP `207` report and settlement worker of [x207](https:/
 
 The [contract](https://github.com/x207-labs/contracts) emits NEP-297 events; the backend turns them into a SQLite read model that everything else queries. The [dashboard](https://github.com/x207-labs/frontend) and the [solver](https://github.com/x207-labs/solver) read it, the [SDK](https://github.com/x207-labs/sdk) and its MCP server call it, and the HTTP `207 Multi-Status` report tells a payer which of its payments cleared. The indexer halts and writes nothing when its state does not match the chain; it never fixes data silently.
 
+```mermaid
+flowchart LR
+  CH[(NEAR: x207-circle events)] -- "NEP-297 logs, final blocks" --> IX((Indexer))
+  IX -- "one block = one transaction" --> DB[(SQLite read model)]
+  DB --> API((Read API))
+  DB --> R7((207 report))
+  API --> FE[Dashboard]
+  API --> MCP[MCP server]
+  API --> SV[Solver]
+  R7 --> AG[Agents]
+  WK((Settlement worker, dry by default)) -- "quote" --> OC[1Click]
+  DB --> WK
+```
+
 | Folder | Contents |
 | --- | --- |
 | `src/indexer/` | NEP-297 event indexer for the `x207-circle` contract |
