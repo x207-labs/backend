@@ -54,6 +54,16 @@ export interface ApiServerOptions {
   extraMetrics?: () => string[];
   /** NEAR view for `GET …/proposals` (BE-023); without it that path does not exist. */
   daoView?: ViewFunction;
+  /** BE-089: a public read API serves GET only. Every route that is not a GET is left out, so a POST is `404 not_found`; the preflight answers `GET, OPTIONS`. Env `X207_READ_ONLY=1`. */
+  readOnly?: boolean;
+  /** BE-089: browser origins that may read the API (exact match, e.g. `https://x207-dashboard.vercel.app`). Without it the answer carries `Access-Control-Allow-Origin: *`. Env `X207_CORS_ORIGINS`, comma separated. */
+  corsOrigins?: readonly string[];
+}
+
+/** The CORS header of an answer: `*` without a list; with a list the origin of the request when it is in it (and `Vary: Origin`), nothing for any other origin. */
+export function corsHeaders(allowed: readonly string[] | undefined, origin: string | undefined): Record<string, string> {
+  if (allowed === undefined) return { "Access-Control-Allow-Origin": "*" };
+  return origin !== undefined && allowed.includes(origin) ? { "Access-Control-Allow-Origin": origin, Vary: "Origin" } : { Vary: "Origin" };
 }
 
 /** JSON body of a `POST`: any object that fits in `maxBytes`; larger than that is 413 `payload_too_large`, not JSON 400 `invalid_request`. */
@@ -78,9 +88,11 @@ async function readJsonBody(req: IncomingMessage, maxBytes: number): Promise<unk
 const REQUIRED_TABLES = ["circles", "indexer_cursor", "members", "epochs"];
 
 /** `.env` variable: `API_RATE_LIMIT_PER_MINUTE` (integer ≥ 0). */
-export function apiOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): { rateLimitPerMinute: number; abuse: AbuseLimits } {
+export function apiOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): { rateLimitPerMinute: number; abuse: AbuseLimits; readOnly?: boolean; corsOrigins?: string[] } {
   const { limits } = abuseFromEnv(env);
-  return { rateLimitPerMinute: limits.ipPerMinute, abuse: limits };
+  const origins = (env.X207_CORS_ORIGINS ?? "").split(",").map((o) => o.trim()).filter((o) => o !== "");
+  for (const o of origins) if (!/^https?:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(o)) throw new Error(`X207_CORS_ORIGINS: "${o}" is not an origin (scheme://host[:port], no path, no wildcard)`);
+  return { rateLimitPerMinute: limits.ipPerMinute, abuse: limits, ...(env.X207_READ_ONLY === "1" ? { readOnly: true } : {}), ...(origins.length > 0 ? { corsOrigins: origins } : {}) };
 }
 
 function d9Ready(db: Database.Database): boolean {
@@ -90,11 +102,11 @@ function d9Ready(db: Database.Database): boolean {
   return REQUIRED_TABLES.every((t) => have.has(t));
 }
 
-function send(res: ServerResponse, result: RouteResult, extra: Record<string, string>): void {
+function send(res: ServerResponse, result: RouteResult, extra: Record<string, string>, cors: Record<string, string>): void {
   const payload = result.raw ? result.raw.text : JSON.stringify(result.body);
   res.writeHead(result.status, {
     "Content-Type": result.raw ? result.raw.contentType : "application/json; charset=utf-8",
-    "Access-Control-Allow-Origin": "*",
+    ...cors,
     ...extra,
     ...result.headers,
   });
@@ -119,7 +131,7 @@ export function createApiServer(options: ApiServerOptions): Server {
   const abuse: AbuseLimits = { ...DEFAULT_LIMITS, ipPerMinute: limit, writeIpPerMinute: 0, writeAccountPerMinute: 0, ...options.abuse };
   const telemetry = options.telemetry ?? new Telemetry(now());
   const logger = options.logger ?? silentLogger;
-  const routes = collectRoutes({ ...options, telemetry });
+  const routes = collectRoutes({ ...options, telemetry }).filter((r) => !options.readOnly || r.method === "GET");
   const ipHits = new WindowCounter();
   const writeIpHits = new WindowCounter();
   const accountHits = new WindowCounter();
@@ -189,10 +201,11 @@ export function createApiServer(options: ApiServerOptions): Server {
   }
 
   return createServer(async (req, res) => {
+    const cors = corsHeaders(options.corsOrigins, req.headers.origin);
     if (req.method === "OPTIONS") {
       res.writeHead(204, {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        ...cors,
+        "Access-Control-Allow-Methods": options.readOnly ? "GET, OPTIONS" : "GET, POST, OPTIONS",
         "Access-Control-Allow-Headers": "content-type",
       });
       res.end();
@@ -205,15 +218,15 @@ export function createApiServer(options: ApiServerOptions): Server {
     try {
       const { result, indexedBlock } = await handle(req, seen);
       status = result.status;
-      send(res, result, indexedBlock === undefined ? {} : { "X-X207-Indexed-Block": indexedBlock });
+      send(res, result, indexedBlock === undefined ? {} : { "X-X207-Indexed-Block": indexedBlock }, cors);
     } catch (err) {
       if (err instanceof ApiError) {
         status = err.status;
         if (err.code === "rate_limited") telemetry.rateLimited(String(err.details.scope ?? "ip"));
-        send(res, { status: err.status, body: err.toBody(), headers: err.headers }, {});
+        send(res, { status: err.status, body: err.toBody(), headers: err.headers }, {}, cors);
       } else {
         failure = err;
-        send(res, { status: 500, body: { error: { code: "internal_error", message: "Kesalahan internal", details: {} } } }, {});
+        send(res, { status: 500, body: { error: { code: "internal_error", message: "Internal error", details: {} } } }, {}, cors);
       }
     } finally {
       const seconds = Number(process.hrtime.bigint() - started) / 1e9;

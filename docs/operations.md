@@ -40,6 +40,8 @@ Both read the environment; neither reads a file of settings. Secrets only in the
 | `API_WRITE_RATE_PER_MINUTE_ACCOUNT` | backend | default `60` | no | accepted writes per minute per account |
 | `API_MAX_BODY_BYTES` | backend | default `65536` | no | largest body (413 above) |
 | `API_MAX_PAGE_LIMIT` | backend | default `200` | no | largest `limit` of a list |
+| `X207_READ_ONLY` | backend | default off (`1` to turn on) | no | public read API (BE-089): only GET routes are served (a POST is `404 not_found`), no settlement endpoints and no job monitor; the preflight answers `GET, OPTIONS` |
+| `X207_CORS_ORIGINS` | backend | default empty = `*` | no | exact browser origins allowed to read the API, comma separated (`scheme://host[:port]`, no path, no wildcard); another origin gets no `Access-Control-Allow-Origin` |
 | `API_TRUST_PROXY` | backend | default off (`1` to turn on) | no | take the last `X-Forwarded-For` hop as the caller |
 | `API_MAX_OPEN_ORDERS` | backend | default `50` | no | open orders per account |
 | `API_MAX_OPEN_INVOICES` | backend | default `50` | no | open invoices per issuer |
