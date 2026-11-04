@@ -43,9 +43,11 @@ When the proof is met the listing is closed (`matched`) and the voucher is shown
 ## Where the outside is asked
 Every request goes through the SSRF guard of BE-054/056 (`guardedGet`): https only, public addresses only, no redirect, a small body. DNS over HTTPS uses the JSON answer of `X207_DOH_URL` (default `https://dns.google/resolve`), RDAP uses `X207_RDAP_BASE_URL` (default the Verisign registry of `.com` and `.net`; another TLD needs its own base), Steam uses `X207_STEAM_API_KEY` (a secret: it is in the URL of the request to Steam only, never in an answer, a log or the proof that is stored).
 
+## Reputation (BE-078)
+The reputation of BE-053 counts the sales of a seller whatever they sold: a confirmed file license, a confirmed code and a confirmed transfer are **completed**; a purchase that ended `disputed` is a **dispute**; a transfer cancelled with `transfer_window_passed` is **abandoned** (a failure of the seller). The rule is the one of the other disputes: one count per counterparty, and a dispute or an abandoned transfer counts only from a buyer that has paid somebody itself (a fresh account cannot damage anybody). The list `GET /reputation` includes sellers of files, codes and transfers. A domain window that passes because the *buyer* never set the TXT is counted against the seller as well, because the backend cannot tell the two apart.
+
 ## Limits written down
 - A registrar can take a transfer back for about 60 days; the bond window is 14 days (ADR-49 point 2). The proof says the buyer controlled the domain when it was checked, not that the registrar will not reverse it.
 - Steam: the trade offer proves the item moved to the buyer's account, not that the item is the genuine one; `assetid` changes when an item changes hands, so an old accepted trade cannot carry the asset id of the listing. A trade is asked by id, so the seller must tell the id.
 - A ticket is the word of the buyer: a buyer who never confirms cancels the sale after one day (the seller is not paid), and a buyer who confirms and then says the ticket was bad has the reputation route, not a dispute here.
-- The reputation counts (`completed`, `complaints`) do not see transfers yet.
 - RDAP of a TLD other than `.com` and `.net` needs `X207_RDAP_BASE_URL`; the redirecting `rdap.org` is not used because a redirect is refused.

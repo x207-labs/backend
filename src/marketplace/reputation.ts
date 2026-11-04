@@ -180,13 +180,21 @@ export function reputationOf(db: Database.Database, circleId: string, account: s
   const inv = invoiceRecordOf(db, circleId, account);
   // BE-069: a one-time code that the buyer confirmed (or that was confirmed by silence) is a completed sale; a complaint of a buyer about a code (`other`, `contains_pii`, "used" without a proof of cheating)
   // is counted against the seller, one per purchase and once per buyer, and only from a buyer that has paid somebody itself
-  const codeSales = rows<{ buyer: string }>(db, "SELECT buyer FROM purchases WHERE circle_id = ? AND seller = ? AND kind = 'code' AND status = 'confirmed'", circleId, account).map((r) => r.buyer);
+  // BE-078: every confirmed sale counts as completed, whatever it sold: a file license (BE-056), a code (BE-069) or a transfer through a platform (BE-074). A purchase that ended `disputed` (a proof
+  // of cheating, or a code that was not delivered) is a dispute of that buyer, and a transfer that was cancelled because the window passed without the transfer is a failure of the seller
+  // (`abandoned`). The same rule as for the other disputes: one count per counterparty, and only from a buyer that has paid somebody itself.
+  const codeSales = [
+    ...rows<{ buyer: string }>(db, "SELECT buyer FROM purchases WHERE circle_id = ? AND seller = ? AND status = 'confirmed'", circleId, account),
+    ...rows<{ buyer: string }>(db, "SELECT buyer FROM transfers WHERE circle_id = ? AND seller = ? AND status = 'confirmed'", circleId, account),
+  ].map((r) => r.buyer);
+  const purchaseDisputes = rows<{ buyer: string }>(db, "SELECT buyer FROM purchases WHERE circle_id = ? AND seller = ? AND status = 'disputed'", circleId, account).map((r) => r.buyer).filter((b) => hasPaidSomebody(db, circleId, b));
+  const transferFailures = rows<{ buyer: string }>(db, "SELECT buyer FROM transfers WHERE circle_id = ? AND seller = ? AND status = 'cancelled' AND cancel_reason = 'transfer_window_passed'", circleId, account).map((r) => r.buyer).filter((b) => hasPaidSomebody(db, circleId, b));
   const complaints = rows<{ buyer: string }>(db, "SELECT buyer FROM purchase_complaints WHERE circle_id = ? AND seller = ?", circleId, account).filter((r) => hasPaidSomebody(db, circleId, r.buyer));
   const cw = distinct([...completed.map((p) => p.receiver), ...inv.registered, ...codeSales]);
   const kw = distinct(complaints.map((r) => r.buyer));
   const mw = distinct(inv.missed);
-  const dw = distinct(disputes.map((p) => p.receiver));
-  const aw = distinct(abandoned.map((p) => p.receiver));
+  const dw = distinct([...disputes.map((p) => p.receiver), ...purchaseDisputes]);
+  const aw = distinct([...abandoned.map((p) => p.receiver), ...transferFailures]);
   const checks = rows<{ passed: bigint; verifier: string }>(db, "SELECT passed, verifier FROM spot_checks WHERE circle_id = ? AND subject = ?", circleId, account);
   const passedChecks = checks.filter((c) => c.passed === 1n).length;
   const failedChecks = checks.length - passedChecks;
@@ -200,14 +208,14 @@ export function reputationOf(db: Database.Database, circleId: string, account: s
     score,
     completed: { transactions: completed.length + codeSales.length, counterparties: cw },
     complaints: { transactions: complaints.length, counterparties: kw },
-    disputes: { transactions: disputes.length, counterparties: dw },
-    abandoned: { transactions: abandoned.length, counterparties: aw },
+    disputes: { transactions: disputes.length + purchaseDisputes.length, counterparties: dw },
+    abandoned: { transactions: abandoned.length + transferFailures.length, counterparties: aw },
     invoices: { registered: inv.registered.length, missed: inv.missed.length, blockedByDebtor: inv.blockedByDebtor, missedIssuers: mw },
     completionRate: rate === null ? null : Math.round(rate * 1000) / 1000,
     responseSeconds: { median: response, samples: completed.filter((p) => p.responseSeconds !== null).length },
     spotChecks: { passed: passedChecks, failed: failedChecks, verifiers: distinct(checks.map((c) => c.verifier)) },
     basis: "paid deals only; one count per counterparty",
-    formula: `score = round(1000 * completed/(completed+disputes+abandoned+missedInvoices+codeComplaints) * completed/(completed+${CONFIDENCE_HALF}) * (checksPassed+1)/(checksPassed+3*checksFailed+1)), counts are distinct counterparties`,
+    formula: `score = round(1000 * completed/(completed+disputes+abandoned+missedInvoices+codeComplaints) * completed/(completed+${CONFIDENCE_HALF}) * (checksPassed+1)/(checksPassed+3*checksFailed+1)), counts are distinct counterparties Confirmed file, code and transfer sales are completed; a purchase that ended disputed is a dispute; a transfer whose window passed without the transfer is abandoned (BE-078).`,
   };
 }
 
@@ -232,8 +240,9 @@ export const reputationRoutes: Route[] = [
       const limit = parseLimit(query);
       const sellers = rows<{ a: string }>(
         db,
-        "SELECT DISTINCT seller AS a FROM matches WHERE circle_id = ? UNION SELECT DISTINCT counterparty FROM matches WHERE circle_id = ? AND mode = 'barter'",
-        circle.circle_id, circle.circle_id,
+        `SELECT DISTINCT seller AS a FROM matches WHERE circle_id = ? UNION SELECT DISTINCT counterparty FROM matches WHERE circle_id = ? AND mode = 'barter'
+         UNION SELECT DISTINCT seller FROM purchases WHERE circle_id = ? UNION SELECT DISTINCT seller FROM transfers WHERE circle_id = ?`,
+        circle.circle_id, circle.circle_id, circle.circle_id, circle.circle_id,
       ).map((r) => r.a);
       const items = sellers.map((a) => reputationOf(db, circle.circle_id, a)).sort((x, y) => y.score - x.score || x.account.localeCompare(y.account)).slice(0, limit);
       return { status: 200, body: { circle: circle.circle_id, items } };

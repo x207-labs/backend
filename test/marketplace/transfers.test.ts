@@ -249,6 +249,42 @@ describe("BE-074 the transfer ledger", () => {
     expect(m).toBeDefined();
   });
 
+  it("TC-BE-078-01 reputation counts the sales of files, codes and transfers: confirmed is completed, a disputed purchase is a dispute and a window that passed is abandoned, once per buyer and only from a buyer that has paid", async () => {
+    const m = await start();
+    const rep = async () => (await m.get(`/reputation/${acct("andi")}`)).json;
+    const base = await rep();
+    expect([base.completed.counterparties, base.disputes.counterparties, base.abandoned.counterparties]).toEqual([0, 0, 0]);
+    // a ticket confirmed by the buyer
+    const t1 = sell(m, { platform: "ticket", value: 5 });
+    await m.post("/listings", t1.body);
+    const id1 = (await buy(m, t1, "budi", {}, C(5))).json.transferId as number;
+    await notice(m, id1, "confirmed", "budi");
+    expect((await rep()).completed).toEqual({ transactions: 1, counterparties: 1 });
+    // citra buys a ticket and the window of one day passes: abandoned, but only once citra has paid somebody
+    const t2 = sell(m, { platform: "ticket", value: 5 });
+    await m.post("/listings", t2.body);
+    const id2 = (await buy(m, t2, "citra", {}, C(5))).json.transferId as number;
+    m.clock.now += (PLATFORM_WINDOW_SECONDS.ticket + 5) * 1000;
+    expect((await m.get(`/transfers/${id2}`)).json.cancelReason).toBe("transfer_window_passed");
+    expect((await rep()).abandoned).toEqual({ transactions: 0, counterparties: 0 }); // citra has paid nobody: a fresh account cannot damage anybody
+    m.db.prepare("INSERT INTO obligations (circle_id, epoch, debtor, creditor, seq, cumulative_amount, registration_mode, registered_block, receipt_id) VALUES ('agents-main', 42, ?, ?, 1, 5000000, 'cumulative', 1, 'r1')").run(acct("citra"), acct("budi"));
+    expect((await rep()).abandoned).toEqual({ transactions: 1, counterparties: 1 });
+    // purchases of files: confirmed is completed, disputed is a dispute (only from a buyer that has paid)
+    const insert = (buyer: string, status: string, n2: number): void => {
+      m.db.prepare(
+        `INSERT INTO purchases (circle_id, listing_hash, buyer, seller, content_hash, license_doc, license_id, exclusive, voucher_json, voucher_signature, status, created_at_ms, kind)
+         VALUES ('agents-main', ?, ?, ?, ?, ?, 'personal', 0, '{}', 'sig', ?, 1, 'license')`,
+      ).run(`${n2}`.repeat(64).slice(0, 64), acct(buyer), acct("andi"), `${n2}`.repeat(64).slice(0, 64), `${n2}`.repeat(64).slice(0, 64), status);
+    };
+    insert("citra", "confirmed", 1);
+    insert("budi", "disputed", 2);
+    const after = await rep();
+    expect(after.completed.counterparties).toBe(2); // budi (ticket) and citra (file)
+    expect(after.disputes).toEqual({ transactions: 0, counterparties: 0 }); // budi has paid nobody (his voucher is held): his dispute does not count
+    insert("citra", "disputed", 3);
+    expect((await rep()).disputes).toEqual({ transactions: 1, counterparties: 1 }); // citra paid budi: hers does
+  });
+
   it("TC-BE-074-08 the DNS and Steam requests go through the SSRF guard: a private address and a plain http endpoint are refused", async () => {
     const privateDns = new DnsTxtProof({ ...http, dohUrl: "https://10.0.0.5/resolve" });
     await expect(privateDns.txt(DOMAIN)).rejects.toMatchObject({ code: "target_forbidden" });
