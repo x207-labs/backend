@@ -10,6 +10,8 @@ export interface BrokerConfig {
   rpcUrl: string;
   brokerAccount: string;
   brokerKey: string;
+  /** B7-P1: the account whose secrets (class C providers) this broker holds; a grant of another grantor is not served with them. Env `BROKER_SECRET_OWNER`, default `BROKER_ACCOUNT_ID`. */
+  secretOwner: string;
   leaseAccount: string;
   leaseKey: string;
   port: number;
@@ -60,6 +62,7 @@ export function readConfig(env: Record<string, string | undefined>): BrokerConfi
     rpcUrl: need("NEAR_RPC_URL"),
     brokerAccount: need("BROKER_ACCOUNT_ID"),
     brokerKey: key("BROKER_PRIVATE_KEY"),
+    secretOwner: env.BROKER_SECRET_OWNER || need("BROKER_ACCOUNT_ID"),
     leaseAccount: need("BROKER_LEASE_ACCOUNT_ID"),
     leaseKey: key("BROKER_LEASE_PRIVATE_KEY"),
     port: int("BROKER_PORT", 8090),

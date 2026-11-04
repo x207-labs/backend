@@ -87,7 +87,7 @@ export async function startBroker(options: StartOptions): Promise<RunningBroker>
     store, now, ...(options.env?.METRICS_TOKEN ?? process.env.METRICS_TOKEN ? { metricsToken: (options.env?.METRICS_TOKEN ?? process.env.METRICS_TOKEN) as string } : {}),
     provider: { manager: provider, contractId: config.contractId, voucherKeyOf, now, limits: config.accessLimits },
     dispatcher, classB, facilitatorUrl: config.facilitatorUrl, circleId: config.circleId, brokerAccount: config.brokerAccount, extra,
-    ...(classCProviders.length > 0 ? { proxy: { classC, providers, chain, store, mode: config.mode ?? "self-hosted", ...(audit ? { audit } : {}) } } : {}),
+    ...(classCProviders.length > 0 ? { proxy: { classC, providers, chain, store, owner: config.secretOwner, mode: config.mode ?? "self-hosted", ...(audit ? { audit } : {}) } } : {}),
     ...(options.fetch ? { fetch: options.fetch } : {}),
   });
   const { server, url } = await serve(handler, config.port);

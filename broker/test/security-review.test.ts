@@ -45,7 +45,7 @@ function setup(options: { quota?: string | null; provider?: (call: ProviderCall)
   const handler = createBrokerHandler({
     dispatcher, classB, facilitatorUrl: "http://facilitator.test", circleId: "agents-main", brokerAccount: BROKER, fetch: fetchFn,
     extra: new X207ExtraSource({ facilitatorUrl: "http://facilitator.test", fetch: fetchFn }),
-    proxy: { classC, providers, chain, store },
+    proxy: { classC, providers, chain, store, owner: GRANTOR },
   });
   return { chain, store, handler, providerCalls, settles, classB };
 }

@@ -7,7 +7,7 @@ import { ClassCAdapter } from "../src/proxy/class-c.js";
 import { ProviderRegistry } from "../src/proxy/providers.js";
 import { createBrokerHandler } from "../src/server.js";
 import { BrokerStore } from "../src/store.js";
-import { BROKER, FakeChain, GRANTEE, grant } from "./helpers.js";
+import { BROKER, FakeChain, GRANTEE, GRANTOR, grant } from "./helpers.js";
 
 const KEY_A1 = "sk-A-one-0123456789SECRET";
 const KEY_A2 = "sk-A-two-9876543210SECRET";
@@ -56,7 +56,7 @@ function setup(env: Record<string, string>) {
   const dispatcher = new Dispatcher({ chain, adapters: { B: classB, C: classC } });
   const handler = createBrokerHandler({
     dispatcher, classB, facilitatorUrl: "http://facilitator.test", circleId: "agents-main", brokerAccount: BROKER, fetch: net.fetchFn,
-    extra: new X207ExtraSource({ facilitatorUrl: "http://facilitator.test", fetch: net.fetchFn }), proxy: { classC, providers, chain, store, audit },
+    extra: new X207ExtraSource({ facilitatorUrl: "http://facilitator.test", fetch: net.fetchFn }), proxy: { classC, providers, chain, store, audit, owner: GRANTOR },
   });
   return { chain, store, handler, net, providers, audit, keys };
 }

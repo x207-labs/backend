@@ -49,7 +49,7 @@ function setup(patch = {}) {
   const handler = createBrokerHandler({
     dispatcher, classB, facilitatorUrl: "http://facilitator.test", circleId: "agents-main", brokerAccount: BROKER, fetch: net.fetchFn,
     extra: new X207ExtraSource({ facilitatorUrl: "http://facilitator.test", fetch: net.fetchFn }),
-    proxy: { classC, providers, chain, store },
+    proxy: { classC, providers, chain, store, owner: GRANTOR },
   });
   return { chain, store, net, handler, classC };
 }
@@ -112,6 +112,16 @@ describe("BK-008 class C proxy", () => {
     expect(net.providerCalls).toEqual([]);
   });
 
+  it("TC-BE-078-P1 a grant of another member is not served with the secret of the owner of the broker; the owner's own grant is (B7-P1)", async () => {
+    const { handler, net } = setup({ grantor: "mallory.x207-circle.near" });
+    const r = await handler(new Request(url(), { method: "POST", body: "{}" }));
+    expect([r.status, ((await r.json()) as { error: string }).error]).toEqual([403, "grant_not_owned"]);
+    expect(net.providerCalls).toEqual([]);
+    expect(net.seen.filter((p) => p === "/verify" || p === "/settle")).toEqual([]);
+    const own = setup();
+    expect((await own.handler(new Request(url(), { method: "POST", body: "{}" }))).status).toBe(402); // the owner's grant goes on to the payment
+  });
+
   it("TC-BK-008-05 the quota of the epoch: two calls pass, the third is 429 grant_quota_exceeded without settle; the next epoch starts again", async () => {
     const { handler, net, chain } = setup();
     const { x207 } = await challenge(handler);
@@ -164,7 +174,7 @@ describe("BK-008 class C proxy", () => {
     const handler = createBrokerHandler({
       dispatcher: new Dispatcher({ chain: ctx.chain, adapters: { C: ctx.classC } }), classB: undefined as never, facilitatorUrl: "http://facilitator.test", circleId: "agents-main",
       brokerAccount: BROKER, fetch: ctx.net.fetchFn, extra: new X207ExtraSource({ facilitatorUrl: "http://facilitator.test", fetch: ctx.net.fetchFn }),
-      proxy: { classC: ctx.classC, providers, chain: ctx.chain, store: ctx.store },
+      proxy: { classC: ctx.classC, providers, chain: ctx.chain, store: ctx.store, owner: GRANTOR },
     });
     const { x207 } = await challenge(handler);
     const response = await handler(pay(x207));

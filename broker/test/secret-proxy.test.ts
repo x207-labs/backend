@@ -6,7 +6,7 @@ import { hostedForbidden, ProviderRegistry, providersFromEnv } from "../src/prox
 import { createBrokerHandler } from "../src/server.js";
 import { BrokerStore } from "../src/store.js";
 import { X207ExtraSource } from "@x207/scheme";
-import { BROKER, FakeChain, GRANTEE, grant } from "./helpers.js";
+import { BROKER, FakeChain, GRANTEE, GRANTOR, grant } from "./helpers.js";
 
 const SECRET = "sk-live-0123456789abcdefSECRET";
 const ASSET = "mock:echo";
@@ -42,7 +42,7 @@ function setup(o: { mode?: "self-hosted" | "hosted"; mock?: boolean; env?: Recor
   const handler = createBrokerHandler({
     dispatcher, classB, facilitatorUrl: "http://facilitator.test", circleId: "agents-main", brokerAccount: BROKER, fetch: fetchFn,
     extra: new X207ExtraSource({ facilitatorUrl: "http://facilitator.test", fetch: fetchFn }),
-    proxy: { classC, providers, chain, store, ...(o.mode ? { mode: o.mode } : {}) },
+    proxy: { classC, providers, chain, store, owner: GRANTOR, ...(o.mode ? { mode: o.mode } : {}) },
   });
   return { handler, net, store };
 }

@@ -24,6 +24,8 @@ export interface ProxyOptions {
   audit?: AuditLog;
   /** Timeout of the call to the provider. */
   timeoutMs?: number;
+  /** B7-P1: the account whose secrets the broker holds; a real (not `mock`) provider is served only for a grant of this grantor. Default `brokerAccount`. */
+  owner?: string;
   /** `hosted` serves only providers marked `mock` (BE-070, ADR-48); default `self-hosted`. */
   mode?: "self-hosted" | "hosted";
 }
@@ -89,6 +91,11 @@ export function createProxyHandler(options: ProxyOptions): (request: Request, ta
     if ((options.mode ?? "self-hosted") === "hosted" && provider.mock !== true) {
       options.audit?.record({ kind: "proxy_refused", grantId, assetType: grant.asset_type, method: request.method, path, status: 501, code: "secret_hosted_forbidden" });
       return json(501, { error: "secret_hosted_forbidden", message: "a hosted broker serves mock providers only; a real key stays on the broker that its owner runs" });
+    }
+    // B7-P1: the secret belongs to the owner of this broker. A grant of another member names another grantor, and the broker would serve it with the key of the owner and pay the other member
+    if (provider.mock !== true && grant.grantor !== (options.owner ?? options.brokerAccount)) {
+      options.audit?.record({ kind: "proxy_refused", grantId, assetType: grant.asset_type, method: request.method, path, status: 403, code: "grant_not_owned" });
+      return json(403, { error: "grant_not_owned", message: `the secret for ${grant.asset_type} belongs to ${options.owner ?? options.brokerAccount}, and this grant is from ${grant.grantor}` });
     }
     let scope;
     try {
