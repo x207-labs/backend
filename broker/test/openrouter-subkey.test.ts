@@ -64,6 +64,7 @@ describe("BE-070 fix: openrouter-subkey adapter (ADR-48 point 4, #61), mock HTTP
     const m = new ProviderAccessManager({ store, now: () => clock.now });
     m.register(p.adapter());
     const first = await m.grantAccess(input());
+    m.confirmDelivery(first.access.grantId); // the paid answer with the key went out (B7-P7)
     clock.now += DAY - 1000;
     const second = await m.grantAccess(input());
     expect(p.calls.filter((c) => c.method === "POST")).toHaveLength(1);
@@ -75,6 +76,27 @@ describe("BE-070 fix: openrouter-subkey adapter (ADR-48 point 4, #61), mock HTTP
     expect(p.calls.filter((c) => c.method === "POST")).toHaveLength(2);
     expect(third.access.handle).not.toBe(first.access.handle);
     expect(typeof third.delivery.key).toBe("string");
+    store.close();
+  });
+
+  it("TC-BE-078-P7 a key whose paid answer never went out is deleted and made again by the next paid request; once delivered, the next day is a renewal (B7-P7)", async () => {
+    const p = provider();
+    const store = new BrokerStore(":memory:");
+    const clock = { now: NOW };
+    const m = new ProviderAccessManager({ store, now: () => clock.now });
+    m.register(p.adapter());
+    const first = await m.grantAccess(input()); // the settle failed: the lessee got a 402 and never saw this key
+    expect(typeof first.delivery.key).toBe("string");
+    const second = await m.grantAccess(input());
+    expect(p.calls.filter((c) => c.method === "POST")).toHaveLength(2);
+    expect(p.calls.filter((c) => c.method === "DELETE")).toHaveLength(1); // the first key does not live on
+    expect(second.access.handle).not.toBe(first.access.handle);
+    expect(typeof second.delivery.key).toBe("string");
+    expect(second.access.paidUntilMs).toBe(NOW + DAY); // one day paid, from now, not two
+    m.confirmDelivery(second.access.grantId);
+    const third = await m.grantAccess(input());
+    expect(p.calls.filter((c) => c.method === "POST")).toHaveLength(2);
+    expect(third.delivery).toMatchObject({ key: null });
     store.close();
   });
 

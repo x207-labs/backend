@@ -46,6 +46,8 @@ export interface ProviderAccessAdapter {
   readonly real: boolean;
   /** `true` when the provider closes the access by itself at an instant given at grant time. */
   readonly nativeExpiry: boolean;
+  /** B7-P7: the delivery holds a secret that the provider shows once (an API key). Until the paid answer that carries it went out, the next paid request makes a new one instead of a renewal. */
+  readonly oneTimeKey?: boolean;
   /** Does the reference name an account that exists on the provider? Called before every grant (ADR-47: a grantee that cannot be checked cannot be granted). */
   verifyGranteeRef(ref: string): Promise<{ ok: true } | { ok: false; reason: string }>;
   /**

@@ -117,6 +117,9 @@ export class ProviderAccessManager {
         reason            TEXT,
         proof             TEXT
       );
+      CREATE TABLE IF NOT EXISTS provider_delivery_pending (
+        grant_id INTEGER PRIMARY KEY
+      );
       CREATE TABLE IF NOT EXISTS provider_shared_keys (
         grant_id INTEGER PRIMARY KEY,
         key      TEXT    NOT NULL
@@ -229,8 +232,18 @@ export class ProviderAccessManager {
     if (proven === null && !adapter.proveGranteeRef) proven = "not_applicable";
     if (proven !== "verified" && !warnings.includes("grantee_unproven")) warnings.push("grantee_unproven");
     if (existing && existing.status !== "active") throw new ProviderAccessError("access_conflict", `access for grant ${grant.grant_id} is already ${existing.status}`);
+    // B7-P7: the secret of the first day went out in a paid answer that never reached the lessee (the settle failed, or the answer was lost): it cannot be shown again, so the key is
+    // deleted at the provider and a new one is made now, for this payment
+    const stale = existing !== undefined && adapter.oneTimeKey === true && this.#store.db.prepare("SELECT 1 AS x FROM provider_delivery_pending WHERE grant_id = ?").get(grant.grant_id) !== undefined;
+    if (stale && existing) {
+      try {
+        await adapter.revoke(existing.handle);
+      } catch (error) {
+        throw new ProviderAccessError("provider_grant_failed", `the key of the first day was never delivered and could not be deleted: ${(error as Error).message}`);
+      }
+    }
     const now = this.#now();
-    const paidUntil = Math.min(Math.max(now, existing?.paidUntilMs ?? 0) + days * DAY_MS, nsToMs(grant.limits.expires_at));
+    const paidUntil = Math.min(Math.max(now, stale ? 0 : existing?.paidUntilMs ?? 0) + days * DAY_MS, nsToMs(grant.limits.expires_at));
     // two live grants for one thing: the end of the first would take away what the second still pays for (B4-F2)
     const key = adapter.sharedKey?.({ granteeRef: scope.grantee_ref, resource: scope.resource }) ?? null;
     if (key !== null) {
@@ -241,7 +254,7 @@ export class ProviderAccessManager {
     }
     let result: ProviderGrantResult;
     try {
-      result = await adapter.grant({ grantId: grant.grant_id, granteeRef: scope.grantee_ref, resource: scope.resource, permission: scope.permission, expiresAtMs: paidUntil, existingHandle: existing?.handle ?? null });
+      result = await adapter.grant({ grantId: grant.grant_id, granteeRef: scope.grantee_ref, resource: scope.resource, permission: scope.permission, expiresAtMs: paidUntil, existingHandle: (stale ? undefined : existing?.handle) ?? null });
     } catch (error) {
       // a refusal that the adapter names itself (a vote kind that is not for rent) keeps its code
       if (error instanceof ProviderAccessError) throw error;
@@ -257,9 +270,16 @@ export class ProviderAccessManager {
       nativeExpiresMs: result.nativeExpiresAtMs, attempts: 0, nextRetryMs: null, lastError: null, reason: null, proof: proven,
     };
     this.#save(access);
+    // a secret that the provider shows once is pending until `confirmDelivery`: the answer that carries it has to go out
+    if (adapter.oneTimeKey === true && result.delivery.key !== null && result.delivery.key !== undefined) this.#store.db.prepare("INSERT OR IGNORE INTO provider_delivery_pending (grant_id) VALUES (?)").run(grant.grant_id);
     if (key !== null) this.#store.db.prepare("INSERT INTO provider_shared_keys (grant_id, key) VALUES (?, ?) ON CONFLICT (grant_id) DO UPDATE SET key = excluded.key").run(grant.grant_id, key);
     this.#log?.(`provider access grant=${grant.grant_id} provider=${scope.provider} ref=${scope.grantee_ref} until=${new Date(paidUntil).toISOString()}`);
     return { access, delivery: result.delivery, warnings };
+  }
+
+  /** B7-P7: the paid answer with the key went out (status 200 after the settle): the key is delivered and the next day is a renewal. */
+  confirmDelivery(grantId: number): void {
+    this.#store.db.prepare("DELETE FROM provider_delivery_pending WHERE grant_id = ?").run(grantId);
   }
 
   /**

@@ -39,6 +39,7 @@ export class OpenRouterSubkeyAdapter implements ProviderAccessAdapter {
   readonly provider = "openrouter-subkey";
   readonly real = true;
   readonly nativeExpiry = false;
+  readonly oneTimeKey = true;
   readonly #o: OpenRouterSubkeyOptions;
   readonly #base: string;
   readonly #fetch: FetchLike;

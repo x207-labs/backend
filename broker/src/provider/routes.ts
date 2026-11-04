@@ -186,7 +186,7 @@ export function createProviderRoutes(options: ProviderRoutesOptions): (request: 
         routes: { [url.pathname]: { price: options.creditPrice(charge.amount), description: `Rent of access ${grantId}`, grant: () => ({ grantId, payTo: grant.grantor }) } },
         facilitatorUrl: options.facilitatorUrl, circleId: options.circleId, payTo: options.brokerAccount, extra: options.extra, ...(options.fetch ? { fetch: options.fetch } : {}),
       });
-      return guardVoucher(request, () => middleware(request, async (paid) => {
+      const answer = await guardVoucher(request, () => middleware(request, async (paid) => {
         const header = paid.headers.get("PAYMENT-SIGNATURE");
         let payer: string | undefined;
         try {
@@ -202,6 +202,9 @@ export function createProviderRoutes(options: ProviderRoutesOptions): (request: 
           return fail(error);
         }
       }));
+      // B7-P7: the answer with the key is the one that reached the settle; a 402 or a 5xx replaced it, so the key stays pending and the next paid request makes a new one
+      if (answer.status === 200) manager.confirmDelivery(grantId);
+      return answer;
     }
     return json(404, { error: "not_found" });
   };
