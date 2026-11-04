@@ -6,7 +6,7 @@ import { BrokerTelemetry, healthz, metrics, routeLabel, type RouteLabel } from "
 import type { BrokerStore } from "./store.js";
 import { guardVoucher } from "./in-flight.js";
 import { DispatchError, type Dispatcher } from "./dispatcher.js";
-import { attestationBody, NoAttestation, type Attestor } from "./attest/index.js";
+import { attestationBody, NONCE, NoAttestation, type Attestor } from "./attest/index.js";
 import type { ClassBAdapter } from "./keys/class-b.js";
 import { ACCESS_PATH, createProviderRoutes, type ProviderRoutesOptions } from "./provider/routes.js";
 import { createProxyHandler, createUsageHandler, matchProxy, USAGE_PATH, type ProxyOptions } from "./proxy/handler.js";
@@ -69,7 +69,12 @@ export function createBrokerHandler(options: BrokerServerOptions): (request: Req
     const url = new URL(request.url);
     if (url.pathname === "/healthz") return healthz(ops);
     if (url.pathname === "/metrics") return metrics(ops, request);
-    if (url.pathname === "/attestation") return request.method === "GET" ? json(200, await attestationBody(options.attestor ?? new NoAttestation())) : json(405, { error: "method_not_allowed" });
+    if (url.pathname === "/attestation") {
+      if (request.method !== "GET") return json(405, { error: "method_not_allowed" });
+      const nonce = url.searchParams.get("nonce");
+      if (nonce !== null && !NONCE.test(nonce)) return json(400, { error: "bad_nonce", message: "nonce: 8 to 64 bytes in hex" });
+      return json(200, await attestationBody(options.attestor ?? new NoAttestation(), nonce ?? undefined));
+    }
     if (ACCESS_PATH.test(url.pathname)) return providerRoutes ? providerRoutes(request) : json(501, { error: "class_not_supported" });
     if (url.pathname === "/health") return json(200, { ok: true });
     if (USAGE_PATH.test(url.pathname)) return usage ? usage(request) : json(501, { error: "class_not_supported" });

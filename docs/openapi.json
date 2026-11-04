@@ -16129,7 +16129,7 @@
     "/attestation": {
       "get": {
         "operationId": "broker_get_attestation",
-        "summary": "Whether this broker runs in a TEE (BK-009): {mode:\"none\",reason} in every deployment of this build, or {mode:\"tee\",quote,codeHash} when an attestor is given; a client verifies the quote and the released code hash, it does not trust the word mode",
+        "summary": "Whether this broker runs in a TEE (BK-009); query nonce=<hex, 8 to 64 bytes> is repeated in the answer (400 bad_nonce otherwise): {mode:\"none\",reason} in every deployment of this build, or {mode:\"tee\",quote,codeHash} when an attestor is given; a client verifies the quote and the released code hash, it does not trust the word mode",
         "tags": [
           "broker"
         ],

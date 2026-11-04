@@ -32,7 +32,7 @@ describe("BK-009 GET /attestation and the client that requires a TEE", () => {
 
   it("TC-BK-009-03 without requireTee the client reports mode none; with requireTee it refuses with tee_required", async () => {
     const fetch = via(handlerWith());
-    expect(await fetchAttestation("http://b.test", { fetch })).toEqual({ mode: "none", reason: NO_TEE_REASON });
+    expect(await fetchAttestation("http://b.test", { fetch })).toMatchObject({ mode: "none", reason: NO_TEE_REASON });
     const refusal = await fetchAttestation("http://b.test", { fetch, requireTee: true, expectedCodeHash: RELEASE, verifier: fakeTee() }).catch((e) => e);
     expect(refusal).toBeInstanceOf(AttestationError);
     expect(refusal).toMatchObject({ code: "tee_required" });
@@ -64,7 +64,46 @@ describe("BK-009 GET /attestation and the client that requires a TEE", () => {
     }
     expect(await fetchAttestation("http://b.test", { fetch: answer({ mode: "none", reason: "x" }, 500) }).catch((e) => e)).toMatchObject({ code: "bad_answer" });
     let init: RequestInit | undefined;
-    await fetchAttestation("http://b.test/", { fetch: (async (_u: unknown, i?: RequestInit) => { init = i; return new Response(JSON.stringify({ mode: "none", reason: "x" })); }) as typeof fetch });
+    await fetchAttestation("http://b.test/", { nonce: "ab".repeat(16), fetch: (async (_u: unknown, i?: RequestInit) => { init = i; return new Response(JSON.stringify({ mode: "none", reason: "x", nonce: "ab".repeat(16) })); }) as typeof fetch });
     expect(init?.redirect).toBe("error");
+  });
+
+  it("TC-BK-009-08 the nonce of the request is repeated by the broker in both modes, handed to the Attestor and to the verifier; a bad nonce is 400", async () => {
+    const nonce = "0123456789abcdef0123456789abcdef";
+    const seen: Array<string | undefined> = [];
+    const attestor: Attestor = { quote: async (n) => { seen.push(n); return QUOTE; }, verify: async () => ({ valid: true }) };
+    expect(await (await handlerWith(attestor)(new Request(`http://b.test/attestation?nonce=${nonce}`))).json()).toMatchObject({ mode: "tee", nonce, codeHash: RELEASE });
+    expect(await (await handlerWith()(new Request(`http://b.test/attestation?nonce=${nonce}`))).json()).toEqual({ mode: "none", reason: NO_TEE_REASON, nonce });
+    expect(await (await handlerWith()(new Request("http://b.test/attestation"))).json()).toEqual({ mode: "none", reason: NO_TEE_REASON });
+    expect(seen).toEqual([nonce]);
+    for (const bad of ["zz", "abcd", "ab".repeat(65), "abc", "0x" + "ab".repeat(16)]) {
+      const r = await handlerWith()(new Request(`http://b.test/attestation?nonce=${bad}`));
+      expect([r.status, ((await r.json()) as { error: string }).error], bad).toEqual([400, "bad_nonce"]);
+    }
+    // the client sends a fresh nonce each time and the verifier gets the one it sent
+    const urls: string[] = [];
+    const verified: Array<string | undefined> = [];
+    const spy = (async (input: RequestInfo | URL, init?: RequestInit) => { urls.push(String(input)); return via(handlerWith(fakeTee()))(input, init); }) as typeof fetch;
+    const verifier: Attestor = { quote: async () => null, verify: async (q, e, n) => { verified.push(n); return fakeTee().verify(q, e); } };
+    await fetchAttestation("http://b.test", { fetch: spy, requireTee: true, expectedCodeHash: RELEASE, verifier });
+    await fetchAttestation("http://b.test", { fetch: spy, requireTee: true, expectedCodeHash: RELEASE, verifier });
+    expect(urls[0]).not.toBe(urls[1]);
+    expect(urls.map((u) => /nonce=([0-9a-f]{32})$/.exec(u)?.[1])).toEqual(verified);
+  });
+
+  it("TC-BK-009-09 an answer that repeats another nonce, or none, is refused as nonce_mismatch: a recorded answer cannot be replayed, in tee mode or in none mode", async () => {
+    const recorded = JSON.stringify({ mode: "tee", quote: QUOTE.quote, codeHash: RELEASE, nonce: "11".repeat(16) });
+    const replay = (async () => new Response(recorded)) as typeof fetch;
+    const options = { requireTee: true, expectedCodeHash: RELEASE, verifier: fakeTee() };
+    expect(await fetchAttestation("http://b.test", { ...options, fetch: replay }).catch((e) => e)).toMatchObject({ code: "nonce_mismatch" });
+    expect(await fetchAttestation("http://b.test", { ...options, nonce: "22".repeat(16), fetch: replay }).catch((e) => e)).toMatchObject({ code: "nonce_mismatch" });
+    const noEcho = (async () => new Response(JSON.stringify({ mode: "tee", quote: QUOTE.quote, codeHash: RELEASE }))) as typeof fetch;
+    expect(await fetchAttestation("http://b.test", { ...options, fetch: noEcho }).catch((e) => e)).toMatchObject({ code: "nonce_mismatch" });
+    const oldNone = (async () => new Response(JSON.stringify({ mode: "none", reason: "x", nonce: "11".repeat(16) }))) as typeof fetch;
+    expect(await fetchAttestation("http://b.test", { fetch: oldNone }).catch((e) => e)).toMatchObject({ code: "nonce_mismatch" });
+    // the same nonce in upper case is the same nonce; a nonce the client chose is accepted when repeated
+    const echo = (async (input: RequestInfo | URL) => new Response(JSON.stringify({ mode: "none", reason: "x", nonce: new URL(String(input)).searchParams.get("nonce")!.toUpperCase() }))) as typeof fetch;
+    expect(await fetchAttestation("http://b.test", { fetch: echo, nonce: "ab".repeat(8) })).toMatchObject({ mode: "none" });
+    expect(await fetchAttestation("http://b.test", { fetch: echo, nonce: "zz" }).catch((e) => e)).toMatchObject({ code: "bad_answer" });
   });
 });

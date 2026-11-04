@@ -27,8 +27,9 @@ environment), a compromised host, and a broker that is replaced by different cod
 ## 2. The interface: `GET /attestation`
 
 ```
-GET /attestation   ->  200 {"mode":"none","reason":"this broker does not run in a TEE: whoever operates it can read the secrets it holds"}
-                       200 {"mode":"tee","quote":"<opaque quote>","codeHash":"<hash of the released broker code>"}   (only with an Attestor that has a quote)
+GET /attestation?nonce=<hex>   (nonce: 8 to 64 bytes in hex; without it the answer has no nonce; a bad nonce is 400 bad_nonce)
+                   ->  200 {"mode":"none","reason":"this broker does not run in a TEE: whoever operates it can read the secrets it holds","nonce":"<the same nonce>"}
+                       200 {"mode":"tee","quote":"<opaque quote>","codeHash":"<hash of the released broker code>","nonce":"<the same nonce>"}   (only with an Attestor that has a quote)
 ```
 
 Every deployment of this build answers `mode: "none"`. `startBroker({ attestor })` / `createBrokerHandler({ attestor })` take an `Attestor`
@@ -39,10 +40,11 @@ The client is `fetchAttestation(brokerUrl, { requireTee, expectedCodeHash, verif
 - `mode: "none"` without `requireTee`: returned as it is, the caller decides. With `requireTee: true`: `AttestationError("tee_required")`.
 - `mode: "tee"`: the word of the broker counts for nothing. The client needs a `verifier` and the `expectedCodeHash` of the released broker; without them it refuses (`no_verifier`),
   a different code hash is refused before the quote is looked at (`code_hash_mismatch`), and a quote that `verify` rejects is refused (`quote_invalid`).
+- **Nonce (replay).** The client sends a fresh random nonce (16 bytes, or `options.nonce`) in every call. The broker repeats it in both modes and hands it to `Attestor.quote(nonce)`, so a real quote is made over it; the client hands it to `verify(quote, expectedCodeHash, nonce)`. An answer with another nonce, or none, is refused (`nonce_mismatch`) before anything else, so a recorded answer, attested or not, cannot be played again. For a real TEE the nonce must go into the report data of the quote; `verify` checks it there (step 3 and 4 below).
 - An answer that is not one of the two shapes, a non-200, and a redirect are refused (`bad_answer`).
 
 `ClassCAdapter.prove()` is the same check on the broker side of a grant: without an attestor it answers `{ valid: false, reason: "no_attestation: …" }` and never `valid`.
-Tests: `test/attestation.test.ts` (TC-BK-009-02 to -07) and `test/proxy.test.ts` (TC-BK-009-01).
+Tests: `test/attestation.test.ts` (TC-BK-009-02 to -09) and `test/proxy.test.ts` (TC-BK-009-01).
 
 ## 3. The way to a real TEE (steps, not done)
 
@@ -54,7 +56,7 @@ Common steps:
 1. Build the broker as a container image from a pinned base, with the lockfile; publish the image digest with the release (the release notes carry `codeHash`).
 2. Define `codeHash` as the hash of what the host measures: the image digest plus the deployment file (compose or manifest). The client keeps this value as `expectedCodeHash`.
 3. Implement `Attestor.quote()` by asking the guest agent of the host for a quote that binds a fresh public key of the enclave (a key made inside at start-up) and a nonce from the client
-   (add `?nonce=` to `GET /attestation` so a quote cannot be replayed).
+   (the `?nonce=` of `GET /attestation` is built, see section 2; the Attestor puts it into the report data).
 4. Implement `Attestor.verify()` in the client: check the quote against the hardware vendor's certificate chain (Intel TDX/DCAP, and NVIDIA for a GPU), check that the measurement
    equals `expectedCodeHash`, check the nonce and read the enclave public key from the report data.
 5. Build `POST /secrets` (BK-009, second half): accepted only from the grantor (signature of the grant owner), the body is the secret encrypted to the enclave key, the broker keeps it only
