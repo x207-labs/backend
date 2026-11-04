@@ -19,8 +19,13 @@ In `barter` mode both sides hand something over. The offered asset is the `offer
 ## Notice format
 Canonical JSON with the keys in this order: `circle, listing_hash, offer_hash, side, actor, action, at, proof_hash, reason`. `circle` is the contract account, `side` is `offer` or `want`, the hashes are 64 lowercase hex, `at` is unix seconds, `proof_hash` is set only for `delivered`, `reason` only for `disputed` (both `null` otherwise). The signature is ed25519 over the NEP-413 style hash of the JSON, as for offers and listings (`nep413SigningHash(json, sha256(json), circle)`), made with the voucher key of the actor. Code: `src/marketplace/delivery-core.ts` (`signDeliveryNotice`, `verifyDeliveryNoticeSignature`); it should move into `@x207/core` with test vectors.
 
-## Bond flag (UM-097)
-A deal at or above the bond threshold (default 100 credit, `bondThreshold` of the operator) says `needsBond: true`, in `result.delivery` of `accept` and in the `GET …/delivery` answer. It is a flag like `needsBond` of invoices and orders: the bond of CT-094 (a bundle of two legs with an arbiter) is not built into this flow, so the parties and their tools must ask for it before they register the payment. Below the threshold it is `false`.
+## Deal with a bond (UM-097, CT-094)
+A handover whose offered value is at or above the bond threshold (default 100 credit, `bondThreshold` of the operator) must be a deal with a bond:
+- `accept` without `arbiter` is refused: `409 bond_required` (`details.threshold`). The preview answers `needsBond: true` instead of refusing.
+- `accept` takes `arbiter`, `confirmBy` (nanoseconds, decimal string) and optionally `agreementHash`, and builds the terms of a bundle of the two parties: the payment leg and a **nominal return leg** of one unit from the seller (the contract needs a bundle of at least two legs; the bond is worked out from the largest amount owed). The accepting party signs those terms (`signature`), the other party signs through `…/signatures`. The format rules of the SDK apply (the arbiter is not a party, two participants only: a searcher or a three-party barter is refused).
+- A bundle that names an arbiter is `ready` as soon as everybody signed, **before** the handover: the bond is locked when it is committed, so it protects the receiver while the thing is handed over. The payment (the voucher in the bundle) is the buyer's to sign after `confirm_deal`; a dispute goes to `dispute_deal` and the arbiter's `rule_deal` on the contract. The backend does not call the contract.
+- `needsBond` is also in `result.delivery` of `accept` and in the `GET …/delivery` answer.
+- Not covered: the transfer ledger of the platforms (`docs/transfers.md`) keeps refusing a value at or above the threshold (`transfer_arbiter_required`).
 
 ## What this does not do
 - It does not decide who is right in a dispute. `disputed` is final here; a ruling needs the arbiter of `docs/reputation-and-disputes.md` (option 4) and a contract change (see `contracts/docs/payment-hold.md`).
