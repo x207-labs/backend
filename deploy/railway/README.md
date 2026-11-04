@@ -35,3 +35,16 @@ curl https://x207-backend-production.up.railway.app/x207/circles/agents-main/epo
 curl https://x207-backend-production.up.railway.app/x207/circles/agents-main/members
 ```
 `/metrics` is open (no `METRICS_TOKEN`: the variables are public values only); it holds counts of requests, not data.
+
+## Redeploy with a replay (BE-091)
+The hosted indexer read epoch 7 before it was pruned, so `edgesUnavailable` stays `false`. The prune transaction `5bDVKRKGJvemHiVdiN1Kjjxuj4zdfZh9MhSvWD5EbEPW` is in block 276185473 (receipts in 276185474 and 276185475). Deploy the build that has BE-091, then move the cursor back to that block so the indexer reads the call again.
+
+1. Redeploy from the pushed code (same bundle steps as above, then `railway up --detach` from the bundle folder).
+2. Rewind the cursor on the volume, once, with the service running the new build:
+```bash
+railway ssh --service x207-backend -- node -e "const D=require('better-sqlite3');const d=new D('/data/x207.sqlite');d.prepare(\"UPDATE indexer_cursor SET last_block_height = 276185473\").run();console.log(d.prepare('SELECT * FROM indexer_cursor').all())"
+railway restart --service x207-backend
+```
+3. Check: `curl .../x207/circles/agents-main/epochs` shows epoch 7 with `edgesUnavailable: true`, `/healthz` shows `lagBlocks` back near 0, and the epoch 8 hash is unchanged.
+
+The replay was rehearsed on a copy of the local read model (cursor set to 276185473, `epoch_pruned` rows removed, epoch 7 flag set to 0): the run read the prune again, wrote one `epoch_pruned` row (handled) and set epoch 7 back to `edges_unavailable = 1`. Rereading the blocks is safe: `events_raw` is INSERT OR IGNORE.
