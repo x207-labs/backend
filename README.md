@@ -55,6 +55,37 @@ A second run with the same `READMODEL_DB` reads only new blocks; `REBUILD=1` rep
 ## Public testnet API (BE-089)
 The read API and the indexer of the testnet circle `x207-v013.testnet` (interface 0.0.13) run on Railway, GET only, at **https://x207-backend-production.up.railway.app** (for example `/healthz`, `/x207/circles/agents-main/epochs`, `/x207/circles/agents-main/members`). CORS is open for `https://x207-dashboard.vercel.app` only. It is a read model of a testnet: no signing key, no broker, no settlement endpoints, only public values in its variables. How it is built and set up: [`deploy/railway/README.md`](deploy/railway/README.md).
 
+## Live quote of 1Click (BE-090)
+A residual that a creditor withdraws to another chain is quoted by 1Click through `POST /x207/settlement/withdraw/quote`. With `X207_SETTLEMENT_MODE=dry` (the default) the call is always `dry: true`: 1Click answers the price and makes no deposit address, and **no funds move**. `scripts/live-quote.mjs` serves that route over a read model and asks for one quote of 5 credit to USDC on Base:
+
+```bash
+npm run build
+node scripts/live-quote.mjs --db <read model sqlite>      # reads one active member of the circle; no key, no JWT
+```
+
+Real output, 2026-11-04 08:31:30 UTC, without a JWT (1Click adds 25 bps to a quote without one; it did not ask for one):
+
+```json
+{
+  "time_utc": "2026-11-04T08:31:30.300Z",
+  "mode": "dry",
+  "one_click": "https://1click.chaindefuser.com",
+  "jwt": "none",
+  "status": 201,
+  "answer": {
+    "jobId": "aa63e519-f7d4-4037-941c-6c130d147f9e", "status": "quoted", "dry": true, "unit": "credit", "decimals": 6,
+    "originAsset": "nep141:usdt.tether-token.near",
+    "destinationAsset": "nep141:base-0x833589fcd6edb6e08f4c7c32d4f71b54bda02913.omft.near",
+    "depositType": "INTENTS", "recipientType": "DESTINATION_CHAIN",
+    "amountIn": "5000000", "amountOut": "4989148", "withdrawFee": "2400",
+    "variableFeeBpsEstimate": 14, "totalFeePct": 0.217,
+    "threshold": { "chain": "base", "minAmount": "250000", "ok": true },
+    "timeEstimateSeconds": 14, "warnings": []
+  }
+}
+```
+The request that the script sent (the same as `curl -X POST $BACKEND/x207/settlement/withdraw/quote -H 'content-type: application/json' -d '…'`): `{"circle":"agents-main","account":"m00.x207-v013-aux.testnet","destinationAsset":"nep141:base-0x8335…2913.omft.near","amount":"5000000","recipient":"0x2CfF…2680","refundTo":"near","dry":true}`. The account is a member of the testnet circle `x207-v013.testnet`, `refundTo` is an existing mainnet account (the route checks it), and the recipient is an example address. 5 credit in gives 4.989148 USDC out: the fixed fee is 0.0024 and the variable part about 14 bps. The route stops at the quote: `submit` needs `X207_SETTLEMENT_MODE=live` (`422 live_mode_disabled` in `dry`).
+
 ## Limits against abuse (BE-066)
 All limits live in the memory of one process. **With two instances behind a balancer each one counts for itself**, so the real ceiling is the number of instances times the value; a shared store (Redis) is not part of this version. Set them in `.env`; a value of 0 turns a rate limit off.
 
