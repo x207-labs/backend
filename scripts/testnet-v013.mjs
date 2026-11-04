@@ -6,6 +6,8 @@
 // the epochs whose pairs were pruned (`edges_unavailable`). Prints a JSON report.
 import { createApiServer, Indexer, NeardataBlockSource, openDatabase, rebuildReadModel, viewClearedEdges, viewMembers } from "../dist/index.js";
 import { marketplaceRoutes } from "../dist/marketplace/index.js";
+import { MockCodeIssuer } from "../dist/marketplace/code-issuers.js";
+import { demoKeys, seedDemo } from "../dist/demo/seed.js";
 
 const CONTRACT = process.argv[2] ?? "x207-v013.testnet";
 const RPC = process.env.NEAR_RPC_PRIMARY_URL || "https://rpc.testnet.fastnear.com";
@@ -93,7 +95,8 @@ for (;;) {
 if (process.env.REBUILD === "1") rebuildReadModel(db, CIRCLE_ID);
 const cursor = Number(db.prepare("SELECT last_block_height AS h FROM indexer_cursor WHERE contract_id = ?").get(CONTRACT).h);
 
-const server = createApiServer({ db, extraRoutes: marketplaceRoutes(db) });
+// the mock issuer of the demo codes (BE-080) is registered so that a seeded code listing is accepted; nothing else of the market is configured
+const server = createApiServer({ db, extraRoutes: marketplaceRoutes(db, { codeIssuers: { "demo-issuer": new MockCodeIssuer().issue("DEMO-GIFT-0001") } }) });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const base = `http://127.0.0.1:${server.address().port}/x207/circles/${CIRCLE_ID}`;
 const api = async (path) => (await fetch(base + path)).json();
@@ -187,5 +190,20 @@ report.counts.epochs = epochNumbers.length;
 const after = await catalog();
 if (Math.max(...after.txs.values()) > endBlock - 30) note("coverage", "a transaction came after the block that was read to; run again (the database is kept with READMODEL_DB)", { lastBlock: Math.max(...after.txs.values()), readUpTo: endBlock });
 console.log(JSON.stringify(report, (_, v) => (typeof v === "bigint" ? v.toString() : v), 2));
+// BE-080: with X207_DEMO_SEED (and the three demo accounts) the demo data is posted to this read model through the API, and stays in the database file (the listings, the order and the invoice
+// are rows of this backend, not of the chain). The seed is a secret: it is read from the environment and never printed.
+if (process.env.X207_DEMO_SEED) {
+  const call = async (method, path, body) => {
+    const response = await fetch(`${base}${path}`, { method, ...(body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }) });
+    return { status: response.status, json: await response.json().catch(() => null) };
+  };
+  const accounts = { seller: process.env.X207_DEMO_SELLER, buyer: process.env.X207_DEMO_BUYER, helper: process.env.X207_DEMO_HELPER };
+  const results = await seedDemo({ get: (p) => call("GET", p), post: (p, b) => call("POST", p, b) }, {
+    circleContract: CONTRACT, accounts, keys: demoKeys(process.env.X207_DEMO_SEED), nowS: Math.floor(Date.now() / 1000), expiresAt: Number(process.env.X207_DEMO_EXPIRES_AT ?? Date.parse("2026-12-31T00:00:00Z") / 1000),
+  });
+  for (const r of results) console.error(`${r.outcome.padEnd(8)} ${r.pipeline.padEnd(16)} ${r.item}${r.detail ? `  (${r.detail})` : ""}`);
+  console.error(`seed: created ${results.filter((r) => r.outcome === "created").length}, already there ${results.filter((r) => r.outcome === "exists").length}, skipped ${results.filter((r) => r.outcome === "skipped").length}, failed ${results.filter((r) => r.outcome === "failed").length}`);
+  if (results.some((r) => r.outcome === "failed")) process.exitCode = 1;
+}
 server.close();
 db.close();

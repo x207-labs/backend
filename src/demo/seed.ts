@@ -71,6 +71,8 @@ export async function seedDemo(client: DemoClient, o: DemoOptions): Promise<Seed
     const code = r.json?.error?.code as string | undefined;
     if (r.status === 200 || r.status === 201) results.push({ pipeline, item, outcome: "created" });
     else if (r.status === 409 && code !== undefined && EXISTS.has(code)) results.push({ pipeline, item, outcome: "exists" });
+    // a class A asset type that the circle has not registered in the registry D10 (`set_asset_class` is for the owner of the circle) is not a failure of the seed: it is skipped, with the reason
+    else if (r.status === 400 && String(r.json?.error?.message ?? "").includes("not registered in the asset class registry")) results.push({ pipeline, item, outcome: "skipped", detail: "the asset type is not registered as class A in the registry D10 of this circle (set_asset_class by its owner)" });
     else results.push({ pipeline, item, outcome: "failed", detail: `${r.status} ${code ?? ""} ${String(r.json?.error?.message ?? "").slice(0, 160)}`.trim() });
   };
   const postListing = async (pipeline: string, item: string, body: { listing: Listing; signature: string }): Promise<void> => {

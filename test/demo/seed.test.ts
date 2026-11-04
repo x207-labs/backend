@@ -62,6 +62,15 @@ describe("BE-080 demo seed", () => {
     expect(counts(market!)).toEqual(before);
   });
 
+  it("TC-BE-080-04 a class A asset type that the circle has not registered is skipped with the reason, not a failure; the other pipelines are posted", async () => {
+    const { options, client } = await start();
+    market!.db.prepare("DELETE FROM asset_classes").run();
+    const results = await seedDemo(client, options);
+    expect(results.filter((r) => r.outcome === "failed")).toEqual([]);
+    expect(results.filter((r) => r.pipeline === "class A").map((r) => r.outcome)).toEqual(["skipped", "skipped"]);
+    expect(counts(market!)).toEqual({ listings: 6, orders: 1, invoices: 1 });
+  });
+
   it("TC-BE-080-03 accounts that are not members with the demo keys are told how to join, and nothing is posted; the seed is a secret that is never in a result", async () => {
     const { options, client } = await start();
     market!.db.prepare("UPDATE members SET pubkey_voucher = ? WHERE account_id = ?").run("ed25519:11111111111111111111111111111111", acct("demobuyer"));

@@ -25,7 +25,7 @@ X207_DEMO_SEED=<a secret string kept outside the repo> X207_CONTRACT_ID=<circle 
 
 ## Before the first run
 1. **The accounts.** The seed string gives the voucher keys of three accounts (`seller`, `buyer`, `helper`): `node scripts/demo-seed.mjs --print-members` prints each account with the public key it must join the circle with (`join` with `pubkey_voucher`). The script checks that each account is a member with that key, and posts nothing otherwise. The secret keys exist only in memory; the seed is never printed or logged.
-2. **The backend.** Start it with the mock issuer for the code: `X207_CODE_MOCK_ISSUER=demo-issuer` and `X207_CODE_MOCK_CODES=DEMO-GIFT-0001` (BE-069, demo only). The class A asset types must be registered in the registry D10 of the circle (`set_asset_class`), or those two listings are refused and reported as failed.
+2. **The backend.** Start it with the mock issuer for the code: `X207_CODE_MOCK_ISSUER=demo-issuer` and `X207_CODE_MOCK_CODES=DEMO-GIFT-0001` (BE-069, demo only). The class A asset types must be registered in the registry D10 of the circle (`set_asset_class`), or those two listings are skipped and the result says why (`set_asset_class` is for the owner of the circle).
 3. **The open epoch.** The invoice needs an open epoch; the order and the listings do not.
 
 ## Idempotent
@@ -35,3 +35,6 @@ Every object has fixed content (names, nonces, amounts, and one fixed end date f
 - The listings are real entries of the market but nothing is escrowed on the chain for the class A ones; they are for the page and the API, not for a purchase.
 - The seed does not sell anything; a purchase needs the buyer to sign a voucher in the page or with the agents.
 - Everything the pages show from this seed is labelled in its `terms` as a demo listing.
+
+## On testnet (`x207-v013.testnet`)
+`scripts/demo-onboard-testnet.mjs` creates three accounts through the faucet (`x207-demo-seller.testnet`, `x207-demo-buyer.testnet`, `x207-demo-helper.testnet`), joins them to the circle with the voucher public keys of the seed, mints mock USDT and stakes 100 credit each; their secret keys and the seed are in a folder outside the repositories (`.secrets/testnet-demo/` at the root of the project, mode 0600). Then `scripts/testnet-v013.mjs` with `X207_DEMO_SEED` and the three accounts follows the circle into a database file (`READMODEL_DB`) and posts the demo data to that read model: the listings, the order and the invoice are rows of this database, not of the chain, so a backend started with that file shows them. Result on 2026-11-04: 8 created, 1 skipped (the domain), 2 skipped or refused for class A: the asset types `nft:nep171` and `token:nep141` are not registered in the registry D10 of this circle, and `set_asset_class` belongs to its owner (the DAO).
