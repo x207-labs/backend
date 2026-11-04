@@ -79,4 +79,11 @@ Stages without funds (1–3), using `X207_INTEGRATION=1 npx vitest run test/sett
 - `refundTo` of a nonexistent NEAR account is rejected before reaching 1Click (TC-BE-032-04); unsupported asset 422, invalid address and amount too small 502 (TC-BE-032-05); no `dry: false` request during the suite (TC-BE-032-06).
 - Finding: mainnet RPC answers a nonexistent account with the top-level error `UNKNOWN_ACCOUNT`; `nearAccountExists` already handles it.
 
+## Results run again on 2026-11-04 (stages 1 to 3, no funds, no key)
+- Stage 1: `npm test` in `backend` (636 tests pass, 13 skipped, mock mode).
+- Stage 2: `X207_INTEGRATION=1 npx vitest run test/settlement` against the real 1Click and the mainnet RPC: 8 files, 76 tests pass, among them the empty `simulate_intents` on `intents.near` and the mapping of an invalid intent to `simulation_failed`. A signed residual batch ran through `simulate_intents` and `execute_intents` of the real Intents contract (its wasm) in near-sandbox: `tests/residual-batch.sandbox.test.ts`, with the gas table in [residual-batch.md](residual-batch.md). This is not the mainnet contract and not a mainnet view of a real signed intent.
+- Stage 3: `node scripts/live-quote.mjs --db <read model> --refund-to near` at 2026-11-04T11:02Z, `dry: true`, no JWT: a creditor residual of 5 USDT to USDC on Base, `INTENTS` to `DESTINATION_CHAIN`, `amountIn` `"5000000"`, `amountOut` `"4990661"`, `withdrawFee` `"2400"`, `totalFeePct` 0.1868, `timeEstimateSeconds` 12, above the Base threshold (`minAmount` `"250000"`). A `refundTo` that does not exist on mainnet (`x207-deployer.near`) is refused with `422 refund_account_not_found` before 1Click is called, as the rule above says.
+
+**Stage 4 is the only part left and it waits for the owner's approval in chat** (amount, account, direction; mainnet transaction, funds, the owner's key). The owner has not decided on mainnet; nothing was sent.
+
 Not yet run: stage 4, one small nominal residual transaction on mainnet (deposit from the origin chain, `ft_withdraw` to a NEAR account, `ft_transfer_call` to the contract, then withdrawal to USDC Base). It needs funds, the owner's key, and human confirmation; not done by worker sessions.
