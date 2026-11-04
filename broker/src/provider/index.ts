@@ -17,3 +17,4 @@ export * from "./messaging-subaccount.js";
 export * from "./hosting-subaccount.js";
 export * from "./saas-seat-scim.js";
 export * from "./newsletter-reader.js";
+export * from "./org-member-budget.js";
