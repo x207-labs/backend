@@ -87,7 +87,8 @@ describe("BE-077 clearing_applied and epoch_committed of interface 0.0.13", () =
   it("TC-BE-077-03 the indexer halts when the edges are not the ones of the event, when there is no way to read them, or when the handler finds no set", async () => {
     const tampered = EDGES.map((e, i) => (i === 0 ? { ...e, cleared: "29000000" } : e));
     await expect(prefetchClearingEdges(db, CIRCLE, CONTRACT, appliedBlock(), async () => tampered, noSleep)).rejects.toBeInstanceOf(IndexerHaltError);
-    await expect(prefetchClearingEdges(db, CIRCLE, CONTRACT, appliedBlock(), async () => EDGES.slice(1), noSleep)).rejects.toBeInstanceOf(IndexerHaltError);
+    // a list of the same length whose cleared values are not the ones of the hash is corrupt, not pruned
+    await expect(prefetchClearingEdges(db, CIRCLE, CONTRACT, appliedBlock(), async () => EDGES.map((e) => ({ ...e, cleared: "1" })), noSleep)).rejects.toBeInstanceOf(IndexerHaltError);
     await expect(prefetchClearingEdges(db, CIRCLE, CONTRACT, appliedBlock(), undefined, noSleep)).rejects.toThrow(/list_obligations/);
     expect(storedClearingEdges(db, CIRCLE, 42)).toBeUndefined();
     expect(() => epochHandlers.clearing_applied!(ctxAt(1005), summary() as never)).toThrow(IndexerHaltError);
@@ -95,6 +96,24 @@ describe("BE-077 clearing_applied and epoch_committed of interface 0.0.13", () =
     await prefetchClearingEdges(db, CIRCLE, CONTRACT, appliedBlock(), async () => EDGES, noSleep);
     expect(() => epochHandlers.clearing_applied!(ctxAt(1005), summary({ cleared_total: "146000000" }) as never)).toThrow(/add up/);
     expect(one("SELECT COUNT(*) AS n FROM clearing_log")).toEqual({ n: 0n });
+  });
+
+  it("TC-BE-078-F1 an epoch whose pairs were pruned on the chain does not stop the indexer: it is marked edges_unavailable, cleared stays unknown, the summary and the positions are applied (B8-F1)", async () => {
+    // pruned: the view lists none of the seven pairs (or some of them: the last ones go first)
+    for (const left of [[], EDGES.slice(0, 3)]) {
+      db.prepare("DELETE FROM clearing_edges").run();
+      await prefetchClearingEdges(db, CIRCLE, CONTRACT, appliedBlock(), async () => left, noSleep);
+      expect(storedClearingEdges(db, CIRCLE, 42)).toMatchObject({ unavailable: true, edges: [], edgesHash: summary().edges_hash });
+    }
+    epochHandlers.clearing_applied!(ctxAt(1005), summary() as never);
+    expect(one("SELECT edges_unavailable, cleared_total FROM epochs WHERE epoch = 42")).toEqual({ edges_unavailable: 1n, cleared_total: 145_000_000n });
+    expect(one("SELECT COUNT(*) AS n FROM obligations WHERE epoch = 42 AND cleared IS NOT NULL")).toEqual({ n: 0n }); // unknown, not 0
+    expect(one("SELECT solver, cleared_total, edge_count FROM clearing_log WHERE epoch = 42")).toEqual({ solver: "solver-b", cleared_total: 145_000_000n, edge_count: 7n });
+    // the positions of epoch_committed come with the event and are applied as usual
+    epochHandlers.epoch_committed!(ctxAt(1007), committed() as never);
+    expect(db.prepare("SELECT COUNT(*) AS n FROM settlements WHERE epoch = 42").get()).toEqual({ n: 6 });
+    // an epoch that was read in full is not marked
+    expect(one("SELECT COUNT(*) AS n FROM epochs WHERE epoch <> 42 AND edges_unavailable = 1")).toEqual({ n: 0n });
   });
 
   it("TC-BE-077-04 the Indexer reads the edges before the block and halts on the hash; with no summary in the block the view is not called", async () => {

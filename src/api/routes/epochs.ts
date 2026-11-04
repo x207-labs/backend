@@ -15,6 +15,7 @@ export interface EpochRow {
   edge_count: bigint | null;
   total_obligation: bigint | null;
   cleared_total: bigint;
+  edges_unavailable: bigint;
 }
 
 /**
@@ -48,7 +49,7 @@ export const epochRoutes: Route[] = [
                      THEN (SELECT COUNT(*) FROM obligations o WHERE o.circle_id = e.circle_id AND o.epoch = e.epoch) ELSE e.edge_count END AS edge_count,
                 CASE WHEN e.total_obligation IS NULL AND e.phase = 'open' AND EXISTS (SELECT 1 FROM obligations o WHERE o.circle_id = e.circle_id AND o.epoch = e.epoch)
                      THEN (SELECT SUM(o.cumulative_amount) FROM obligations o WHERE o.circle_id = e.circle_id AND o.epoch = e.epoch) ELSE e.total_obligation END AS total_obligation,
-                e.cleared_total
+                e.cleared_total, e.edges_unavailable
          FROM epochs e WHERE e.circle_id = ? AND (? IS NULL OR e.epoch < ?)
          ORDER BY e.epoch DESC LIMIT ?`,
         circle.circle_id,
@@ -76,6 +77,8 @@ export const epochRoutes: Route[] = [
             edgeCount: e.edge_count === null ? null : Number(e.edge_count),
             totalObligation: e.total_obligation === null ? null : amount(e.total_obligation),
             cleared: amount(e.cleared_total),
+            // B8-F1: the cleared edges of this epoch could not be read from the chain (pruned): `cleared` per edge is unknown, the totals and the positions are right
+            edgesUnavailable: e.edges_unavailable === 1n,
           })),
           nextCursor: found.length > limit && last ? encodeCursor({ e: Number(last.epoch) }) : null,
         },

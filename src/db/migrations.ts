@@ -466,6 +466,12 @@ ALTER TABLE epochs ADD COLUMN total_due INTEGER;
 ALTER TABLE epochs ADD COLUMN total_claimable INTEGER;
 `;
 
+// B8-F1: an epoch whose cleared edges can no longer be read from the chain (`prune_epoch` removed the pairs before the indexer got to them) is marked, not a reason to stop the indexer.
+const V13_EDGES_UNAVAILABLE = `
+ALTER TABLE epochs ADD COLUMN edges_unavailable INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE clearing_edges ADD COLUMN unavailable INTEGER NOT NULL DEFAULT 0;
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "d9_initial", sql: V1_D9_INITIAL },
   { version: 2, name: "d9_bundles", sql: V2_BUNDLES },
@@ -479,4 +485,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 10, name: "d9_limit_reason_ruling", sql: V10_LIMIT_REASON_RULING },
   { version: 11, name: "d9_clearing_edges", sql: V11_CLEARING_EDGES },
   { version: 12, name: "d9_epoch_totals", sql: V12_EPOCH_TOTALS },
+  { version: 13, name: "d9_edges_unavailable", sql: V13_EDGES_UNAVAILABLE },
 ];

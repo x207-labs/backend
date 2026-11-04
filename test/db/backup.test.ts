@@ -55,7 +55,7 @@ describe("BE-073 backup and restore of the SQLite file", () => {
     stop = true;
     await writer;
     expect(check).toMatchObject({ ok: true, problems: [], unknownVersions: [], pendingVersions: [] });
-    expect(check.migrations.d9).toBe(12);
+    expect(check.migrations.d9).toBe(13);
     expect(check.migrations.marketplace).toBeGreaterThanOrEqual(1116);
     expect(check.cursors).toEqual([{ name: CONTRACT, lastBlockHeight: LAST }]);
     expect(existsSync(`${dest}.partial`)).toBe(false);
@@ -156,9 +156,9 @@ describe("BE-073 backup and restore of the SQLite file", () => {
   it("TC-BE-073-05 a file from an OLDER build is healthy and lists the migrations the next start would apply", async () => {
     const file = join(dir, "older.db");
     const { db } = await makeLive(file, LAST);
-    db.prepare("DELETE FROM schema_migrations WHERE version IN (12, 1116)").run(); // as if the file was written before them
+    db.prepare("DELETE FROM schema_migrations WHERE version IN (13, 1116)").run(); // as if the file was written before them
     db.close();
-    expect(checkDatabase(file)).toMatchObject({ ok: true, unknownVersions: [], pendingVersions: [12, 1116], migrations: { d9: 11, marketplace: 1115 } });
+    expect(checkDatabase(file)).toMatchObject({ ok: true, unknownVersions: [], pendingVersions: [13, 1116], migrations: { d9: 12, marketplace: 1115 } });
   });
 
   const dist = new URL("../../dist/db/backup.js", import.meta.url).pathname;

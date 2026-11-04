@@ -4,7 +4,7 @@ Every column of the D9 read model (migration `src/db/migrations.ts`) is traced t
 
 The infrastructure tables `events_raw`, `indexer_cursor`, `settlement_jobs` and `clearing_edges` are not projections of D1–D7 and are not mapped here.
 
-`clearing_edges` (migration D9 11, BE-077) keeps the cleared edges of an epoch that the indexer read from the view `list_obligations` for a `clearing_applied` summary of interface 0.0.13 (`edge_count`, `edges_hash`). The set is checked against `edges_hash` before the block is applied, and a rebuild replays the summary from it with no RPC. `epoch_committed` of 0.0.13 carries all positions (`positions_hash`, `position_count`) and is read from the event.
+`clearing_edges` (migration D9 11, BE-077) keeps the cleared edges of an epoch that the indexer read from the view `list_obligations` for a `clearing_applied` summary of interface 0.0.13 (`edge_count`, `edges_hash`). The set is checked against `edges_hash` before the block is applied, and a rebuild replays the summary from it with no RPC. If the contract no longer has the pairs of the epoch (`prune_epoch` ran before the indexer read them, B8-F1), the view lists fewer pairs than the epoch had edges: the row is kept with `unavailable` 1, `epochs.edges_unavailable` is set, `obligations.cleared` of that epoch stays NULL, and the indexer goes on (the positions come with `epoch_committed`). A full list that does not hash to `edges_hash` still stops the indexer. `epoch_committed` of 0.0.13 carries all positions (`positions_hash`, `position_count`) and is read from the event.
 
 | Table | Column | D field | Notes |
 | --- | --- | --- | --- |
@@ -49,6 +49,7 @@ The infrastructure tables `events_raw`, `indexer_cursor`, `settlement_jobs` and 
 | epochs | total_obligation | D2 `obligation` | Σ obligations at cutoff |
 | epochs | cleared_total | D4 cleared value | |
 | epochs | total_due | D2 `obligation` | Σ `amount` of the debtor positions; from `epoch_committed` (0.0.13), checked against the positions |
+| epochs | edges_unavailable | teknis | 1 when the cleared edges of the epoch could not be read from the chain (pruned before the indexer read them); `obligations.cleared` of the epoch is then NULL (B8-F1) |
 | epochs | total_claimable | D2 `obligation` | Σ `amount` of the creditor positions; from `epoch_committed` (0.0.13), checked against the positions |
 | obligations | circle_id | teknis | |
 | obligations | epoch | D2 `obligation` | |

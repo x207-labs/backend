@@ -36,9 +36,9 @@ export function appliedSummaries(block: SourceBlock, contractId: string): Array<
   return found;
 }
 
-export function storedClearingEdges(db: Database.Database, circleId: string, epoch: number): { edges: ClearedEdge[]; edgesHash: string } | undefined {
-  const row = db.prepare("SELECT edges_json, edges_hash FROM clearing_edges WHERE circle_id = ? AND epoch = ?").get(circleId, epoch) as { edges_json: string; edges_hash: string } | undefined;
-  return row ? { edges: JSON.parse(row.edges_json) as ClearedEdge[], edgesHash: row.edges_hash } : undefined;
+export function storedClearingEdges(db: Database.Database, circleId: string, epoch: number): { edges: ClearedEdge[]; edgesHash: string; unavailable: boolean } | undefined {
+  const row = db.prepare("SELECT edges_json, edges_hash, unavailable FROM clearing_edges WHERE circle_id = ? AND epoch = ?").get(circleId, epoch) as { edges_json: string; edges_hash: string; unavailable: number } | undefined;
+  return row ? { edges: JSON.parse(row.edges_json) as ClearedEdge[], edgesHash: row.edges_hash, unavailable: row.unavailable === 1 } : undefined;
 }
 
 /**
@@ -65,6 +65,14 @@ export async function prefetchClearingEdges(
       }
     }
     if (edges === undefined) throw new Error(`list_obligations epoch ${s.epoch} failed ${attempts} times: ${(last as Error)?.message ?? String(last)}`);
+    // B8-F1: `prune_epoch` removes the pairs of a finalized epoch, and with them `cleared`. The view then lists fewer pairs than the epoch had edges (the indexer knows its own pairs from
+    // the voucher events). That is not a corrupt answer, and stopping on it would block every later block: the epoch is marked `edges_unavailable`, its `cleared` stays unknown (NULL),
+    // and its positions, which come with the event, are applied as usual. A full list that does not hash to `edges_hash` is still a halt.
+    const known = (db.prepare("SELECT COUNT(*) AS n FROM obligations WHERE circle_id = ? AND epoch = ?").get(circleId, s.epoch) as { n: number }).n;
+    if (edges.length < Math.max(known, s.edgeCount)) {
+      db.prepare("INSERT OR REPLACE INTO clearing_edges (circle_id, epoch, edges_json, edges_hash, block_height, unavailable) VALUES (?, ?, '[]', ?, ?, 1)").run(circleId, s.epoch, s.edgesHash, block.height);
+      continue;
+    }
     const cleared = edges.filter((e) => BigInt(e.cleared) > 0n).map((e) => ({ debtor: e.debtor, creditor: e.creditor, cleared: e.cleared }));
     const hash = clearingHashes().edgesHash(cleared);
     if (hash !== s.edgesHash || cleared.length !== s.edgeCount) {

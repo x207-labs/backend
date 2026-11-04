@@ -37,6 +37,21 @@ function applyClearingSummary(ctx: HandlerContext, e: ClearingAppliedSummary): v
   if (!stored || stored.edgesHash !== e.edges_hash) {
     throw new IndexerHaltError(`clearing_applied epoch ${e.epoch}: the edges read from list_obligations are missing or are not the ones of edges_hash ${e.edges_hash}`);
   }
+  if (stored.unavailable) {
+    // B8-F1: the contract no longer has the edges of this epoch (pruned): `obligations.cleared` stays unknown, the summary is recorded, the positions come with `epoch_committed`
+    const total = units(e.cleared_total, "cleared_total");
+    ctx.db
+      .prepare(
+        `INSERT OR IGNORE INTO clearing_log (circle_id, epoch, solver, cleared_total, fee, edge_count, block_height, applied_at_ns, tx_hash, receipt_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        ctx.circleId, e.epoch, e.solver ?? "", total, units(e.clearing_fee, "clearing_fee") + units(e.solver_fee, "solver_fee"), e.edge_count,
+        ctx.block.height, ctx.block.timestampNs, ctx.txHash, ctx.receiptId,
+      );
+    ctx.db.prepare("UPDATE epochs SET cleared_total = ?, edges_unavailable = 1 WHERE circle_id = ? AND epoch = ?").run(total, ctx.circleId, e.epoch);
+    return;
+  }
   if (stored.edges.length !== e.edge_count) throw new IndexerHaltError(`clearing_applied epoch ${e.epoch}: event ${e.edge_count} edges, read ${stored.edges.length}`);
   const total = units(e.cleared_total, "cleared_total");
   const sum = stored.edges.reduce((acc, edge) => acc + units(edge.cleared, "cleared"), 0n);

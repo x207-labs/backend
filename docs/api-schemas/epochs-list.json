@@ -27,7 +27,8 @@
           "finalizedAt": { "oneOf": [{ "$ref": "common.json#/definitions/isoTime" }, { "type": "null" }] },
           "edgeCount": { "type": ["integer", "null"] },
           "totalObligation": { "oneOf": [{ "$ref": "common.json#/definitions/amount" }, { "type": "null" }] },
-          "cleared": { "$ref": "common.json#/definitions/amount" }
+          "cleared": { "$ref": "common.json#/definitions/amount" },
+          "edgesUnavailable": { "type": "boolean", "description": "true when the cleared edges of this epoch could not be read from the chain (pruned before the indexer read them): cleared per edge is unknown (null), the totals and the positions are right" }
         }
       }
     },
