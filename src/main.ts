@@ -4,6 +4,7 @@ import type { ContractAbi } from "@x207/core";
 import { apiOptionsFromEnv, createApiServer } from "./api/server.js";
 import { openDatabase } from "./db/index.js";
 import { daoRegistryFromFile } from "./marketplace/dao-registry.js";
+import { MockCodeIssuer } from "./marketplace/code-issuers.js";
 import { marketplaceRoutes } from "./marketplace/index.js";
 import { FailoverRpcClient } from "./indexer/rpc-client.js";
 import { Indexer } from "./indexer/indexer.js";
@@ -112,8 +113,14 @@ export async function startApp(env: NodeJS.ProcessEnv = process.env, log: (line:
   await indexer.bootstrap();
 
   const client = new OneClickClient({ config: settlement });
+  // B7-C10: the shipped binary has no real issuer adapter. A listing with `verifiable: true` is refused `code_issuer_unknown` unless the operator registers one. For a demo only,
+  // `X207_CODE_MOCK_ISSUER=<name>` registers the in-memory mock under that name (with the codes of `X207_CODE_MOCK_CODES`, comma separated); it checks nothing at a real issuer.
+  const mockIssuer = env.X207_CODE_MOCK_ISSUER ? new MockCodeIssuer() : undefined;
+  for (const code of (env.X207_CODE_MOCK_CODES ?? "").split(",").map((c) => c.trim()).filter((c) => c !== "")) mockIssuer?.issue(code);
+  if (mockIssuer) logger.warn("X207_CODE_MOCK_ISSUER is set: codes are checked against a mock in memory, not a real issuer (demo only)");
+  else logger.warn("no code issuer is registered: a listing with verifiable true is refused code_issuer_unknown; codes can only be sold with verifiable false, up to 20 credit, with no check before the key");
   if (!env.X207_CODE_SEEN_KEY) logger.warn("X207_CODE_SEEN_KEY is empty, codes sold twice are not detected (code_duplicate disabled)");
-  const server = createApiServer({ db, ...apiOptionsFromEnv(env), logger, ...(env.METRICS_TOKEN ? { metricsToken: env.METRICS_TOKEN } : {}), rpcProbe: async () => { await viewGetParams(primary, config.contractId); return { endpoint: primary }; }, settlement: { client, accountExists: nearAccountExists(primary) }, daoView: rpcViewFunction(primary), extraRoutes: marketplaceRoutes(db, { chainView: rpcViewFunction(primary), claimRpc: jsonRpcClaimRpc(primary), openLimits: abuseFromEnv(env).open, ...(env.X207_CODE_SEEN_KEY ? { codeSeenKey: env.X207_CODE_SEEN_KEY } : {}), daoRegistry: env.X207_DAO_REGISTRY_PATH ? daoRegistryFromFile(env.X207_DAO_REGISTRY_PATH) : [] }) });
+  const server = createApiServer({ db, ...apiOptionsFromEnv(env), logger, ...(env.METRICS_TOKEN ? { metricsToken: env.METRICS_TOKEN } : {}), rpcProbe: async () => { await viewGetParams(primary, config.contractId); return { endpoint: primary }; }, settlement: { client, accountExists: nearAccountExists(primary) }, daoView: rpcViewFunction(primary), extraRoutes: marketplaceRoutes(db, { chainView: rpcViewFunction(primary), claimRpc: jsonRpcClaimRpc(primary), openLimits: abuseFromEnv(env).open, ...(env.X207_CODE_SEEN_KEY ? { codeSeenKey: env.X207_CODE_SEEN_KEY } : {}), ...(mockIssuer ? { codeIssuers: { [env.X207_CODE_MOCK_ISSUER as string]: mockIssuer } } : {}), daoRegistry: env.X207_DAO_REGISTRY_PATH ? daoRegistryFromFile(env.X207_DAO_REGISTRY_PATH) : [] }) });
   await new Promise<void>((ready) => server.listen(config.port, config.host, ready));
   const stopMonitor = startJobMonitor({ db, client }, config.jobPollMs);
 

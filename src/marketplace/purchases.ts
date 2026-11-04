@@ -43,6 +43,8 @@ export const DEFAULT_VERIFIABLE_CODE_LIMIT = "100000000";
 const DISPUTE_REASONS = ["content_mismatch", "contains_pii", "other"] as const;
 const BUYER_ACTIONS = ["confirmed", "disputed", "cancelled"] as const;
 const ACTIVE = "('paid_held','cipher_posted','key_released','confirmed')";
+/** B7-C5: a `refuted` purchase was paid to the seller (the buyer's proof of cheating failed), so the license and the code are sold: the same listing is not sold again. */
+const SOLD = "('paid_held','cipher_posted','key_released','confirmed','refuted')";
 const MIB = 1024 * 1024;
 const MAX_CIPHERTEXT_BYTES = 256 * MIB;
 /** Downloads of a ciphertext that run at the same time (memory is bounded by this many files). */
@@ -280,7 +282,7 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
   const ids = options.licenseIds ?? DEFAULT_LICENSE_IDS;
   const downloads = new Semaphore(MAX_DOWNLOADS);
   const codeWindow = options.codeDisputeWindowSeconds ?? CODE_DISPUTE_WINDOW_SECONDS;
-  const checkTtlMs = (options.codeCheckTtlSeconds ?? 600) * 1000;
+  const checkTtlMs = (options.codeCheckTtlSeconds ?? 60) * 1000;
 
   const refuse = (message: string, details: Record<string, unknown> = {}): never => {
     throw new ApiError(409, "purchase_bad_state", message, details);
@@ -409,7 +411,7 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
             db,
             `SELECT s.listing_hash FROM code_seen s JOIN listings l ON l.circle_id = s.circle_id AND l.listing_hash = s.listing_hash
               WHERE s.circle_id = ? AND s.mac = ? AND s.listing_hash <> ?
-                AND ((l.status = 'open' AND l.expires_at > ?) OR EXISTS (SELECT 1 FROM purchases p WHERE p.circle_id = s.circle_id AND p.listing_hash = s.listing_hash AND p.status IN ${ACTIVE}))
+                AND ((l.status = 'open' AND l.expires_at > ?) OR EXISTS (SELECT 1 FROM purchases p WHERE p.circle_id = s.circle_id AND p.listing_hash = s.listing_hash AND p.status IN ${SOLD}))
               LIMIT 1`,
             circle.circle_id, mac, listing.listing_hash, nowS,
           );
@@ -500,7 +502,7 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
         // exclusivity per content hash: an exclusive license excludes every other, and nothing is sold exclusively while another license of that content is alive
         const clash = row<{ n: bigint }>(
           db,
-          `SELECT COUNT(*) AS n FROM purchases WHERE circle_id = ? AND content_hash = ? AND status IN ${ACTIVE} AND (? = 1 OR exclusive = 1)`,
+          `SELECT COUNT(*) AS n FROM purchases WHERE circle_id = ? AND content_hash = ? AND status IN ${SOLD} AND (? = 1 OR exclusive = 1)`,
           circle.circle_id, d.content_hash, d.exclusive ? 1 : 0,
         );
         if ((clash?.n ?? 0n) > 0n) throw new ApiError(409, "exclusive_taken", "This content already has an exclusive license, or another license that blocks an exclusive license", { contentHash: d.content_hash });
@@ -569,6 +571,8 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
           if (p.kind === "code") await withCiphertext({ kind: p.source_kind as "https" | "ipfs", ref: p.source_ref as string }, p.cipher_hash as string, r.cipher_size, () => undefined);
           db.transaction(() => {
             record(db, circle.circle_id, p, p.seller, "key_released", at, signature, now(), JSON.stringify(r));
+            // B7-C4: a verdict serves one release. The seller who cancels a released sale (or spends the code after it) must have the code checked again for the next buyer
+            if (p.kind === "code") db.prepare("DELETE FROM code_checks WHERE circle_id = ? AND listing_hash = ?").run(circle.circle_id, p.listing_hash);
             db.prepare("UPDATE purchases SET status = 'key_released', release_json = ?, release_signature = ?, released_at = ?, dispute_until = ? WHERE id = ?").run(JSON.stringify(r), signature, at, at + (p.kind === "code" ? codeWindow : window), p.id);
           })();
           return { status: 201, body: purchaseView(findPurchase(db, circle.circle_id, params.id as string)) };

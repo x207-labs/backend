@@ -368,6 +368,41 @@ describe("BE-069 one-time codes: the code book on the fair exchange of BE-056", 
     expect((await m.get(`/purchases/${id}`)).json.status).toBe("disputed"); // no automatic confirmation, the seller is not paid
   });
 
+  it("TC-BE-078-C4 a verdict serves one release: after a released sale is cancelled the next buyer needs a new check; the verdict lasts one minute (B7-C4)", async () => {
+    const m = await start();
+    const s = await sell(m);
+    const id = (await buy(m, s)).json.purchase_id as string;
+    await postCipher(m, id, s);
+    expect((await check(m, s)).json.verdict).toBe("valid");
+    expect((await release(m, id, s).post()).status).toBe(201);
+    expect((await m.get(`/listings/${s.hash}/code-check`)).json).toMatchObject({ verdict: null, fresh: false });
+    // the seller (or an accomplice who redeemed the code) cancels the released sale; the code is spent at the issuer
+    expect((await buyerNotice(m, id, "cancelled", "andi")).status).toBe(201);
+    issuer.markUsed(CODE);
+    const id2 = (await buy(m, s, "citra")).json.purchase_id as string;
+    await postCipher(m, id2, s);
+    const releaseToCitra = () => {
+      const r = createCodeRelease({ doc: s.doc, code: s.code, salt: s.enc.salt, buyer: acct("citra"), buyerPublicKey: m.keys.citra!.publicKey, purchase_id: id2, ciphertext: s.enc.ciphertext, contentKey: s.enc.key, at: at(m), sellerSecretKey: m.keys.andi!.secretKey });
+      return m.post(`/purchases/${id2}`, { notice: r.release, signature: r.signature });
+    };
+    const again = await releaseToCitra();
+    expect([again.status, again.json.error.code]).toEqual([409, "code_not_checked"]); // the old verdict is gone
+    // and a verdict older than a minute is not enough
+    issuer.issue(CODE);
+    expect((await check(m, s)).json.verdict).toBe("valid");
+    m.clock.now += 61_000;
+    expect((await releaseToCitra()).json.error.code).toBe("code_not_checked");
+  });
+
+  it("TC-BE-078-C5 a refuted purchase is a sale: the same listing and the same code are not sold again (B7-C5)", async () => {
+    const m = await start();
+    const s = await sell(m);
+    const id = (await buy(m, s)).json.purchase_id as string;
+    m.db.prepare("UPDATE purchases SET status = 'refuted' WHERE id = ?").run(id);
+    const second = await buy(m, s, "citra");
+    expect([second.status, second.json.error.code]).toEqual([409, "exclusive_taken"]);
+  });
+
   it("TC-BE-069-10 a seller who encrypts another code than the commitment is caught by the proof of cheating of the fair exchange", async () => {
     const m = await start();
     const s = await sell(m);
