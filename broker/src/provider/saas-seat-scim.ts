@@ -6,8 +6,8 @@
 //   DELETE {base}/Users/{id}                                                                         -> 204 or 404          (revoke, step 2)
 // Scope of the grant: `resource` = the id of the SCIM group (it must be in `allowedGroups`: a group outside is refused before any call), `permission` is not used, `grantee_ref` = the `userName` of the
 // seat (an e-mail). Seats have no end date in SCIM, so the broker removes the seat at the end of the paid day (`revoke`, with the retry of the manager); a renewal keeps the same user.
-// Group membership is read and written with `GET` and `PUT` (the shared HTTP helper has no `PATCH`); two writers of the same group at once can lose an update, and the grantor should keep one broker
-// per SCIM tenant. The seat is checked at the provider before it is called active: `status` is `active` only for an active user that is in the group.
+// Group membership is changed with `PATCH` (RFC 7644 3.5.2, one member added or removed); a provider that answers 405 or 501 gets the fallback: `GET` and `PUT` of the whole list under a lock of this process (a
+// truncated list can lose members there, X-8; the grantor should keep one broker per SCIM tenant). The seat is checked at the provider before it is called active: `status` is `active` only for an active user that is in the group.
 import type { AccessState, ProviderAccessAdapter, ProviderGrantRequest, ProviderGrantResult } from "./adapter.js";
 import { call, ProviderHttpError, type FetchLike } from "./http.js";
 
@@ -21,6 +21,7 @@ export interface SaasSeatScimOptions {
   fetch?: FetchLike;
 }
 
+const PATCH_SCHEMA = "urn:ietf:params:scim:api:messages:2.0:PatchOp";
 const USER_SCHEMA = "urn:ietf:params:scim:schemas:core:2.0:User";
 const GROUP_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const ID = /^[A-Za-z0-9_-]{1,128}$/;
@@ -103,6 +104,15 @@ export class SaasSeatScimAdapter implements ProviderAccessAdapter {
   }
 
   async #memberNow(group: string, user: string, present: boolean): Promise<void> {
+    // X-8: RFC 7644 3.5.2 PATCH adds or removes ONE member and leaves the rest of the list to the provider, so a list that was truncated or old can no longer remove members. GET and PUT
+    // (the whole list written back, under the lock above) are only the fallback for a provider that answers 405 or 501 to PATCH.
+    const op = present ? { op: "add", path: "members", value: [{ value: user }] } : { op: "remove", path: `members[value eq "${user}"]` };
+    const patched = await call(this.#fetch, "", this.#headers(), { method: "PATCH", path: `${this.#base}/Groups/${group}`, body: JSON.stringify({ schemas: [PATCH_SCHEMA], Operations: [op] }) }, [200, 204, 404, 405, 501]);
+    if (patched.status === 404) {
+      if (present) throw new Error(`group ${group} does not exist at the provider`);
+      return;
+    }
+    if (patched.status !== 405 && patched.status !== 501) return;
     const g = await this.#get(`/Groups/${group}`);
     if (g === null) {
       if (present) throw new Error(`group ${group} does not exist at the provider`);

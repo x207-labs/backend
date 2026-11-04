@@ -10,7 +10,7 @@ export class ProviderHttpError extends Error {
 }
 
 export interface Call {
-  method: "GET" | "PUT" | "POST" | "DELETE";
+  method: "GET" | "PUT" | "POST" | "PATCH" | "DELETE";
   path: string;
   body?: string;
   headers?: Record<string, string>;

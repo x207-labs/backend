@@ -9,7 +9,7 @@ const NS = (ms: number): string => (BigInt(ms) * 1_000_000n).toString();
 const input = (over: Record<string, unknown> = {}, id = 1) => ({ grant_id: id, limits: { scope: JSON.stringify({ provider: "saas-seat-scim", grantee_ref: "andi@example.org", resource: "grp-team", permission: null, ...over }), expires_at: NS(NOW + 10 * DAY) } });
 
 /** A mock SCIM 2.0 service: Users (with `active`) and Groups (with `members`); userName is unique (409). */
-function scim(groupDelayMs = 0) {
+function scim(groupDelayMs = 0, patch = true) {
   const users = new Map<string, { userName: string; active: boolean; externalId?: string }>();
   const groups = new Map<string, { displayName: string; members: Array<{ value: string }> }>([["grp-team", { displayName: "Team", members: [{ value: "existing-1" }] }], ["grp-admin", { displayName: "Admins", members: [] }]]);
   users.set("existing-1", { userName: "owner@example.org", active: true });
@@ -51,6 +51,14 @@ function scim(groupDelayMs = 0) {
         const snapshot = { id: gm[1], displayName: g.displayName, members: [...g.members] };
         if (groupDelayMs > 0) await new Promise((r) => setTimeout(r, groupDelayMs)); // the answer is old by the time it is used
         return json(200, snapshot);
+      }
+      if (method === "PATCH") {
+        if (!patch) return json(501, {}); // a provider without PATCH: the adapter falls back to GET and PUT
+        for (const o of JSON.parse(init!.body!).Operations as Array<{ op: string; path: string; value?: Array<{ value: string }> }>) {
+          if (o.op === "add") g.members = [...g.members, ...(o.value ?? [])];
+          else g.members = g.members.filter((m) => !o.path.includes(`"${m.value}"`));
+        }
+        return json(200, {});
       }
       if (method === "PUT") {
         g.members = JSON.parse(init!.body!).members;
@@ -124,7 +132,7 @@ describe("BE-087: saas-seat-scim adapter (ADR-47 group B, catalog #17), mock SCI
     const [done] = await m.sweep();
     expect(done?.status).toBe("revoked");
     const writes = p.calls.filter((c) => c.method !== "GET").map((c) => `${c.method} ${c.path}`);
-    expect(writes).toEqual(["PUT /Users/usr0001", "PUT /Groups/grp-team", "DELETE /Users/usr0001"]);
+    expect(writes).toEqual(["PUT /Users/usr0001", "PATCH /Groups/grp-team", "DELETE /Users/usr0001"]);
     expect(p.calls.find((c) => c.method === "PUT" && c.path === "/Users/usr0001")!.body.active).toBe(false);
     expect(p.users.has("usr0001")).toBe(false);
     expect(p.groups.get("grp-team")!.members).toEqual([{ value: "existing-1" }]);
@@ -176,7 +184,7 @@ describe("BE-087: saas-seat-scim adapter (ADR-47 group B, catalog #17), mock SCI
   });
 
   it("TC-BE-087-09 (security review batch 8) two seats made at the same time for one group are both in the group: the read and the write of the group are one step", async () => {
-    const p = scim(30);
+    const p = scim(30, false); // the fallback path (GET and PUT) under the lock
     const store = new BrokerStore(":memory:");
     const m = new ProviderAccessManager({ store, now: () => NOW });
     m.register(p.adapter());
@@ -239,5 +247,28 @@ describe("X-6 cross review: a seat is adopted and deleted only when it is the on
     calls.length = 0;
     await a.revoke("sc:7:u-ours:grp-team");
     expect(calls).toContain("DELETE /Users/u-ours");
+  });
+});
+
+describe("X-8 cross review: the group is changed by PATCH of one member", () => {
+  it("TC-BE-087-X8 add and remove are PATCH operations on one member; a list the provider answers short or old cannot remove the others; a provider without PATCH gets the GET and PUT fallback", async () => {
+    const p = scim();
+    const adapter = p.adapter();
+    const req = { grantId: 1, granteeRef: "andi@example.org", resource: "grp-team", permission: null, expiresAtMs: NOW + 86_400_000 };
+    const made = await adapter.grant(req);
+    const patches = p.calls.filter((c) => c.method === "PATCH");
+    expect(patches).toHaveLength(1);
+    expect(patches[0]!.body).toMatchObject({ schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"], Operations: [{ op: "add", path: "members", value: [{ value: "usr0001" }] }] });
+    expect(p.calls.some((c) => c.method === "PUT" && c.path.startsWith("/Groups"))).toBe(false); // the whole list was never written back
+    expect(p.groups.get("grp-team")!.members.map((m) => m.value)).toEqual(["existing-1", "usr0001"]);
+    await adapter.revoke(made.handle);
+    expect(p.calls.filter((c) => c.method === "PATCH").at(-1)!.body.Operations[0]).toEqual({ op: "remove", path: 'members[value eq "usr0001"]' });
+    expect(p.groups.get("grp-team")!.members.map((m) => m.value)).toEqual(["existing-1"]);
+    const old = scim(0, false);
+    const fallback = await old.adapter().grant(req);
+    expect(old.calls.filter((c) => c.method === "PATCH")).toHaveLength(1);
+    expect(old.calls.some((c) => c.method === "PUT" && c.path === "/Groups/grp-team")).toBe(true);
+    expect(old.groups.get("grp-team")!.members.map((m) => m.value)).toEqual(["existing-1", "usr0001"]);
+    expect(fallback.handle).toBe("sc:1:usr0001:grp-team");
   });
 });
