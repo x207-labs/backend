@@ -29,7 +29,11 @@ export interface ProveGranteeArgs {
 }
 
 export interface ProviderGrantResult {
-  /** The provider's own identifier of the access, kept to revoke it (an invitation id, a key fingerprint, a role member id). Not a secret. */
+  /**
+   * The provider's own identifier of the access, kept to revoke it (an invitation id, a key fingerprint, a role member id). For most adapters it is not a secret. For some it is: the handle of
+   * `oauth-scoped` holds the access token, the only thing RFC 7009 and RFC 7662 accept. A handle is kept only in the store of the broker; it is never sent to the lessee, never logged, and never part of
+   * an error message (docs/security.md, until BK-010).
+   */
   handle: string;
   /** When the PROVIDER will close the access by itself, or `null` when the provider has no such expiry. */
   nativeExpiresAtMs: number | null;
