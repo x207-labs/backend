@@ -176,3 +176,21 @@ describe("BE-085: messaging-subaccount adapter (ADR-47 group C, catalog #63), mo
     await expect(a.revoke("ms:1:../x")).rejects.toThrow(/unknown messaging handle/);
   });
 });
+
+describe("X-10 cross review: a sub-account that the provider suspended is not made again", () => {
+  it("TC-BE-085-X10 the renewal of a suspended sub-account is refused and nothing new is created; one that is gone is made again", async () => {
+    const { p, clock, m } = setup();
+    const g = input();
+    await m.grantAccess(g);
+    expect(p.subs.size).toBe(1);
+    clock.now += DAY / 2;
+    p.subs.get("sub0001")!.status = "suspended"; // the provider stopped it (abuse, or the limits)
+    await expect(m.grantAccess(g)).rejects.toThrow(/suspended; it was not made again/);
+    expect(p.subs.size).toBe(1); // no second sub-account, no new key, no new budget
+    expect(p.calls.filter((c) => c.method === "POST" && c.path === "/v1/subaccounts")).toHaveLength(1);
+    p.subs.delete("sub0001"); // gone at the provider: the renewal makes it again
+    const again = await m.grantAccess(g);
+    expect(again.access.handle).not.toBe("");
+    expect(p.subs.size).toBe(1);
+  });
+});

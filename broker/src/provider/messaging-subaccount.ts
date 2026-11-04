@@ -88,8 +88,12 @@ export class MessagingSubaccountAdapter implements ProviderAccessAdapter {
     // the rent of the next day: the sub-account is there and its key is not shown again
     if (request.existingHandle) {
       const still = await call(this.#fetch, "", this.#headers(), { method: "GET", path: `${this.#base}/subaccounts/${idOf(request.existingHandle)}` }, [200, 404]);
-      if (still.status === 200 && (JSON.parse(still.text) as { status?: unknown }).status === "active") {
-        return { handle: request.existingHandle, nativeExpiresAtMs: null, delivery: { provider: "messaging-subaccount", key: null, dailyLimit, budgetUsd, note: "the key was shown on the first day; ask the grantor for a new access if it was lost" } };
+      if (still.status === 200) {
+        const state = (JSON.parse(still.text) as { status?: unknown }).status;
+        if (state === "active") return { handle: request.existingHandle, nativeExpiresAtMs: null, delivery: { provider: "messaging-subaccount", key: null, dailyLimit, budgetUsd, note: "the key was shown on the first day; ask the grantor for a new access if it was lost" } };
+        // X-10: a sub-account that exists and is not active was suspended (or closed) by the provider, for an abuse or a limit. A new one here would give the lessee a fresh account, a fresh key and a fresh
+        // budget past that decision, so the renewal is refused; only a sub-account that is gone (404) is made again.
+        throw new Error(`the provider says the sub-account is ${typeof state === "string" ? state : "not active"}; it was not made again`);
       }
     }
     const made = await call(this.#fetch, "", this.#headers(), { method: "POST", path: `${this.#base}/subaccounts`, body: JSON.stringify({ name: `x207-${request.grantId}-${request.granteeRef}`.slice(0, 128), daily_limit: dailyLimit, budget: budgetUsd }) }, [200, 201]);
