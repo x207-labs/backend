@@ -182,6 +182,7 @@ describe("X-10 cross review: a sub-account that the provider suspended is not ma
     const { p, clock, m } = setup();
     const g = input();
     await m.grantAccess(g);
+    m.confirmDelivery(1); // the key of the first day reached the lessee: the next day is a renewal
     expect(p.subs.size).toBe(1);
     clock.now += DAY / 2;
     p.subs.get("sub0001")!.status = "suspended"; // the provider stopped it (abuse, or the limits)
