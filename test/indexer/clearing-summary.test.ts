@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDatabase } from "../../src/db/index.js";
 import { edgesHash as sdkEdgesHash, positionsHash as sdkPositionsHash } from "@x207/core";
 import type { ClearedEdge } from "../../src/indexer/clearing-hashes.js";
+import type { SourceBlock } from "../../src/indexer/block-source.js";
 import { prefetchClearingEdges, storedClearingEdges } from "../../src/indexer/clearing-edges.js";
 import { epochHandlers } from "../../src/indexer/handlers/epochs.js";
 import type { HandlerContext } from "../../src/indexer/handlers/index.js";
