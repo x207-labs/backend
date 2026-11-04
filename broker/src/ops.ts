@@ -4,7 +4,7 @@ import { timingSafeEqual } from "node:crypto";
 import type { ProviderAccessManager } from "./provider/manager.js";
 import type { BrokerStore } from "./store.js";
 
-export type RouteLabel = "lease" | "proxy" | "access" | "access_challenge" | "access_stop" | "usage" | "health" | "healthz" | "metrics" | "unmatched";
+export type RouteLabel = "lease" | "proxy" | "access" | "access_challenge" | "access_stop" | "usage" | "health" | "healthz" | "metrics" | "attestation" | "unmatched";
 
 export class BrokerTelemetry {
   readonly #requests = new Map<string, number>();
@@ -34,6 +34,7 @@ export function routeLabel(pathname: string, method: string): RouteLabel {
   if (pathname === "/health") return "health";
   if (pathname === "/healthz") return "healthz";
   if (pathname === "/metrics") return "metrics";
+  if (pathname === "/attestation") return "attestation";
   if (/^\/grants\/\d+\/lease$/.test(pathname)) return "lease";
   if (/^\/grants\/\d+\/proxy(\/.*)?$/.test(pathname)) return "proxy";
   if (/^\/grants\/\d+\/usage$/.test(pathname)) return "usage";

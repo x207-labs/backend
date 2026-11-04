@@ -12,7 +12,7 @@ grantor (`payTo` = grantor, `extra.grantId`, `resource` = `x207:grant:<grantId>`
 | `src/watcher/` | reads `grant_activated`, `grant_revoked`, `member_defaulted` from the read API (BK-003) | built |
 | `src/keys/` | class B: `AddKey` and `DeleteKey` on the lease sub-account (BK-006, BK-007) | built |
 | `src/proxy/` | class C (BK-008): `POST /grants/{grantId}/proxy/*` checks the grant, the scope and the quota of the epoch, forwards the call with the secret of the grantor and settles only when the provider answered with success | built, **no TEE** |
-| `src/attest/` | class C (BK-009): the `Attestor` interface and `NoAttestation` | interface only |
+| `src/attest/` | class C (BK-009): the `Attestor` interface, `NoAttestation`, `GET /attestation` (`{"mode":"none",reason}` here) and `fetchAttestation` with `requireTee` | interface and client, **no TEE**; see [../docs/broker-tee.md](../docs/broker-tee.md) |
 
 ```bash
 npm install   # from the repository root, workspaces
@@ -25,8 +25,8 @@ Variables are in `.env.example`.
 ## Class C: what it is and what it is not
 The secret of the grantor (the API key of the provider) is read from the environment variable that `BROKER_PROVIDERS` names. **There is no
 TEE in this build and no attestation**: whoever runs the broker can read the secret, and `prove` for class C answers `no_attestation`
-unless a real `Attestor` is given. The sealing of secrets to an enclave key (BK-009, BK-010) and the upload endpoint `POST /secrets`
-are not built. What is built is checked against a local mock provider: the secret is sent to the provider only, never back to the lessee,
+unless a real `Attestor` is given. `GET /attestation` answers `{"mode":"none","reason":…}`, and a client that sets `requireTee` refuses such a broker (`fetchAttestation`, `src/attest/client.ts`). The sealing of secrets to an enclave key (BK-009, BK-010) and the upload endpoint `POST /secrets`
+are not built; what is protected without a TEE, and the steps to a real one, are in [../docs/broker-tee.md](../docs/broker-tee.md). What is built is checked against a local mock provider: the secret is sent to the provider only, never back to the lessee,
 never to the facilitator, and a scan of responses and facilitator traffic in `test/proxy.test.ts` finds none.
 
 **Whose secret (B7-P1).** The secret of a provider is the secret of the owner of this broker (`BROKER_SECRET_OWNER`, default `BROKER_ACCOUNT_ID`). A class C grant whose `grantor` is another account is refused `403 grant_not_owned` before any payment is asked, for every provider that is not marked `mock`; otherwise any member could list a grant for the same asset type and be served, and paid for, with the key of the owner. Mock providers (the demo) are served for any grantor.

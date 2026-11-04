@@ -6,6 +6,7 @@ import { BrokerTelemetry, healthz, metrics, routeLabel, type RouteLabel } from "
 import type { BrokerStore } from "./store.js";
 import { guardVoucher } from "./in-flight.js";
 import { DispatchError, type Dispatcher } from "./dispatcher.js";
+import { attestationBody, NoAttestation, type Attestor } from "./attest/index.js";
 import type { ClassBAdapter } from "./keys/class-b.js";
 import { ACCESS_PATH, createProviderRoutes, type ProviderRoutesOptions } from "./provider/routes.js";
 import { createProxyHandler, createUsageHandler, matchProxy, USAGE_PATH, type ProxyOptions } from "./proxy/handler.js";
@@ -25,6 +26,8 @@ export interface BrokerServerOptions {
   /** State of the broker for `/healthz` and `/metrics` (BE-071). */
   store?: BrokerStore;
   now?: () => number;
+  /** BK-009: the attestation that `GET /attestation` answers. Default `NoAttestation`: `{"mode":"none"}`. */
+  attestor?: Attestor;
   /** Bearer token for `/metrics`. */
   metricsToken?: string;
   proxy?: Omit<ProxyOptions, "dispatcher" | "facilitatorUrl" | "circleId" | "brokerAccount" | "extra" | "creditPrice" | "fetch">;
@@ -66,6 +69,7 @@ export function createBrokerHandler(options: BrokerServerOptions): (request: Req
     const url = new URL(request.url);
     if (url.pathname === "/healthz") return healthz(ops);
     if (url.pathname === "/metrics") return metrics(ops, request);
+    if (url.pathname === "/attestation") return request.method === "GET" ? json(200, await attestationBody(options.attestor ?? new NoAttestation())) : json(405, { error: "method_not_allowed" });
     if (ACCESS_PATH.test(url.pathname)) return providerRoutes ? providerRoutes(request) : json(501, { error: "class_not_supported" });
     if (url.pathname === "/health") return json(200, { ok: true });
     if (USAGE_PATH.test(url.pathname)) return usage ? usage(request) : json(501, { error: "class_not_supported" });

@@ -16126,6 +16126,53 @@
         "x-broker": true
       }
     },
+    "/attestation": {
+      "get": {
+        "operationId": "broker_get_attestation",
+        "summary": "Whether this broker runs in a TEE (BK-009): {mode:\"none\",reason} in every deployment of this build, or {mode:\"tee\",quote,codeHash} when an attestor is given; a client verifies the quote and the released code hash, it does not trust the word mode",
+        "tags": [
+          "broker"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many requests; see the header `Retry-After` (BE-066).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrokerError"
+                }
+              }
+            },
+            "x-error-codes": [
+              "rate_limited"
+            ]
+          }
+        },
+        "servers": [
+          {
+            "url": "{broker}",
+            "variables": {
+              "broker": {
+                "default": "http://127.0.0.1:8090"
+              }
+            }
+          }
+        ],
+        "x-broker": true
+      }
+    },
     "/grants/{grantId}/lease": {
       "get": {
         "operationId": "broker_get_grants_grantId_lease",

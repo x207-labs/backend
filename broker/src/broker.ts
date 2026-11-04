@@ -9,6 +9,7 @@ import { ClassCAdapter } from "./proxy/class-c.js";
 import { hostedForbidden, ProviderRegistry } from "./proxy/providers.js";
 import { ClassBAdapter } from "./keys/class-b.js";
 import { Revoker } from "./revoker.js";
+import type { Attestor } from "./attest/index.js";
 import { createBrokerHandler, serve } from "./server.js";
 import { BrokerStore } from "./store.js";
 import { activeGrantIdsOf } from "./grants-api.js";
@@ -34,6 +35,8 @@ export interface StartOptions {
   config: Omit<BrokerConfig, "providers" | "auditPath" | "mode"> & Partial<Pick<BrokerConfig, "providers" | "auditPath" | "mode">>;
   /** Adapters of P2 providers (BE-057); `hosted` mode refuses the real ones. */
   providerAdapters?: readonly ProviderAccessAdapter[];
+  /** BK-009: answers `GET /attestation`. Default: none (`{"mode":"none"}`), which is true for every deployment of this build. */
+  attestor?: Attestor;
   /** Replaces the NEAR chain (tests). */
   chain?: BrokerChain;
   now?: () => number;
@@ -88,6 +91,7 @@ export async function startBroker(options: StartOptions): Promise<RunningBroker>
     provider: { manager: provider, contractId: config.contractId, voucherKeyOf, now, limits: config.accessLimits },
     dispatcher, classB, facilitatorUrl: config.facilitatorUrl, circleId: config.circleId, brokerAccount: config.brokerAccount, extra,
     ...(classCProviders.length > 0 ? { proxy: { classC, providers, chain, store, owner: config.secretOwner, mode: config.mode ?? "self-hosted", ...(audit ? { audit } : {}) } } : {}),
+    ...(options.attestor ? { attestor: options.attestor } : {}),
     ...(options.fetch ? { fetch: options.fetch } : {}),
   });
   const { server, url } = await serve(handler, config.port);
