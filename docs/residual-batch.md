@@ -5,7 +5,7 @@ Code: `src/settlement/residual/batch.ts`, tests `test/settlement/residual-batch.
 
 ## What is built (the worker side)
 - `planResidualBatches(positions, { circleContract, epoch })`: one Intents `transfer` per net debtor with `receiver_id` = the circle, the USDT
-  token as `nep141:<account>`, and `msg` = `{"action":"settle","epoch":N}`; zero amounts left out, calls of at most 5 debtors.
+  token as `nep141:<account>`, `msg` = `{"action":"settle","epoch":N}` and `min_gas` of 10 Tgas; zero amounts left out, calls of at most 8 debtors (measured, see below).
 - `checkSignedPayload`: the signed message of each debtor is JSON of exactly its planned transfer (`signer_id`, `verifying_contract`, intent).
 - `runResidualBatch`: check payloads, `simulate_intents` (refuse on error or `invariant_violated`), then `dry` and `mock` stop with
   `dry_run_ok` with the `mt_on_transfer` notification of each debtor (`mtNotification`: exactly the arguments Intents sends the circle);
@@ -33,6 +33,29 @@ payload has `signer_id`, `verifying_contract`, `deadline`, base64 `nonce`; a non
 - the nonce is a versioned one (near/intents `nonce/versioned.rs`): `5628f6c6 ‖ 00 ‖ salt (4 bytes, view `current_salt`) ‖ deadline (8 bytes, a borsh i64 of nanoseconds, little endian) ‖ 15 random bytes`. The deadline inside the nonce must not be before the `deadline` of the message (`deadline is greater than nonce` otherwise).
 `simulateIntents` takes the Verifier from the run (`verifier`), not only `intents.near`, so the same code runs on the sandbox account.
 
+## Gas of one `execute_intents` for N debtors (measured in near-sandbox, 2026-11-04)
+`tests/residual-batch-gas.sandbox.test.ts` runs one circle for each N with the wasm of `intents.near`, N debtors who each deposited their residual and signed their transfer, and ONE `execute_intents` with the most gas one call can carry (300 Tgas attached). It reads the whole transaction (`EXPERIMENTAL_tx_status`). Gas in Tgas; "Intents" is the receipt of `execute_intents` (the N signatures and the N transfers), "circle" is one `mt_on_transfer` receipt on the circle.
+
+| N | `min_gas` of each transfer | all N paid | burnt in the receipt of Intents | burnt by one circle receipt | burnt in all receipts |
+| --- | --- | --- | --- | --- | --- |
+| 2 | Intents default | yes | 8.1 | 2.9 to 3.0 | 21.3 |
+| 3 | Intents default | yes | 10.7 | 2.9 to 3.0 | 30.0 |
+| 5 | Intents default | yes | 15.7 | 2.9 to 3.0 | 47.6 |
+| 6 | Intents default | yes | 18.2 | 2.9 to 3.0 | 56.3 |
+| 7 | Intents default | **no**: `Exceeded the prepaid gas.` | n/a | n/a | n/a |
+| 8 | Intents default | **no**: `Exceeded the prepaid gas.` | n/a | n/a | n/a |
+| 12 | Intents default | **no**: `Exceeded the prepaid gas.` | n/a | n/a | n/a |
+| 8 | 10 Tgas | yes | 23.3 | 2.9 to 3.0 | 74.0 |
+| 9 | 10 Tgas | yes | 25.8 | 2.9 to 3.0 | 82.7 |
+| 10 | 10 Tgas | yes | 28.3 | 2.9 to 3.0 | 91.5 |
+| 12 | 10 Tgas | **no**: `Exceeded the prepaid gas.` | n/a | n/a | n/a |
+
+What the numbers say:
+- What is burnt is small: about 2.5 Tgas for each debtor in the Intents receipt and about 2.9 Tgas for each `mt_on_transfer` on the circle, 91.5 Tgas for ten debtors. What limits N is not the burnt gas but the gas that Intents **reserves** for the notification of each transfer (`min_gas`), which has to fit in the 300 Tgas that the call carries. With the default of Intents the reservation allows 6 debtors (7 fail); with `min_gas` of 10 Tgas (more than three times what the circle burns) it allows 10 (12 fail; 11 was not tried).
+- Failing is all or nothing: a call that exceeds the prepaid gas pays nobody, the debtors keep their balance at Intents and the same batch can be sent again with fewer debtors.
+- The limit in use, `DEFAULT_MAX_PER_CALL` in `src/settlement/residual/batch.ts`, is **8 debtors** with `min_gas` of 10 Tgas (`DEFAULT_MIN_GAS`, set by `planResidualBatches` in each signed transfer): two debtors below the highest N that worked (10). Without `min_gas` the safe number would be 4. A circle whose `mt_on_transfer` burns more (a different contract) needs its own measurement.
+- These are sandbox figures with the wasm of `intents.near` of block 222990644 (sha256 in `contracts/scripts/fetch-intents-wasm.sh`); the gas costs of mainnet can differ with the version of Intents and with the contents of the receipts. The circle contract burns the same on every network.
+
 ## Not verified or not built, so BE-034 stays partial
 1. The circle has `mt_on_transfer` since interface 0.0.9 (spec 18, contracts `35dfca5`, sandbox test `tests/be034_mt_on_transfer.rs` against a
    mock multi-token). The USDT of such a payment stays a multi-token balance at Intents until someone calls `withdraw_intents_balance`
@@ -43,7 +66,7 @@ payload has `signer_id`, `verifying_contract`, `deadline`, base64 `nonce`; a non
    debtors that were paid). A run on a real circle is still to be done; the sandbox test uses a mock Intents that holds balances.
 2. The status `paid` is not atomic across debtors even then: each `mt_on_transfer` is its own receipt (CT-058).
 3. The NEP-413 wrapper of `MultiPayload` and the nonce are now checked against the real Verifier in near-sandbox (see above); not on mainnet. The module reads only the signed `message`; the signer (agent or SDK) builds the nonce and signs.
-4. How many debtors fit in one 300 Tgas call is not measured; 5 is a guess.
+4. How many debtors fit in one 300 Tgas call is measured now (next section); a run with more debtors than the table shows was not made.
 5. A run on mainnet needs the owner; `intents.testnet` has no code. Nothing here sends a transaction in `dry` or `mock`.
 
 ## Before a claim: `withdraw_intents_balance`

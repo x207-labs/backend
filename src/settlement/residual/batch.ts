@@ -27,11 +27,19 @@ export interface PlanOptions {
   circleContract: string;
   epoch: number;
   tokenId?: string;
-  /** Debtors per `execute_intents`. Each notification takes at least 5 Tgas and defaults to 30 Tgas; the real limit is not measured. */
+  /** Debtors per `execute_intents`; default `DEFAULT_MAX_PER_CALL`, measured on the real Intents contract (docs/residual-batch.md). */
   maxPerCall?: number;
+  /** The `min_gas` of each transfer: the gas that Intents keeps for the `mt_on_transfer` of the circle. Default `DEFAULT_MIN_GAS`; `null` leaves it to Intents (a larger default, so fewer debtors fit). */
+  minGas?: string | null;
 }
 
-export const DEFAULT_MAX_PER_CALL = 5;
+/**
+ * BE-034, measured in near-sandbox with the wasm of `intents.near` and 300 Tgas attached (`tests/residual-batch-gas.sandbox.test.ts`): with `min_gas` of 10 Tgas per transfer, 10 debtors fit
+ * (91.5 Tgas burnt) and 12 do not ("Exceeded the prepaid gas"); with the default of Intents 6 fit and 7 do not. The limit in use keeps two debtors below the highest N that was seen to work.
+ */
+export const DEFAULT_MAX_PER_CALL = 8;
+/** 10 Tgas: about three times what `mt_on_transfer` of the circle burns (2.9 Tgas measured), and above the least that Intents asks. */
+export const DEFAULT_MIN_GAS = "10000000000000";
 const WITHDRAW_METHOD = "withdraw_intents_balance" as const;
 
 const intentTokenId = (tokenId: string): string => (tokenId.startsWith("nep141:") ? tokenId : `nep141:${tokenId}`);
@@ -51,6 +59,7 @@ export function planResidualBatches(positions: readonly DuePosition[], options: 
         receiver_id: options.circleContract,
         tokens: { [intentTokenId(options.tokenId ?? USDT_TOKEN_ID)]: p.amount.toString() },
         msg: settleMsg(options.epoch),
+        ...(options.minGas === null ? {} : { min_gas: options.minGas ?? DEFAULT_MIN_GAS }),
       },
     }));
   const batches: ResidualTransfer[][] = [];

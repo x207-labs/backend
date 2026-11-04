@@ -21,14 +21,17 @@ describe("BE-034 plan", () => {
     const [batch] = planResidualBatches(positions, { circleContract: CIRCLE, epoch: 42 });
     expect(batch!.map((t) => [t.debtor, t.amount])).toEqual([["cleaner.near", "5000000"], ["gpu.near", "15000000"], ["scraper.near", "40000000"]]);
     expect(batch![0]!.intent).toEqual({
-      intent: "transfer", receiver_id: CIRCLE, tokens: { "nep141:usdt.tether-token.near": "5000000" }, msg: '{"action":"settle","epoch":42}',
+      intent: "transfer", receiver_id: CIRCLE, tokens: { "nep141:usdt.tether-token.near": "5000000" }, msg: '{"action":"settle","epoch":42}', min_gas: "10000000000000",
     });
+    // minGas null leaves the gas to Intents (the default of Intents is larger, so fewer debtors fit in one call)
+    expect(planResidualBatches(positions, { circleContract: CIRCLE, epoch: 42, minGas: null })[0]![0]!.intent).not.toHaveProperty("min_gas");
+    expect(planResidualBatches(positions, { circleContract: CIRCLE, epoch: 42, minGas: "5000000000000" })[0]![0]!.intent).toMatchObject({ min_gas: "5000000000000" });
   });
 
   it("TC-BE-034-02 more debtors than maxPerCall make several calls; a bad maxPerCall is refused", () => {
-    const many = Array.from({ length: 7 }, (_, i) => ({ account: `d${i}.near`, amount: 1n }));
-    expect(planResidualBatches(many, { circleContract: CIRCLE, epoch: 1, maxPerCall: 3 }).map((b) => b.length)).toEqual([3, 3, 1]);
-    expect(planResidualBatches(many, { circleContract: CIRCLE, epoch: 1 }).map((b) => b.length)).toEqual([5, 2]);
+    const many = Array.from({ length: 9 }, (_, i) => ({ account: `d${i}.near`, amount: 1n }));
+    expect(planResidualBatches(many, { circleContract: CIRCLE, epoch: 1, maxPerCall: 4 }).map((b) => b.length)).toEqual([4, 4, 1]);
+    expect(planResidualBatches(many, { circleContract: CIRCLE, epoch: 1 }).map((b) => b.length)).toEqual([8, 1]); // DEFAULT_MAX_PER_CALL = 8, measured (docs/residual-batch.md)
     expect(() => planResidualBatches(many, { circleContract: CIRCLE, epoch: 1, maxPerCall: 0 })).toThrow(RangeError);
     expect(planResidualBatches([], { circleContract: CIRCLE, epoch: 1 })).toEqual([]);
   });
@@ -51,7 +54,7 @@ describe("BE-034 signed payload check", () => {
   });
 
   it("TC-BE-034-04 key order inside the intent does not matter", () => {
-    const shuffled = { msg: transfer.intent.msg, tokens: transfer.intent.tokens, receiver_id: transfer.intent.receiver_id, intent: "transfer" };
+    const shuffled = { min_gas: transfer.intent.min_gas, msg: transfer.intent.msg, tokens: transfer.intent.tokens, receiver_id: transfer.intent.receiver_id, intent: "transfer" };
     expect(checkSignedPayload(signedFor(transfer, { intents: [shuffled] }), transfer, VERIFIER)).toMatchObject({ ok: true });
   });
 });
