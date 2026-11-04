@@ -45,3 +45,36 @@ Checked in the source: `ClearingEdge` serializes `debtor`, `creditor`, `cleared`
 
 ## What is not covered
 The sandbox tests of contracts team (`ct099_commit_log_size.rs`) were not run by this review, and the wasm was not inspected. The gas figures, the real size of `epoch_committed` in a receipt, and the claim "a proposal that was accepted can always be committed" rest on those tests.
+
+## Cross review (UM-112, 2026-11-04)
+A second reader (not the author of the fixes) read the fixes B8b-1 to B8b-8 again, the write tools of `@x207/mcp` and the adapters `oauth-scoped`, `cloud-folder-share`, `messaging-subaccount`, `hosting-subaccount`, `saas-seat-scim` and `newsletter-reader`. Every finding below was checked in the code by the reviewer and again by the engineer who fixed it; the numbers are those of the review.
+
+### Broker adapters (backend, `broker/src`)
+| ID | Severity | Finding | State |
+| --- | --- | --- | --- |
+| X-1 | Medium | `settleDay` is the only place that enforces `daily_cap`, and nothing calls it; the cap of a costly access (messaging, cloud role) is not enforced, and `MessagingSubaccountAdapter.cost` bills 0 for a day settled after it ended | **Open.** Needs a design: where the tick settles the day, and a `cost` that says "unknown" instead of 0 for a past day. Not changed |
+| X-2 | Medium | The `sharedKey` check runs before `adapter.grant` and the row is written after it, so two grants with the same key, paid at the same moment, both pass | **Open.** Reserve the key before the provider call and release it if the grant fails |
+| X-3 | Medium | `oauth-scoped` revokes by token value: a provider that answers the same token twice (cached client credentials) has the token just made revoked by the renewal | **Fixed** (`UM-112: fix`, TC-UM-112-01): the old token is not revoked when it is the new one |
+| X-4 | Low-Medium | `oauth-scoped` swallowed the failure of the revoke of the old token at the renewal and then forgot it | **Fixed** (TC-UM-112-02): the new token is revoked and the call fails, so the record keeps the old handle and the manager tries again. A wider token that cannot be revoked is now said in the error |
+| X-5 | Medium-Low | The scrub of errors covered only header credentials; an OAuth token sent in the body of a revoke could come back in the text of the provider and reach `last_error` and the log, and the raw form of a URL-encoded client secret was not scrubbed | **Fixed** (TC-UM-112-03, 04): `call` takes the secrets of the body, and the decoded form of each part of a Basic value is scrubbed |
+| X-6 | Low-Medium | `cloud-folder-share` and `saas-seat-scim` adopt the id that the provider answers (200 as well as 201) and `revoke` deletes it: a provider that answers an existing share or user makes the revoke delete what the grantor made | **Open.** Accept 201 only; for SCIM check `externalId` at the creation and before the delete |
+| X-7 | Low-Medium | `newsletter-reader` downgraded the member at the end without reading it: a reader that bought its own subscription in between lost it | **Fixed** (TC-UM-112-05): revoke and renewal act only on a member that is on a paid tier of the broker with an end date |
+| X-8 | Low | SCIM group write is a GET and a PUT: a truncated list removes members | **Open.** Needs PATCH in the helper |
+| X-9 | Low | `closeProviderAccess` read the access outside the per-grant queue, so a `grant_revoked` event that arrived during the first paid rent was dropped | **Fixed** (TC-UM-112-06 at the manager; the guard is gone from `broker.ts`): `revokeAccess` reads the row in its turn |
+| X-10 | Low | `messaging-subaccount` renewal creates a new sub-account when the old one is not `active`, also when the provider suspended it | **Open** |
+
+Checked and sound: the path and URL building of the six adapters, the handles (only validated ids; only the oauth handle holds a secret, as documented), the quotas and scopes checked before any call, hosted mode refusing real adapters, the per-grant queue of `e7abcef`, the answer cap of `5161572`, the log redaction of `63c0691` for known token shapes, and the SCIM refusal of 409 and the order of its revoke. Not checked: real provider behaviours (token caching, idempotent create, truncated lists), which the findings assume.
+
+### `@x207/mcp` write tools (sdk, `packages/mcp`)
+| ID | Severity | Finding | State |
+| --- | --- | --- | --- |
+| M-1 | Medium | `isPrivateAddress` missed IPv6 forms that carry an IPv4 address once `new URL` writes them in hex: `[64:ff9b::a9fe:a9fe]` (NAT64 to the metadata service), `[::7f00:1]`, `[2002:a9fe:a9fe::1]`, `[::ffff:0:7f00:1]`, `[fec0::1]`, Teredo | **Fixed** (TC-UM-112-10): IPv6 is read as 16 bytes and the carried IPv4 address decides |
+| M-2 | Medium | DNS rebinding in `x207_pay_request`: the name is resolved for the guard and again by `fetch` | **Open.** Needs the connection pinned to the checked address (an undici `Agent` with a `connect.lookup` that applies the guard) |
+| M-3 | Medium | The spend of a session was given back on any error, also a timeout or a 5xx after the commitment went through, so the session cap could be passed | **Fixed** (TC-UM-112-14): the amount goes back only for a refusal of ours, a 4xx of the book or a contract error; otherwise it stays counted and the model is told that the outcome is unknown |
+| M-4 | Low | `spend`, `price` and `release` took negative amounts (`BigInt("-5")`), which raised the budget | **Fixed** (TC-UM-112-13) |
+| M-5 | Low | With `in_reply_to` the counterparty check looked at the other party of the offer and not at the lister | **Fixed:** the lister is always checked (the existing test of a stranger as lister still passes) |
+| M-6 | Low | A trailing dot (`localhost.`, `x.internal.`) passed the name filter | **Fixed** (TC-UM-112-11) |
+| M-7 | Low | A bind to `127.0.0.2` or the mapped form was not seen as loopback and served every Host; `0.0.0.0` without `X207_ALLOWED_HOSTS` serves every Host without a warning | **Fixed** for the loopback test (TC-UM-112-12). **Open:** a warning at the start of a non-loopback bind without an allow list |
+| M-8 | Info | A hostile 402 can burn the session budget (griefing); an empty allow list lets an injected agent pay any active member up to the cap; a full-access key is accepted with `X207_ALLOW_FULL_ACCESS_KEY=1`; text from a counterparty goes back to the model raw | Known limits; none of them is claimed to be closed |
+
+Checked and sound: the check and the addition in `spend` are one tick (no race between two calls), the amount regex, `payTo` and amount that are signed are the ones that were guarded, the allow list is an exact match on validated ids, no tool echoes a key (`scrub` on every result and error), HTTP never serves a write tool, and `5ac5321`, `9594602`, `1bfb518` close what they say (they left M-1, M-2, M-6 and M-7 open).
