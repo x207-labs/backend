@@ -324,6 +324,28 @@ describe("BE-069 one-time codes: the code book on the fair exchange of BE-056", 
     expect((await m.get(`/reputation/${acct("andi")}`)).json.complaints.counterparties).toBe(1); // citra has paid nobody
   });
 
+  it("TC-BE-078-C1 a takedown cannot end a code sale after the key is out: the buyer files none, and the takedown of another member leaves the released purchase alone (B7-C1)", async () => {
+    const m = await start();
+    const s = await sell(m);
+    const id = (await buy(m, s)).json.purchase_id as string;
+    await postCipher(m, id, s);
+    await check(m, s);
+    expect((await release(m, id, s).post()).status).toBe(201);
+    const takedown = (who: string) => {
+      const body = { claim: "this code is mine", evidence_hash: "" };
+      const message = JSON.stringify({ circle: CONTRACT, listing_hash: s.hash, claim: body.claim, evidence_hash: body.evidence_hash });
+      return m.post(`/listings/${s.hash}/takedown`, { ...body, signature: signNoticeJson(message, CONTRACT, m.keys[who]!.secretKey) });
+    };
+    const byBuyer = await takedown("budi");
+    expect([byBuyer.status, byBuyer.json.error.code]).toEqual([400, "takedown_invalid"]);
+    expect((await m.get(`/purchases/${id}`)).json.status).toBe("key_released");
+    const byOther = await takedown("citra");
+    expect([byOther.status, byOther.json.cancelledPurchases]).toEqual([201, 0]);
+    expect((await m.get(`/purchases/${id}`)).json.status).toBe("key_released");
+    m.clock.now += 61 * 60_000;
+    expect((await m.get(`/purchases/${id}`)).json.status).toBe("confirmed"); // the seller is paid
+  });
+
   it("TC-BE-069-10 a seller who encrypts another code than the commitment is caught by the proof of cheating of the fair exchange", async () => {
     const m = await start();
     const s = await sell(m);

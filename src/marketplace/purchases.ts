@@ -682,12 +682,18 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
         const claimant = members.find((m) => verifyNoticeJson(message, circle.contract_id, signature, m.pubkey_voucher));
         if (!claimant) throw new ApiError(401, "invalid_signature", "Takedown signature does not match any active member's voucher key", {});
         if (claimant.account_id === listing.account_id) throw new ApiError(400, "takedown_invalid", "A seller does not file a takedown on their own listing; cancel the listing", {});
+        // B7-C1: a buyer of this listing has his own routes (dispute, complaint, cancel); with a takedown he would cancel a sale after the key is out and keep what he got for nothing
+        if (row(db, "SELECT 1 AS x FROM purchases WHERE circle_id = ? AND listing_hash = ? AND buyer = ? AND status <> 'cancelled'", circle.circle_id, listing.listing_hash, claimant.account_id)) {
+          throw new ApiError(400, "takedown_invalid", "A buyer of this listing does not file a takedown on it; use the dispute or the complaint of the purchase", {});
+        }
         if (row(db, "SELECT 1 AS x FROM takedowns WHERE circle_id = ? AND listing_hash = ?", circle.circle_id, listing.listing_hash)) throw new ApiError(409, "already_exists", "This listing is already taken down", {});
+        // B7-C1: a code works once, so after the key is released nobody else's takedown may cancel the sale and leave the buyer with a working code and the seller unpaid
+        const cancellable = detailOf(listing).kind === "code" ? "('paid_held','cipher_posted')" : "('paid_held','cipher_posted','key_released','disputed')";
         const cancelled = db.transaction(() => {
           db.prepare("UPDATE listings SET status = 'cancelled', closed_at_ms = ? WHERE circle_id = ? AND listing_hash = ? AND status IN ('open','matched')").run(now(), circle.circle_id, listing.listing_hash);
           // sales that are not confirmed are cancelled, so their vouchers never reach the seller; what is confirmed stays (ADR-20)
           const n = db
-            .prepare("UPDATE purchases SET status = 'cancelled', closed_at_ms = ? WHERE circle_id = ? AND listing_hash = ? AND status IN ('paid_held','cipher_posted','key_released','disputed')")
+            .prepare(`UPDATE purchases SET status = 'cancelled', closed_at_ms = ? WHERE circle_id = ? AND listing_hash = ? AND status IN ${cancellable}`)
             .run(now(), circle.circle_id, listing.listing_hash).changes;
           db.prepare("INSERT INTO takedowns (circle_id, listing_hash, claimant, claim, evidence_hash, signature, cancelled_purchases, recorded_at_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(circle.circle_id, listing.listing_hash, claimant.account_id, claim, evidence, signature, n, now());
           return n;
