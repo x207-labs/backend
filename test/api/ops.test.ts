@@ -38,10 +38,11 @@ describe("BE-071 health, metrics and structured logs", () => {
   };
 
   it("TC-BE-071-01 /healthz: ok with the database, the indexer lag and the RPC; degraded (still 200) when the indexer is behind, stuck, or the RPC fails; down (503) with no database cursor", async () => {
-    await start({ rpcProbe: async () => ({ endpoint: "https://rpc.test" }) });
+    await start({ rpcProbe: async () => ({ endpoint: "https://user:pw@rpc.test/path/KEY123?apikey=KEY456" }) });
     const ok = await get("/healthz");
     expect(ok.status).toBe(200);
     expect(ok.json).toMatchObject({ status: "ok", db: { ok: true }, indexer: { lagBlocks: 0, lastBlockHeight: 171234567, stale: false }, rpc: { status: "ok", endpoint: "https://rpc.test" }, problems: [] });
+    expect(JSON.stringify(ok.json)).not.toMatch(/KEY123|KEY456|pw@/); // BE-089 review: the public health answer shows the origin of the RPC, never a key in its path or query
     await srv.close();
     db.close();
 

@@ -25,6 +25,17 @@ const same = (a: string, b: string): boolean => {
   return x.length === y.length && timingSafeEqual(x, y);
 };
 
+/** BE-089 review: `/healthz` is public. The RPC URL of the operator may carry a key in its path or query; only scheme://host[:port] is shown. */
+export function publicOrigin(url: string | undefined): string | null {
+  if (url === undefined) return null;
+  try {
+    const u = new URL(url);
+    return u.protocol === "http:" || u.protocol === "https:" ? u.origin : null;
+  } catch {
+    return null;
+  }
+}
+
 export function opsRoutes(o: OpsOptions): Route[] {
   const stale = o.staleSeconds ?? 120;
   let probed: { at: number; result: { status: "ok" | "failing" | "unknown"; endpoint: string | null; latencyMs?: number; error?: string } } | null = null;
@@ -35,7 +46,7 @@ export function opsRoutes(o: OpsOptions): Route[] {
     const started = Date.now();
     try {
       const r = await Promise.race([o.rpcProbe(), new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 3_000))]);
-      probed = { at: nowMs, result: { status: "ok", endpoint: r.endpoint ?? null, latencyMs: Date.now() - started } };
+      probed = { at: nowMs, result: { status: "ok", endpoint: publicOrigin(r.endpoint), latencyMs: Date.now() - started } };
     } catch (error) {
       probed = { at: nowMs, result: { status: "failing", endpoint: null, error: error instanceof Error ? error.message.slice(0, 120) : "error" } };
     }
