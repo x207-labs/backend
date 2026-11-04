@@ -8,7 +8,8 @@
     "typecheck": "tsc -p tsconfig.test.json --noEmit",
     "start": "node dist/main.js",
     "openapi": "node scripts/build-openapi.mjs",
-    "db:backup": "node scripts/db-backup.mjs"
+    "db:backup": "node scripts/db-backup.mjs",
+    "demo:seed": "node scripts/demo-seed.mjs"
   },
   "license": "Apache-2.0",
   "type": "module",
