@@ -23,7 +23,8 @@ Both read the environment; neither reads a file of settings. Secrets only in the
 | `X207_APP_FEES` | backend | none (no app fee) | no | JSON list of 1Click app fees |
 | `X207_DAO_REGISTRY_PATH` | backend | none (empty registry) | no | JSON file of the DAOs that rent votes (BE-061) |
 | `X207_CODE_SEEN_KEY` | backend | none (duplicate-code check off, warning at start) | yes | key of the HMAC of `code_seen` (BE-069) |
-| `X207_CODE_MOCK_ISSUER`, `X207_CODE_MOCK_CODES` | backend | none (no issuer registered, warning at start) | no | demo only (B7-C10): register the in-memory mock issuer under that name with those valid codes; it checks nothing at a real issuer |
+| `X207_CODE_MOCK_ISSUER` | backend | none (no issuer registered, warning at start) | no | demo only (B7-C10): register the in-memory mock issuer under this name; it checks nothing at a real issuer |
+| `X207_CODE_MOCK_CODES` | backend | none | no | demo only: comma separated codes that the mock issuer says are valid |
 | `NEAR_RPC_PRIMARY_URL` | backend | required | maybe | main RPC; the URL may carry an API key |
 | `NEAR_RPC_FALLBACK_URL` | backend | none | maybe | second RPC for the failover |
 | `ONECLICK_BASE_URL` | backend | default `https://1click.chaindefuser.com` | no | 1Click API |
@@ -43,6 +44,7 @@ Both read the environment; neither reads a file of settings. Secrets only in the
 | `X207_FACILITATOR_URL` | broker | required | no | URL of the facilitator (x402 `/verify`, `/settle`) |
 | `NEAR_RPC_URL` | broker | required | maybe | RPC of the broker; the URL may carry an API key |
 | `BROKER_ACCOUNT_ID` | broker | required | no | account of the broker (operator of the grants) |
+| `BROKER_SECRET_OWNER` | broker | default `BROKER_ACCOUNT_ID` | no | account whose secrets (class C providers) this broker holds; a real provider is served only for a grant of this grantor (B7-P1) |
 | `BROKER_PRIVATE_KEY` | broker | required | yes | its key (`ed25519:…`) |
 | `BROKER_LEASE_ACCOUNT_ID` | broker | required | no | sub-account that is leased (class B) |
 | `BROKER_LEASE_PRIVATE_KEY` | broker | required | yes | the key that adds and deletes keys on it |
