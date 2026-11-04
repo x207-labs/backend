@@ -12,7 +12,7 @@ describe("BE-044 seeker referral inbox", () => {
   });
 
   async function setup(options: { maxReferrals?: number; listingOver?: Parameters<typeof signedListing>[2] } = {}) {
-    market = await startMarket(["andi", "budi", "citra", "dewi"], ["gita"], undefined, options.maxReferrals === undefined ? {} : { maxReferrals: options.maxReferrals });
+    market = await startMarket(["andi", "budi", "citra", "dewi"], ["gita"], undefined, { bondThreshold: 10n ** 15n, ...(options.maxReferrals === undefined ? {} : { maxReferrals: options.maxReferrals }) });
     const m = market;
     openEpoch(m, 42);
     const body = signedListing(m, "andi", { offer: { asset_type: "gpu-hours", asset_class: "A", quantity: 10, value: C(100) }, ...options.listingOver });

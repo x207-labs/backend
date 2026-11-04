@@ -15,7 +15,7 @@ describe("BE-047 delivery of an off-chain asset: confirm, dispute, cancel, and t
 
   /** andi lists a class C asset (a one-time code), budi bids in `pay` mode and andi accepts. */
   async function matched(over: { offerClass?: "A" | "B" | "C" | "D"; mode?: "pay" | "barter" } = {}) {
-    market = await startMarket(["andi", "budi", "citra"]);
+    market = await startMarket(["andi", "budi", "citra"], [], undefined, { bondThreshold: 10n ** 15n });
     const m = market;
     openEpoch(m);
     const body = signedListing(m, "andi", { offer: { asset_type: "gift-card-code", asset_class: over.offerClass ?? "C", quantity: 1, value: C(100) } });
@@ -163,7 +163,7 @@ describe("BE-047 delivery of an off-chain asset: confirm, dispute, cancel, and t
   });
 
   it("TC-BE-047-07 a barter bundle on a class C asset is not ready to commit until the buyer confirmed", async () => {
-    market = await startMarket(["andi", "budi", "citra"]);
+    market = await startMarket(["andi", "budi", "citra"], [], undefined, { bondThreshold: 10n ** 15n });
     const m2 = market;
     openEpoch(m2);
     const body = signedListing(m2, "andi", { offer: { asset_type: "gift-card-code", asset_class: "C", quantity: 1, value: C(100) }, want: { asset_type: "translation", asset_class: "A", quantity: 5, value: C(100) } });
@@ -239,7 +239,7 @@ describe("BE-047 delivery of an off-chain asset: confirm, dispute, cancel, and t
 
   /** andi offers a class C asset and wants an asset of class `wantClass`; budi bids in barter mode; andi accepts with a signed bundle. */
   async function barterMatch(over: { wantClass: "A" | "B" | "C" | "D" }) {
-    market = await startMarket(["andi", "budi", "citra"]);
+    market = await startMarket(["andi", "budi", "citra"], [], undefined, { bondThreshold: 10n ** 15n });
     const m = market;
     openEpoch(m);
     const body = signedListing(m, "andi", {

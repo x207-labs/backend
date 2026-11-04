@@ -121,7 +121,8 @@ function refreshStatus(db: Database.Database, circleId: string, p: ProposalRow):
   const keys = memberKeys(db, circleId, bundleParticipants(terms));
   // BE-047: a bundle on an off-chain asset is not ready to commit until the receiver confirmed the delivery
   const matchRow = p.match_id === null ? undefined : row<{ listing_hash: string }>(db, "SELECT listing_hash FROM matches WHERE id = ?", p.match_id);
-  const released = matchRow === undefined || paymentReleased(db, circleId, matchRow.listing_hash);
+  // a deal with a bond (CT-094) is committed BEFORE the handover: the bond locked at the commit is what protects the receiver, and the payment (the voucher in the bundle) waits for `confirm_deal` instead
+  const released = matchRow === undefined || terms.arbiter != null || paymentReleased(db, circleId, matchRow.listing_hash);
   const ready = released && bundleFullySigned(terms, sigs, keys);
   db.prepare("UPDATE bundle_proposals SET status = ? WHERE id = ?").run(ready ? "ready" : "proposed", p.id);
 }
@@ -141,12 +142,31 @@ interface AcceptInput {
   epoch?: unknown;
   searcher?: unknown;
   searcherShareBps?: unknown;
+  /** CT-094 (UM-097): the arbiter, the end of the window to confirm or dispute (ns, decimal string) and the optional hash of the agreement of a deal with a bond. */
+  arbiter?: unknown;
+  confirmBy?: unknown;
+  agreementHash?: unknown;
+}
+
+/**
+ * CT-094 is a swap of two: the contract takes a bundle of at least two legs, one in each direction. A sale (one payment) becomes a deal with a bond by adding the smallest return leg from the seller
+ * to the buyer (one unit, 0.000001 credit); the bond is worked out from the largest amount owed, so it follows the price.
+ */
+const NOMINAL_RETURN_LEG = "1";
+
+/** The deal with a bond (CT-094) that a handover of this value needs. */
+interface BondGate {
+  /** The match starts a handover that waits for the receiver (BE-047). */
+  handover: boolean;
+  threshold: bigint;
+  /** `accept` refuses a deal at or above the threshold that carries no arbiter; the preview only reports. */
+  enforce: boolean;
 }
 
 /** Acceptance plan: current `open` epoch, validated searcher, and the `planOffer` result (legs, `terms_hash`, discount, searcher share). */
 async function planAccept(
   db: Database.Database, circle: { circle_id: string; contract_id: string }, listingRow: ListingRow, offerRow: OfferRow, input: AcceptInput,
-  openEpoch: OpenEpochResolver,
+  openEpoch: OpenEpochResolver, gate: BondGate,
 ) {
   const open = await openEpoch(db, circle);
   if (open === null) throw new ApiError(409, "epoch_not_open", "No epoch is open");
@@ -174,12 +194,38 @@ async function planAccept(
     if (error instanceof BarterFormatError) throw invalidRequest(error.message);
     throw error;
   }
-  return { open, searcher, shareBps, plan };
+  const needsBond = gate.handover && BigInt(offerRow.value) >= gate.threshold;
+  if (needsBond && input.arbiter === undefined) {
+    if (gate.enforce) {
+      throw new ApiError(409, "bond_required", "A handover worth this much needs a deal with a bond (CT-094): accept with arbiter, confirmBy (ns, decimal string) and optionally agreementHash, and sign the terms that carry them", {
+        value: offerRow.value, threshold: gate.threshold.toString(),
+      });
+    }
+    return { open, searcher, shareBps, plan, needsBond };
+  }
+  if (!needsBond && input.arbiter !== undefined) throw invalidRequest("arbiter is only for a handover at or above the bond threshold", { threshold: gate.threshold.toString() });
+  if (needsBond) {
+    if (typeof input.arbiter !== "string" || typeof input.confirmBy !== "string") throw invalidRequest("arbiter and confirmBy (a decimal string of nanoseconds) come together");
+    if (input.agreementHash !== undefined && typeof input.agreementHash !== "string") throw invalidRequest("agreementHash must be 64 lowercase hex characters");
+    const base: BundleTerms = plan.kind === "bundle" ? plan.terms : { circle: circle.contract_id, epoch: open, legs: [{ payer: plan.payer, payee: plan.payee, max_amount: plan.amount }, { payer: plan.payee, payee: plan.payer, max_amount: NOMINAL_RETURN_LEG }] };
+    const terms: BundleTerms = { ...base, arbiter: input.arbiter, ...(input.agreementHash === undefined ? {} : { agreement_hash: input.agreementHash }), confirm_by: input.confirmBy };
+    try {
+      validateBundleTerms(terms);
+    } catch (error) {
+      if (error instanceof BarterFormatError) throw invalidRequest(error.message);
+      throw error;
+    }
+    return { open, searcher, shareBps, plan: { kind: "bundle" as const, terms, terms_hash: termsHash(terms), discount: plan.discount, searcher: plan.searcher }, needsBond };
+  }
+  return { open, searcher, shareBps, plan, needsBond };
 }
 
 export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver(), options: { confirmClasses?: readonly string[]; bondThreshold?: bigint } = {}): Route[] {
   const confirmClasses = options.confirmClasses ?? DEFAULT_CONFIRM_CLASSES;
   const bondThreshold = options.bondThreshold ?? DEFAULT_BOND_THRESHOLD;
+  const bondGate = (l: ListingRow, o: OfferRow, enforce: boolean): BondGate => ({
+    handover: confirmClasses.includes(l.offer_class) || (o.mode === "barter" && confirmClasses.includes(l.want_class)), threshold: bondThreshold, enforce,
+  });
   return [
   {
     method: "POST",
@@ -197,7 +243,7 @@ export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver(),
       if (listingStatus !== "open") throw new ApiError(409, "listing_not_open", `Listing is ${listingStatus}`, { listingHash: listingRow.listing_hash, status: listingStatus });
       if (offerRow.status !== "pending") throw new ApiError(409, "offer_not_open", `Offer is ${offerRow.status}`, { offerHash: offerRow.offer_hash, status: offerRow.status });
 
-      const { open, searcher, plan } = await planAccept(db, circle, listingRow, offerRow, input, openEpoch);
+      const { open, searcher, plan } = await planAccept(db, circle, listingRow, offerRow, input, openEpoch, bondGate(listingRow, offerRow, true));
 
       let signature: string | null = null;
       if (plan.kind === "bundle") {
@@ -270,7 +316,7 @@ export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver(),
       const listingStatus = effectiveStatus(listingRow, nowSeconds(now()));
       if (listingStatus !== "open") throw new ApiError(409, "listing_not_open", `Listing is ${listingStatus}`, { listingHash: listingRow.listing_hash, status: listingStatus });
       if (offerRow.status !== "pending") throw new ApiError(409, "offer_not_open", `Offer is ${offerRow.status}`, { offerHash: offerRow.offer_hash, status: offerRow.status });
-      const { open, searcher, shareBps: effectiveShare, plan } = await planAccept(db, circle, listingRow, offerRow, input, openEpoch);
+      const { open, searcher, shareBps: effectiveShare, plan, needsBond } = await planAccept(db, circle, listingRow, offerRow, input, openEpoch, bondGate(listingRow, offerRow, false));
       const shareBps = searcher === undefined ? 0 : (effectiveShare ?? 0);
       const quick = { value: offerRow.value, discountBps: Number(listingRow.discount_bps), searcherShareBps: shareBps };
       const breakdown = offerRow.mode === "pay" ? { mode: "pay", ...quickPay(quick) } : { mode: "barter", ...quickBarter(quick) };
@@ -288,7 +334,7 @@ export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver(),
       const payment = plan.kind === "payment" ? { payer: plan.payer, payee: plan.payee, amount: plan.amount } : null;
       return {
         status: 200,
-        body: { kind: plan.kind, epoch: open, mode: offerRow.mode, discountValue: plan.discount, searcherValue: plan.searcher, searcher: searcher ?? null, breakdown, bundle, payment },
+        body: { kind: plan.kind, epoch: open, mode: offerRow.mode, needsBond, discountValue: plan.discount, searcherValue: plan.searcher, searcher: searcher ?? null, breakdown, bundle, payment },
       };
     },
   },

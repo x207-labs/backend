@@ -414,6 +414,7 @@
             },
             "x-error-codes": [
               "already_exists",
+              "bond_required",
               "epoch_not_open"
             ]
           },
@@ -618,7 +619,7 @@
                   "codes": {
                     "value": {
                       "error": {
-                        "code": "epoch_not_open",
+                        "code": "bond_required",
                         "message": "…",
                         "details": {}
                       }
@@ -628,6 +629,7 @@
               }
             },
             "x-error-codes": [
+              "bond_required",
               "epoch_not_open"
             ]
           },
@@ -797,7 +799,7 @@
                   "codes": {
                     "value": {
                       "error": {
-                        "code": "epoch_not_open",
+                        "code": "bond_required",
                         "message": "…",
                         "details": {}
                       }
@@ -807,6 +809,7 @@
               }
             },
             "x-error-codes": [
+              "bond_required",
               "epoch_not_open"
             ]
           },
@@ -969,7 +972,7 @@
                   "codes": {
                     "value": {
                       "error": {
-                        "code": "epoch_not_open",
+                        "code": "bond_required",
                         "message": "…",
                         "details": {}
                       }
@@ -979,6 +982,7 @@
               }
             },
             "x-error-codes": [
+              "bond_required",
               "epoch_not_open"
             ]
           },
@@ -6292,6 +6296,7 @@
             },
             "x-error-codes": [
               "already_exists",
+              "bond_required",
               "epoch_not_open",
               "listing_not_open",
               "offer_not_open"
@@ -6509,7 +6514,7 @@
                   "codes": {
                     "value": {
                       "error": {
-                        "code": "epoch_not_open",
+                        "code": "bond_required",
                         "message": "…",
                         "details": {}
                       }
@@ -6519,6 +6524,7 @@
               }
             },
             "x-error-codes": [
+              "bond_required",
               "epoch_not_open",
               "listing_not_open",
               "offer_not_open"

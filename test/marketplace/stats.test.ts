@@ -12,7 +12,7 @@ describe("BE-043 marketplace statistics from data", () => {
   });
 
   it("an empty circle yields zero, not samples", async () => {
-    market = await startMarket();
+    market = await startMarket(undefined, [], undefined, { bondThreshold: 10n ** 15n });
     const stats = (await market.get("/marketplace/stats")).json;
     expect(stats.listings).toEqual({ open: 0, matched: 0, cancelled: 0, expired: 0, total: 0 });
     expect(stats.matches).toMatchObject({ count: 0, discountValue: "0", listingValue: "0" });
@@ -21,7 +21,7 @@ describe("BE-043 marketplace statistics from data", () => {
   });
 
   it("counts active listings, matches, time to match, discount value and seeker earnings", async () => {
-    market = await startMarket(["andi", "budi", "citra", "dewi"]);
+    market = await startMarket(["andi", "budi", "citra", "dewi"], [], undefined, { bondThreshold: 10n ** 15n });
     const m = market;
     openEpoch(m, 42);
     const start = m.clock.now;

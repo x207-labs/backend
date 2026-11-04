@@ -65,7 +65,7 @@ export type TransferApiErrorCode =
   | "transfer_not_found" | "transfer_not_party" | "transfer_bad_state" | "transfer_seller_unproven" | "transfer_proof_pending" | "transfer_window_passed" | "transfer_platform_unavailable"
   | "transfer_proof_not_configured" | "asset_roadmap_only"
   | "transfer_bad_account" | "transfer_bad_hash" | "transfer_bad_platform" | "transfer_bad_ref" | "transfer_bad_method" | "transfer_method_mismatch" | "transfer_bad_value" | "transfer_bad_estimate"
-  | "transfer_bad_nonce" | "transfer_bad_resource" | "transfer_bad_txt" | "transfer_ticket_over_limit" | "transfer_bond_threshold_invalid" | "transfer_arbiter_required";
+  | "bond_required" | "transfer_bad_nonce" | "transfer_bad_resource" | "transfer_bad_txt" | "transfer_ticket_over_limit" | "transfer_bond_threshold_invalid" | "transfer_arbiter_required";
 
 export class ApiError extends Error {
   constructor(
