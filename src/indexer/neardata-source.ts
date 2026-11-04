@@ -1,4 +1,4 @@
-import type { BlockLog, BlockSource, SourceBlock } from "./block-source.js";
+import type { BlockLog, BlockPrune, BlockSource, SourceBlock } from "./block-source.js";
 
 export interface NeardataSourceOptions {
   /** E.g. `https://mainnet.neardata.xyz`; no default value in the code. */
@@ -9,15 +9,26 @@ export interface NeardataSourceOptions {
 }
 
 interface NeardataOutcome {
-  execution_outcome: { id: string; outcome: { executor_id: string; logs: string[] } };
+  execution_outcome: { id: string; outcome: { executor_id: string; logs: string[]; status?: Record<string, unknown> | string } };
   tx_hash: string | null;
   /** The receipt as the streamer shows it; only the parts that name the signer and the method are read, and every one of them may be missing. */
-  receipt?: { receipt?: { Action?: { signer_id?: string; actions?: Array<{ FunctionCall?: { method_name?: string } }> } } };
+  receipt?: { receipt?: { Action?: { signer_id?: string; actions?: Array<{ FunctionCall?: { method_name?: string; args?: string } }> } } };
 }
 
 interface NeardataBlock {
   block: { header: { height: number; hash: string; timestamp_nanosec: string } };
   shards: { receipt_execution_outcomes?: NeardataOutcome[] }[];
+}
+
+/** `epoch` of the JSON arguments (base64) of a `prune_epoch` call, or null when they do not say one. */
+function pruneEpochOf(args: string | undefined): number | null {
+  if (typeof args !== "string") return null;
+  try {
+    const epoch = (JSON.parse(Buffer.from(args, "base64").toString("utf8")) as { epoch?: unknown }).epoch;
+    return typeof epoch === "number" && Number.isSafeInteger(epoch) && epoch >= 1 ? epoch : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Neardata response for a block that does not exist yet. */
@@ -55,6 +66,7 @@ export class NeardataBlockSource implements BlockSource {
     if (body === null) return null;
     const { header } = body.block;
     const logs: BlockLog[] = [];
+    const prunes: BlockPrune[] = [];
     for (const shard of body.shards) {
       for (const item of shard.receipt_execution_outcomes ?? []) {
         const { id, outcome } = item.execution_outcome;
@@ -62,12 +74,21 @@ export class NeardataBlockSource implements BlockSource {
         const action = item.receipt?.receipt?.Action;
         const signerId = action?.signer_id ?? null;
         const methodName = action?.actions?.find((a) => a.FunctionCall !== undefined)?.FunctionCall?.method_name ?? null;
+        // BE-091: `prune_epoch` emits nothing; a call that succeeded is the only sign that the pairs of the epoch are gone
+        for (const a of action?.actions ?? []) {
+          const call = a.FunctionCall;
+          const status = outcome.status;
+          const succeeded = typeof status === "object" && status !== null && "SuccessValue" in status;
+          if (call?.method_name !== "prune_epoch" || !succeeded) continue;
+          const epoch = pruneEpochOf(call.args);
+          if (epoch !== null) prunes.push({ receiptId: id, txHash: item.tx_hash ?? null, ...(signerId === null ? {} : { signerId }), epoch });
+        }
         outcome.logs.forEach((log, logIndex) => {
           logs.push({ receiptId: id, logIndex, executorId: outcome.executor_id, txHash: item.tx_hash ?? null, ...(signerId === null ? {} : { signerId }), ...(methodName === null ? {} : { methodName }), log });
         });
       }
     }
-    return { height: header.height, hash: header.hash, timestampNs: BigInt(header.timestamp_nanosec), logs };
+    return { height: header.height, hash: header.hash, timestampNs: BigInt(header.timestamp_nanosec), logs, ...(prunes.length === 0 ? {} : { prunes }) };
   }
 
   async #get(path: string): Promise<unknown> {

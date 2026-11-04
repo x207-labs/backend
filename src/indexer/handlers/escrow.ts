@@ -60,6 +60,13 @@ function earlierRegistrations(ctx: HandlerContext, epoch: number, payer: string,
 
 export const rawHandlers: Record<string, RawHandler> = {
   ...ruleRawHandlers,
+  /**
+   * BE-091: derived from a successful `prune_epoch` call (the contract emits no event for it). The pairs of the epoch are gone from the chain, so `edges_unavailable` is set;
+   * what the indexer already has (obligations, cleared edges, totals) stays and is still served. An epoch that is not in the read model yet is left alone.
+   */
+  epoch_pruned(ctx, data) {
+    ctx.db.prepare("UPDATE epochs SET edges_unavailable = 1 WHERE circle_id = ? AND epoch = ?").run(ctx.circleId, int(data, "epoch"));
+  },
   escrow_held(ctx, data) {
     ctx.db
       .prepare(

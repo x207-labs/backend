@@ -11,11 +11,24 @@ export interface BlockLog {
   log: string;
 }
 
+/**
+ * A successful call of `prune_epoch` on the circle (BE-091). The contract emits no event and no log for it, so the only trace on the chain is the call itself:
+ * a source that sees the receipts reports it here, and the indexer turns it into the derived event `epoch_pruned`.
+ */
+export interface BlockPrune {
+  receiptId: string;
+  txHash: string | null;
+  signerId?: string | null;
+  epoch: number;
+}
+
 export interface SourceBlock {
   height: number;
   hash: string;
   timestampNs: bigint;
   logs: BlockLog[];
+  /** Successful `prune_epoch` calls in this block; absent when the source cannot see calls (the JSON-RPC tracing source). */
+  prunes?: BlockPrune[];
 }
 
 /**

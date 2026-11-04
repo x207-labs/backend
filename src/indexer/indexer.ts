@@ -207,7 +207,7 @@ export class Indexer {
     try {
       db.transaction(() => {
         if (block) {
-          const ordered = [...block.logs].sort(compareLogs);
+          const ordered = [...block.logs, ...pruneLogs(block, this.#contractId)].sort(compareLogs);
           for (const log of ordered) events += this.#ingest(block, log);
         }
         const head = Math.max(this.#head, height);
@@ -262,6 +262,17 @@ export class Indexer {
 }
 
 /** Fixed order `(receipt_id, log_index)`, same as the rebuild order (Spec Skema D9 5.3). */
+/**
+ * BE-091: the derived event `epoch_pruned` for each successful `prune_epoch` call of the block. It is not an event of the contract (the contract emits none): the indexer writes it into
+ * `events_raw` like any other, so a rebuild from `events_raw` replays the same effect. `version` is the interface in which the call exists.
+ */
+function pruneLogs(block: SourceBlock, contractId: string): BlockLog[] {
+  return (block.prunes ?? []).map((p) => ({
+    receiptId: p.receiptId, logIndex: 0, executorId: contractId, txHash: p.txHash, signerId: p.signerId ?? null, methodName: "prune_epoch",
+    log: `${EVENT_PREFIX}${JSON.stringify({ standard: "x207", version: "0.0.13", event: "epoch_pruned", data: [{ epoch: p.epoch }] })}`,
+  }));
+}
+
 function compareLogs(a: BlockLog, b: BlockLog): number {
   if (a.receiptId !== b.receiptId) return a.receiptId < b.receiptId ? -1 : 1;
   return a.logIndex - b.logIndex;
