@@ -538,6 +538,11 @@ CREATE INDEX idx_transfers_buyer ON transfers (circle_id, buyer, status);
 `;
 
 // B7-C9: the signed notice of a code check is taken once.
+// UM-096 fix: a buyer's cancel of a transfer with an objective proof (domain, game item) is a request that the proof can still overrule inside the window.
+const V1119_TRANSFER_CANCEL_REQUEST = `
+ALTER TABLE transfers ADD COLUMN cancel_requested_ms INTEGER;
+`;
+
 const V1118_CODE_CHECK_NOTICES = `
 CREATE TABLE code_check_notices (
   circle_id   TEXT NOT NULL,
@@ -565,4 +570,5 @@ export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1116, name: "m11_complaints", sql: V1116_COMPLAINTS },
   { version: 1117, name: "m11_transfers", sql: V1117_TRANSFERS },
   { version: 1118, name: "m11_code_check_notices", sql: V1118_CODE_CHECK_NOTICES },
+  { version: 1119, name: "m11_transfer_cancel_request", sql: V1119_TRANSFER_CANCEL_REQUEST },
 ];

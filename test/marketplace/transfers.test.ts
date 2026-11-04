@@ -295,6 +295,48 @@ describe("BE-074 the transfer ledger", () => {
     expect((await rep()).disputes).toEqual({ transactions: 1, counterparties: 1 }); // citra paid budi: hers does
   });
 
+  it("TC-UM-096-F1 a buyer who says cancelled after the platform showed the transfer done does not keep the thing for free: the proof still pays the seller; without a proof the cancel takes effect at the end of the window", async () => {
+    const m = await start();
+    // a game item: the trade is accepted and past its hold, and the buyer cancels anyway
+    const s = sell(m, { platform: "game_item" });
+    await m.post("/listings", s.body);
+    const bought = await buy(m, s, "budi", { buyer_ref: "555" });
+    const id = bought.json.transferId as number;
+    const offer = { trade_offer_state: 3, accountid_other: 555, time_escrow_end: 0, items_to_give: [{ appid: 730, assetid: "123456789" }] };
+    steam.set("9100", offer);
+    const asked = await notice(m, id, "cancelled", "budi");
+    expect([asked.status, asked.json.status, asked.json.cancelRequested, "voucher" in asked.json]).toEqual([201, "paid_held", true, false]); // a request, not an end
+    m.clock.now += 31_000;
+    const proved = await m.post(`/transfers/${id}/proof`, { tradeoffer_id: "9100" }); // the seller (or anybody) shows the proof
+    expect([proved.status, proved.json.status]).toEqual([200, "confirmed"]);
+    expect(proved.json.voucher).toMatchObject({ payer: acct("budi"), payee: acct("andi"), cumulativeAmount: C(10) });
+    // a domain: the buyer cancels, the registry shows it moved, the seller is paid
+    const d = sell(m);
+    dns.set(DOMAIN, [`x207-sell=${d.hash}`]);
+    await m.post("/listings", d.body);
+    const dBought = await buy(m, d, "citra");
+    const dId = dBought.json.transferId as number;
+    expect((await notice(m, dId, "cancelled", "citra")).json).toMatchObject({ status: "paid_held", cancelRequested: true });
+    dns.set(DOMAIN, [`x207-sell=${d.hash}`, `x207-own=${dId}`]);
+    rdap.set(DOMAIN, { status: 200, body: { ldhName: DOMAIN, status: ["active"] } });
+    expect((await m.post(`/transfers/${dId}/proof`, {})).json.status).toBe("confirmed");
+    // an honest buyer: nothing was transferred, the cancel takes effect when the window ends, and the voucher never moves
+    const g = sell(m, { platform: "game_item", ref: "730:222" });
+    await m.post("/listings", g.body);
+    const gBought = await buy(m, g, "budi", { buyer_ref: "555" });
+    const gId = gBought.json.transferId as number;
+    expect((await notice(m, gId, "cancelled", "budi")).json.status).toBe("paid_held");
+    expect((await notice(m, gId, "cancelled", "andi")).json).toMatchObject({ status: "cancelled", cancelReason: "cancelled_by_seller" }); // the seller giving up ends it at once
+    const h = sell(m, { platform: "game_item", ref: "730:333" });
+    await m.post("/listings", h.body);
+    const hBought = await buy(m, h, "budi", { buyer_ref: "555" });
+    const hId = hBought.json.transferId as number;
+    await notice(m, hId, "cancelled", "budi");
+    m.clock.now += 3_601_000;
+    expect((await m.get(`/transfers/${hId}`)).json).toMatchObject({ status: "cancelled", cancelReason: "cancelled_by_buyer" });
+    expect("voucher" in (await m.get(`/transfers/${hId}`)).json).toBe(false);
+  });
+
   it("TC-BE-074-08 the DNS and Steam requests go through the SSRF guard: a private address and a plain http endpoint are refused", async () => {
     const privateDns = new DnsTxtProof({ ...http, dohUrl: "https://10.0.0.5/resolve" });
     await expect(privateDns.txt(DOMAIN)).rejects.toMatchObject({ code: "target_forbidden" });

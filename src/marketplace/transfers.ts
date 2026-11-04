@@ -80,7 +80,7 @@ export const transferSellerCheck = (options: TransferOptions = {}): ListingAsync
 
 interface TransferRow {
   id: bigint; circle_id: string; listing_hash: string; buyer: string; seller: string; platform: TransferPlatform; proof_method: string; transfer_ref: string; buyer_ref: string | null;
-  tradeoffer_id: string | null; voucher_json: string; voucher_signature: string; status: string; window_until: bigint; proof_json: string | null; cancel_reason: string | null;
+  tradeoffer_id: string | null; cancel_requested_ms: bigint | null; voucher_json: string; voucher_signature: string; status: string; window_until: bigint; proof_json: string | null; cancel_reason: string | null;
   created_at_ms: bigint; closed_at_ms: bigint | null;
 }
 
@@ -93,15 +93,18 @@ function findTransfer(db: Database.Database, circleId: string, id: string): Tran
 function view(t: TransferRow) {
   return {
     transferId: Number(t.id), listingHash: t.listing_hash, buyer: t.buyer, seller: t.seller, platform: t.platform, proofMethod: t.proof_method, transferRef: t.transfer_ref,
-    status: t.status, windowUntil: Number(t.window_until), tradeOfferId: t.tradeoffer_id, proof: t.proof_json === null ? null : (JSON.parse(t.proof_json) as unknown), cancelReason: t.cancel_reason,
+    status: t.status, windowUntil: Number(t.window_until), tradeOfferId: t.tradeoffer_id, proof: t.proof_json === null ? null : (JSON.parse(t.proof_json) as unknown), cancelReason: t.cancel_reason, cancelRequested: t.cancel_requested_ms !== null,
     // the voucher is shown to the seller side only when the proof is met; until then it is held, and if the window passes it never moves
     ...(t.status === "confirmed" ? { voucher: JSON.parse(t.voucher_json) as UnsignedVoucher, voucherSignature: t.voucher_signature } : {}),
   };
 }
 
-/** A purchase whose window passed without the proof is cancelled: the voucher never moves. Lazy, on every read. */
+/**
+ * A purchase whose window passed without the proof is cancelled: the voucher never moves. Lazy, on every read. When the buyer asked to cancel a transfer that has an objective proof (see the notice
+ * handler), it ends as `cancelled_by_buyer` instead; either way nothing was proved.
+ */
 function settle(db: Database.Database, circleId: string, nowS: number, nowMs: number): void {
-  db.prepare("UPDATE transfers SET status = 'cancelled', cancel_reason = 'transfer_window_passed', closed_at_ms = ? WHERE circle_id = ? AND status = 'paid_held' AND window_until < ?").run(nowMs, circleId, nowS);
+  db.prepare("UPDATE transfers SET status = 'cancelled', cancel_reason = CASE WHEN cancel_requested_ms IS NULL THEN 'transfer_window_passed' ELSE 'cancelled_by_buyer' END, closed_at_ms = ? WHERE circle_id = ? AND status = 'paid_held' AND window_until < ?").run(nowMs, circleId, nowS);
 }
 
 /** The vouchers of one pair that purchases and transfers still hold count as the state of the pair (B7-C3). */
@@ -263,7 +266,13 @@ export function transferRoutes(resolveOpen: OpenEpochResolver, options: Transfer
           db.prepare("UPDATE transfers SET confirm_notice = ?, confirm_signature = ? WHERE id = ?").run(JSON.stringify(notice), signature, t.id);
           confirm(db, t, now(), { verdict: "met", by: "buyer_confirm", checkedAtMs: now() });
         } else if (notice.action === "cancelled") {
-          db.prepare("UPDATE transfers SET status = 'cancelled', cancel_reason = ?, closed_at_ms = ? WHERE id = ?").run(`cancelled_by_${actor === t.buyer ? "buyer" : "seller"}`, now(), t.id);
+          if (actor === t.buyer && t.proof_method !== "buyer_confirm") {
+            // A buyer who says "cancel" may be lying: the thing can already be with the buyer. The platform decides, not the buyer: the voucher stays held until the window ends and the proof (which the seller or
+            // anybody can ask for) still pays the seller if it is met; if it is not met by then the transfer ends `cancelled_by_buyer` and the voucher never moves.
+            db.prepare("UPDATE transfers SET cancel_requested_ms = COALESCE(cancel_requested_ms, ?) WHERE id = ?").run(now(), t.id);
+          } else {
+            db.prepare("UPDATE transfers SET status = 'cancelled', cancel_reason = ?, closed_at_ms = ? WHERE id = ?").run(`cancelled_by_${actor === t.buyer ? "buyer" : "seller"}`, now(), t.id);
+          }
         } else throw invalidRequest("notice.action is confirmed or cancelled", { allowed: ["confirmed", "cancelled"] });
         return { status: 201, body: view(findTransfer(db, circle.circle_id, params.id as string)) };
       },
