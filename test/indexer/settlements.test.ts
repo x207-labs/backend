@@ -28,31 +28,31 @@ describe("BE-010 residual_paid, residual_claimed, residual_claim_failed", () => 
   const upTo = (n: number): SourceBlock[] => fxLog42().slice(0, n);
 
   describe("BE-010 residual_paid, residual_claimed, residual_claim_failed", () => {
-    it("TC-BE-010-01 debtor membayar", async () => {
+    it("TC-BE-010-01 debtor pays", async () => {
       await ingest(upTo(9));
       expect(one("SELECT status, paid_amount FROM settlements WHERE account_id = ?", acct("cleaner"))).toEqual({ status: "paid", paid_amount: 10_000_000n });
       expect(one("SELECT tx_hash FROM settlements WHERE account_id = ?", acct("cleaner"))).not.toEqual({ tx_hash: null });
       expect(one("SELECT outstanding_debt, settled_history FROM members WHERE account_id = ?", acct("cleaner"))).toEqual({ outstanding_debt: 0n, settled_history: 10_000_000n });
     });
 
-    it("TC-BE-010-03 klaim sukses", async () => {
+    it("TC-BE-010-03 claim succeeds", async () => {
       await ingest(fxLog42());
       expect(one("SELECT status, destination FROM settlements WHERE account_id = ?", acct("gpu"))).toEqual({ status: "claimed", destination: "intents" });
       expect(one("SELECT tx_hash FROM settlements WHERE account_id = ?", acct("gpu"))).not.toEqual({ tx_hash: null });
     });
 
-    it("TC-BE-010-04 klaim dari status bukan claimable", async () => {
+    it("TC-BE-010-04 claim from a status that is not claimable", async () => {
       await ingest([...upTo(9), block(1009, { logs: [claimedLog().replace(acct("gpu"), acct("scraper"))] })]);
       expect(one("SELECT status FROM settlements WHERE account_id = ?", acct("scraper"))).toEqual({ status: "due" });
     });
 
-    it("TC-BE-010-05 klaim gagal penuh", async () => {
+    it("TC-BE-010-05 claim fails entirely", async () => {
       await ingest([...upTo(10), block(1010, { logs: [claimFailedLog("45000000")] })]);
       expect(one("SELECT status, amount FROM settlements WHERE account_id = ?", acct("gpu"))).toEqual({ status: "claimable", amount: 45_000_000n });
       expect(one("SELECT COUNT(*) AS n FROM events_raw WHERE event = 'residual_claimed'")).toEqual({ n: 0n });
     });
 
-    it("TC-BE-010-06 klaim sebagian (ADR-24)", async () => {
+    it("TC-BE-010-06 partial claim (ADR-24)", async () => {
       await ingest([...upTo(10), block(1010, { logs: [claimedLog("30000000"), claimFailedLog("15000000")] })]);
       expect(one("SELECT status, amount FROM settlements WHERE account_id = ?", acct("gpu"))).toEqual({ status: "claimable", amount: 15_000_000n });
     });

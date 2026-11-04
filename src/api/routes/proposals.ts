@@ -3,10 +3,10 @@ import { isoFromNs } from "../format.js";
 import type { Route } from "../router.js";
 import type { ViewFunction } from "../../settlement/intents.js";
 
-/** Status proposal Sputnik DAO v2. */
+/** Sputnik DAO v2 proposal status. */
 export const PROPOSAL_STATUSES = ["InProgress", "Approved", "Rejected", "Removed", "Expired", "Moved", "Failed"] as const;
 
-/** Bentuk proposal dari view `get_proposals` Sputnik DAO v2 (bagian yang dipakai). */
+/** Shape of a proposal from the Sputnik DAO v2 `get_proposals` view (the part that is used). */
 interface DaoProposal {
   id: number;
   proposer: string;
@@ -19,7 +19,7 @@ interface DaoProposal {
 
 const PAGE = 100;
 
-/** Argumen `set_params` dari proposal `FunctionCall` ke kontrak lingkaran; `null` bila proposal itu bukan `set_params`. */
+/** `set_params` arguments of a `FunctionCall` proposal to the circle contract; `null` if the proposal is not `set_params`. */
 export function decodeSetParams(kind: unknown, contractId: string): { params: unknown; gas: string; deposit: string } | null {
   const call = (kind as { FunctionCall?: { receiver_id?: string; actions?: { method_name: string; args: string; deposit: string; gas: string }[] } })?.FunctionCall;
   if (!call || call.receiver_id !== contractId) return null;
@@ -34,10 +34,10 @@ export function decodeSetParams(kind: unknown, contractId: string): { params: un
 }
 
 /**
- * BE-023, `GET /x207/circles/{circle}/proposals` (Spec API Backend 3.5): proposal Sputnik DAO `set_params` untuk
- * kontrak lingkaran, dengan status dan hitungan suara. DAO adalah `get_owner` kontrak. Hanya baca; bila RPC atau DAO
- * gagal, 502 `dao_unavailable`. Parameter `status` menyaring (400 untuk nilai asing). Memuat paling banyak 100
- * proposal terakhir DAO.
+ * BE-023, `GET /x207/circles/{circle}/proposals` (Spec API Backend 3.5): Sputnik DAO `set_params` proposals for the
+ * circle contract, with status and vote counts. The DAO is the contract's `get_owner`. Read only; if the RPC or the DAO
+ * fails, 502 `dao_unavailable`. The `status` parameter filters (400 for an unknown value). Loads at most the last 100
+ * proposals of the DAO.
  */
 export function proposalRoutes(view: ViewFunction): Route[] {
   return [

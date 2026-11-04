@@ -28,7 +28,7 @@ describe("BE-007 member_joined, stake_added, member_admitted", () => {
   const upTo = (n: number): SourceBlock[] => fxLog42().slice(0, n);
 
   describe("BE-007 member_joined, stake_added, member_admitted", () => {
-    it("TC-BE-007-01 anggota baru", async () => {
+    it("TC-BE-007-01 new member", async () => {
       await ingest([block(1000, { logs: [joinLog("translator")] })]);
       expect(one("SELECT * FROM members")).toMatchObject({
         account_id: acct("translator"), status: "pending", stake: 0n, credit_limit: 0n, outstanding_debt: 0n, admitted: 0n,
@@ -37,12 +37,12 @@ describe("BE-007 member_joined, stake_added, member_admitted", () => {
       });
     });
 
-    it("TC-BE-007-02 join ganda dari receipt lain diabaikan", async () => {
+    it("TC-BE-007-02 a duplicate join from another receipt is ignored", async () => {
       await ingest([block(1000, { logs: [joinLog("translator")] }), block(1001, { logs: [joinLog("translator").replace("terms-translator", "terms-lain")] })]);
       expect(all("SELECT terms_hash FROM members")).toEqual([{ terms_hash: "terms-translator" }]);
     });
 
-    it("TC-BE-007-03 stake masuk", async () => {
+    it("TC-BE-007-03 stake received", async () => {
       await ingest(upTo(2));
       expect(one("SELECT stake, credit_limit, status FROM members WHERE account_id = ?", acct("translator"))).toEqual({ stake: 100_000_000n, credit_limit: 80_000_000n, status: "active" });
       expect(all("SELECT reason, epoch, old_limit, new_limit FROM member_limits WHERE account_id = ?", acct("translator"))).toEqual([
@@ -50,7 +50,7 @@ describe("BE-007 member_joined, stake_added, member_admitted", () => {
       ]);
     });
 
-    it("TC-BE-007-04 stake tambahan", async () => {
+    it("TC-BE-007-04 additional stake", async () => {
       await ingest([...upTo(2), block(1002, { logs: [stakeLog("translator", "20000000", "120000000", "96000000")] })]);
       expect(one("SELECT stake, credit_limit FROM members WHERE account_id = ?", acct("translator"))).toEqual({ stake: 120_000_000n, credit_limit: 96_000_000n });
       expect(all("SELECT old_limit, new_limit FROM member_limits WHERE account_id = ? ORDER BY id", acct("translator"))).toEqual([

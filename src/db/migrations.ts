@@ -1,4 +1,4 @@
-/** Satu langkah migrasi. `version` naik satu per langkah dan tidak pernah diubah setelah dirilis. */
+/** One migration step. `version` goes up by one per step and is never changed after release. */
 export interface Migration {
   version: number;
   name: string;
@@ -6,8 +6,8 @@ export interface Migration {
 }
 
 /**
- * DDL mengikuti Spec Skema D9 bagian 3 (vault `04 Arsitektur/x207 - Spec Skema D9`).
- * Jumlah on-chain disimpan INTEGER (6 desimal); jumlah 1Click di `settlement_jobs` TEXT.
+ * DDL follows Spec Skema D9 section 3 (vault `04 Arsitektur/x207 - Spec Skema D9`).
+ * On-chain amounts are stored as INTEGER (6 decimals); 1Click amounts in `settlement_jobs` are TEXT.
  */
 const V1_D9_INITIAL = `
 CREATE TABLE events_raw (

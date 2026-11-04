@@ -2,10 +2,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { acceptOffer, bundleFullySigned, listingHash, signBundle, termsHash, type BundleTerms } from "@x207/core";
 import { acct, bid, openEpoch, signedListing, startMarket, type Market } from "./helpers.js";
 
-// Angka contoh note F9: nilai 100, diskon 10 (1000 bps), jatah pencari 3 (300 bps); 1 credit = 1_000_000.
+// Example numbers from note F9: value 100, discount 10 (1000 bps), seeker share 3 (300 bps); 1 credit = 1_000_000.
 const C = (n: number) => String(n * 1_000_000);
 
-describe("BE-041 terima penawaran menjadi usulan bundle", () => {
+describe("BE-041 accepting an offer becomes a bundle proposal", () => {
   let market: Market | undefined;
   afterEach(async () => {
     await market?.srv.close();
@@ -24,10 +24,10 @@ describe("BE-041 terima penawaran menjadi usulan bundle", () => {
     return { m, l: body.listing, hash, offerHash: posted.json.offerHash as string, first };
   }
 
-  it("barter dengan pencari: terms_hash dihitung ulang, Andi menanggung 10, dan semua peserta menandatangani sampai ready", async () => {
+  it("barter with a seeker: terms_hash is recomputed, Andi bears 10, and all participants sign until ready", async () => {
     const { m, l, hash, offerHash, first } = await negotiate("barter");
     const mine = acceptOffer({ listing: l, offer: first.offer, epoch: 42, searcher: acct("citra"), searcherShareBps: 300, account: acct("andi") }, m.keys.andi!.secretKey);
-    if (mine.kind !== "bundle") throw new Error("harus bundle");
+    if (mine.kind !== "bundle") throw new Error("must be a bundle");
 
     const res = await m.post(`/listings/${hash}/offers/${offerHash}/accept`, {
       account: acct("andi"), signature: mine.signature.signature, searcher: acct("citra"), searcherShareBps: 300,
@@ -42,7 +42,7 @@ describe("BE-041 terima penawaran menjadi usulan bundle", () => {
     expect(proposal.epoch).toBe(42);
     expect(proposal.status).toBe("proposed");
     expect(proposal.missing.sort()).toEqual([acct("budi"), acct("citra")]);
-    // 100 + cashback 7 = 107 dari Andi ke Budi, 100 dari Budi ke Andi, 3 dari Andi ke pencari
+    // 100 + cashback 7 = 107 from Andi to Budi, 100 from Budi to Andi, 3 from Andi to the seeker
     const amounts = Object.fromEntries(mine.terms.legs.map((g) => [`${g.payer.split(".")[0]}>${g.payee.split(".")[0]}`, g.max_amount]));
     expect(amounts).toEqual({ "andi>budi": C(107), "budi>andi": C(100), "andi>citra": C(3) });
     expect(res.json.match).toMatchObject({ kind: "bundle", mode: "barter", discountValue: C(10), searcherValue: C(3), searcher: acct("citra"), epoch: 42 });
@@ -50,7 +50,7 @@ describe("BE-041 terima penawaran menjadi usulan bundle", () => {
     expect((await m.get(`/listings/${hash}`)).json.status).toBe("matched");
     expect((await m.get("/listings")).json.items).toHaveLength(0);
 
-    // Budi dan pencari menandatangani terms_hash yang sama; tanda tangan pertama belum cukup
+    // Budi and the seeker sign the same terms_hash; the first signature is not enough yet
     const byBudi = signBundle(mine.terms, acct("budi"), m.keys.budi!.secretKey);
     const s1 = await m.post(`/bundle-proposals/${mine.terms_hash}/signatures`, { account: acct("budi"), signature: byBudi.signature });
     expect([s1.status, s1.json.status]).toEqual([201, "proposed"]);
@@ -66,7 +66,7 @@ describe("BE-041 terima penawaran menjadi usulan bundle", () => {
     expect((await m.get(`/bundle-proposals/${mine.terms_hash}`)).json.listingHash).toBe(hash);
   });
 
-  it("bayar tanpa pencari: satu pembayaran voucher 90, bukan bundle, listing matched", async () => {
+  it("pay without a seeker: a single voucher payment of 90, not a bundle, listing matched", async () => {
     const { m, hash, offerHash } = await negotiate("pay");
     const res = await m.post(`/listings/${hash}/offers/${offerHash}/accept`, { account: acct("andi") });
     expect(res.status).toBe(201);
@@ -76,10 +76,10 @@ describe("BE-041 terima penawaran menjadi usulan bundle", () => {
     expect((await m.get("/bundle-proposals")).json.items).toHaveLength(0);
   });
 
-  it("bayar dengan pencari: lawan membayar 93, 90 ke Andi dan 3 ke pencari", async () => {
+  it("pay with a seeker: the counterparty pays 93, 90 to Andi and 3 to the seeker", async () => {
     const { m, l, hash, offerHash, first } = await negotiate("pay");
     const mine = acceptOffer({ listing: l, offer: first.offer, epoch: 42, searcher: acct("citra"), searcherShareBps: 300, account: acct("andi") }, m.keys.andi!.secretKey);
-    if (mine.kind !== "bundle") throw new Error("harus bundle");
+    if (mine.kind !== "bundle") throw new Error("must be a bundle");
     const res = await m.post(`/listings/${hash}/offers/${offerHash}/accept`, { account: acct("andi"), signature: mine.signature.signature, searcher: acct("citra"), searcherShareBps: 300 });
     expect(res.status).toBe(201);
     expect(mine.terms.legs.map((g) => g.max_amount).sort()).toEqual([C(3), C(90)].sort());
@@ -87,35 +87,35 @@ describe("BE-041 terima penawaran menjadi usulan bundle", () => {
     expect(res.json.result.proposal.missing).toEqual([acct("budi"), acct("citra")].sort());
   });
 
-  it("penolakan: bukan pihak yang ditunggu, tanda tangan terms_hash salah, epoch tidak open, pencari di luar anggota", async () => {
+  it("rejections: not the awaited party, wrong terms_hash signature, epoch not open, seeker outside the members", async () => {
     const { m, l, hash, offerHash, first } = await negotiate("barter");
     const path = `/listings/${hash}/offers/${offerHash}/accept`;
     const mineNoSearcher = acceptOffer({ listing: l, offer: first.offer, epoch: 42, account: acct("andi") }, m.keys.andi!.secretKey);
-    if (mineNoSearcher.kind !== "bundle") throw new Error("harus bundle");
+    if (mineNoSearcher.kind !== "bundle") throw new Error("must be a bundle");
     expect((await m.post(path, { account: acct("budi"), signature: "x" })).status).toBe(400);
     expect((await m.post(path, { account: acct("andi") })).status).toBe(400);
-    // tanda tangan untuk terms tanpa pencari tidak cocok dengan terms yang dihitung dengan pencari
+    // a signature for terms without a seeker does not match terms computed with a seeker
     const bad = await m.post(path, { account: acct("andi"), signature: mineNoSearcher.signature.signature, searcher: acct("citra"), searcherShareBps: 300 });
     expect([bad.status, bad.json.error.code]).toEqual([401, "invalid_signature"]);
     expect((await m.post(path, { account: acct("andi"), signature: mineNoSearcher.signature.signature, epoch: 41 })).json.error.code).toBe("epoch_not_open");
     expect((await m.post(path, { account: acct("andi"), signature: mineNoSearcher.signature.signature, searcher: acct("zed") })).json.error.code).toBe("member_not_found");
     expect((await m.post(path, { account: acct("andi"), signature: mineNoSearcher.signature.signature, searcher: acct("budi") })).status).toBe(400);
-    // jatah pencari di atas diskon ditolak SDK
+    // a seeker share above the discount is rejected by the SDK
     expect((await m.post(path, { account: acct("andi"), signature: mineNoSearcher.signature.signature, searcher: acct("citra"), searcherShareBps: 2000 })).status).toBe(400);
-    // tidak ada epoch open
+    // no open epoch
     m.db.prepare("UPDATE epochs SET phase = 'clearing'").run();
     expect((await m.post(path, { account: acct("andi"), signature: mineNoSearcher.signature.signature })).json.error.code).toBe("epoch_not_open");
     m.db.prepare("UPDATE epochs SET phase = 'open'").run();
-    // setelah diterima, penerimaan ulang dan tawaran baru ditolak
+    // once accepted, accepting again and a new offer are rejected
     expect((await m.post(path, { account: acct("andi"), signature: mineNoSearcher.signature.signature })).status).toBe(201);
     expect((await m.post(path, { account: acct("andi"), signature: mineNoSearcher.signature.signature })).json.error.code).toBe("listing_not_open");
     expect((await m.post(`/bundle-proposals/${"0".repeat(64)}/signatures`, { account: acct("budi"), signature: "x" })).json.error.code).toBe("proposal_not_found");
   });
 
-  it("tanda tangan tambahan ditolak setelah epoch bundle tidak open lagi, dan dari akun di luar bundle", async () => {
+  it("an extra signature is rejected after the bundle's epoch is no longer open, and from an account outside the bundle", async () => {
     const { m, l, hash, offerHash, first } = await negotiate("barter");
     const mine = acceptOffer({ listing: l, offer: first.offer, epoch: 42, account: acct("andi") }, m.keys.andi!.secretKey);
-    if (mine.kind !== "bundle") throw new Error("harus bundle");
+    if (mine.kind !== "bundle") throw new Error("must be a bundle");
     await m.post(`/listings/${hash}/offers/${offerHash}/accept`, { account: acct("andi"), signature: mine.signature.signature });
     const byBudi = signBundle(mine.terms, acct("budi"), m.keys.budi!.secretKey);
     const outsider = signBundle(mine.terms, acct("dewi"), m.keys.dewi!.secretKey);
@@ -126,14 +126,14 @@ describe("BE-041 terima penawaran menjadi usulan bundle", () => {
   });
 });
 
-describe("BE-041 pratinjau penerimaan", () => {
+describe("BE-041 acceptance preview", () => {
   let market: Market | undefined;
   afterEach(async () => {
     await market?.srv.close();
     market?.db.close();
   });
 
-  it("preview memuat angka akhir dan pesan yang ditandatangani tanpa menyimpan apa pun", async () => {
+  it("preview carries the final numbers and the signed message without storing anything", async () => {
     market = await startMarket(["andi", "budi", "citra"]);
     const m = market;
     openEpoch(m, 42);
@@ -148,18 +148,18 @@ describe("BE-041 pratinjau penerimaan", () => {
     expect(res.json).toMatchObject({ kind: "bundle", epoch: 42, mode: "barter", discountValue: C(10), searcherValue: C(3), searcher: acct("citra") });
     expect(res.json.breakdown).toMatchObject({ mode: "barter", cashback: C(7), searcher: C(3), sellerBears: C(10), counterpartyGives: C(100) });
     const mine = acceptOffer({ listing: body.listing, offer: first.offer, epoch: 42, searcher: acct("citra"), searcherShareBps: 300, account: acct("andi") }, m.keys.andi!.secretKey);
-    if (mine.kind !== "bundle") throw new Error("harus bundle");
+    if (mine.kind !== "bundle") throw new Error("must be a bundle");
     expect(res.json.bundle).toMatchObject({ termsHash: mine.terms_hash, recipient: "x207-circle.near", participants: [acct("andi"), acct("budi"), acct("citra")].sort() });
     expect(JSON.parse(res.json.bundle.message)).toMatchObject({ circle: "x207-circle.near", epoch: 42 });
     expect(Buffer.from(res.json.bundle.nonce, "base64").toString("hex")).toBe(mine.terms_hash);
 
-    // tidak ada yang tersimpan
+    // nothing is stored
     expect((await m.get(`/listings/${hash}`)).json.status).toBe("open");
     expect((await m.get("/bundle-proposals")).json.items).toHaveLength(0);
     expect((await m.post(`/listings/${hash}/offers/${offerHash}/preview`, { account: acct("budi") })).status).toBe(400);
   });
 
-  it("preview jalur bayar tanpa pencari menampilkan satu pembayaran", async () => {
+  it("preview of the pay path without a seeker shows a single payment", async () => {
     const { m, hash, offerHash } = await (async () => {
       market = await startMarket(["andi", "budi"]);
       const mm = market;
@@ -176,14 +176,14 @@ describe("BE-041 pratinjau penerimaan", () => {
   });
 });
 
-describe("BE-041 lawan menerima penawaran balik pemasang", () => {
+describe("BE-041 the counterparty accepts the lister's counter-offer", () => {
   let market: Market | undefined;
   afterEach(async () => {
     await market?.srv.close();
     market?.db.close();
   });
 
-  it("leg tetap antara pemasang dan lawan, sama dengan bila pemasang menerima penawaran lawan", async () => {
+  it("the legs between the lister and the counterparty stay the same as when the lister accepts the counterparty's offer", async () => {
     market = await startMarket(["andi", "budi"]);
     const m = market;
     openEpoch(m, 42);
@@ -197,9 +197,9 @@ describe("BE-041 lawan menerima penawaran balik pemasang", () => {
 
     const preview = await m.post(`/listings/${hash}/offers/${o2}/preview`, { account: acct("budi") });
     expect(preview.status).toBe(200);
-    // nilai kesepakatan 95 (penawaran balik), bukan 100 di listing atau 85 di tawaran pertama
+    // deal value 95 (the counter-offer), not 100 on the listing or 85 in the first bid
     const expected = acceptOffer({ listing: body.listing, offer: second.offer, counterparty: acct("budi"), epoch: 42, account: acct("andi") }, m.keys.andi!.secretKey);
-    if (expected.kind !== "bundle") throw new Error("harus bundle");
+    if (expected.kind !== "bundle") throw new Error("must be a bundle");
     expect(preview.json.bundle.termsHash).toBe(expected.terms_hash);
     expect(expected.terms.legs.map((l) => l.max_amount).sort()).toEqual([C(95), String(109_500_000)].sort());
     expect(preview.json.breakdown).toMatchObject({ mode: "barter", sellerBears: String(9_500_000) });
@@ -212,7 +212,7 @@ describe("BE-041 lawan menerima penawaran balik pemasang", () => {
   });
 });
 
-describe("BE-041 epoch open dari kontrak, bukan hanya dari D9", () => {
+describe("BE-041 open epoch from the contract, not only from D9", () => {
   let market: Market | undefined;
   afterEach(async () => {
     await market?.srv.close();
@@ -230,7 +230,7 @@ describe("BE-041 epoch open dari kontrak, bukan hanya dari D9", () => {
     return { m, hash, offerHash };
   }
 
-  it("epoch pertama tanpa baris D9: penerimaan jalan lewat view get_epoch", async () => {
+  it("first epoch with no D9 row: acceptance goes through the get_epoch view", async () => {
     const calls: string[] = [];
     const { m, hash, offerHash } = await negotiated(async (contract, method) => (calls.push(`${contract}:${method}`), { epoch: 1, phase: "open" }));
     expect(m.db.prepare("SELECT COUNT(*) AS n FROM epochs").get()).toEqual({ n: 0 });
@@ -240,14 +240,14 @@ describe("BE-041 epoch open dari kontrak, bukan hanya dari D9", () => {
     expect(calls).toEqual(["x207-circle.near:get_epoch"]);
   });
 
-  it("view menjawab epoch bukan open: ditolak epoch_not_open walau D9 masih menyebut open", async () => {
+  it("the view says the epoch is not open: rejected with epoch_not_open even though D9 still says open", async () => {
     const { m, hash, offerHash } = await negotiated(async () => ({ epoch: 1, phase: "clearing" }));
     openEpoch(m, 1);
     const res = await m.post(`/listings/${hash}/offers/${offerHash}/accept`, { account: acct("andi") });
     expect([res.status, res.json.error.code]).toEqual([409, "epoch_not_open"]);
   });
 
-  it("view gagal: jatuh ke D9; tanpa D9 juga ditolak epoch_not_open", async () => {
+  it("the view fails: falls back to D9; without D9 it is rejected with epoch_not_open too", async () => {
     const { m, hash, offerHash } = await negotiated(async () => {
       throw new Error("rpc down");
     });
@@ -257,7 +257,7 @@ describe("BE-041 epoch open dari kontrak, bukan hanya dari D9", () => {
   });
 });
 
-describe("BE-041 usulan bundle dari solver tanpa kecocokan (SV-011)", () => {
+describe("BE-041 bundle proposal from the solver without a match (SV-011)", () => {
   let market: Market | undefined;
   afterEach(async () => {
     await market?.srv.close();
@@ -273,7 +273,7 @@ describe("BE-041 usulan bundle dari solver tanpa kecocokan (SV-011)", () => {
     ],
   });
 
-  it("CT-082: usulan yang membawa pencari harus menamai search_leg, tanpa itu ditolak", async () => {
+  it("CT-082: a proposal that carries a seeker must name search_leg, otherwise it is rejected", async () => {
     market = await startMarket(["andi", "budi", "citra"]);
     const m = market;
     openEpoch(m, 42);
@@ -291,7 +291,7 @@ describe("BE-041 usulan bundle dari solver tanpa kecocokan (SV-011)", () => {
     expect(stranger.status).toBe(400);
   });
 
-  it("solver mengirim syarat cincin, peserta menandatangani, status ready untuk di-commit", async () => {
+  it("the solver sends the ring terms, participants sign, status ready to commit", async () => {
     market = await startMarket(["andi", "budi", "citra"]);
     const m = market;
     openEpoch(m, 42);
@@ -302,11 +302,11 @@ describe("BE-041 usulan bundle dari solver tanpa kecocokan (SV-011)", () => {
     expect(created.json).toMatchObject({ termsHash: hash, status: "proposed", epoch: 42, listingHash: null, searcher: null });
     expect(created.json.participants.sort()).toEqual([acct("andi"), acct("budi"), acct("citra")]);
     expect(created.json.missing).toHaveLength(3);
-    // idempoten: kiriman kedua mengembalikan usulan yang sama
+    // idempotent: a second submission returns the same proposal
     const again = await m.post("/bundle-proposals", { terms });
     expect([again.status, again.json.termsHash]).toEqual([200, hash]);
     expect(m.db.prepare("SELECT COUNT(*) AS n FROM bundle_proposals").get()).toEqual({ n: 1 });
-    // agent menemukannya lewat akunnya dan menandatangani
+    // the agent finds it through its account and signs
     const mine = await m.get(`/bundle-proposals?account=${acct("budi")}&status=proposed`);
     expect(mine.json.items.map((p: any) => p.termsHash)).toEqual([hash]);
     for (const name of ["andi", "budi", "citra"]) {
@@ -317,7 +317,7 @@ describe("BE-041 usulan bundle dari solver tanpa kecocokan (SV-011)", () => {
     expect(ready.json.items.map((p: any) => [p.termsHash, p.status, p.missing])).toEqual([[hash, "ready", []]]);
   });
 
-  it("penolakan: epoch bukan open, lingkaran salah, anggota bukan aktif atau tidak ada, hash klaim salah, format cacat", async () => {
+  it("rejections: epoch not open, wrong circle, member not active or missing, wrong claim hash, malformed format", async () => {
     market = await startMarket(["andi", "budi"], ["citra"]);
     const m = market;
     openEpoch(m, 42);
@@ -332,7 +332,7 @@ describe("BE-041 usulan bundle dari solver tanpa kecocokan (SV-011)", () => {
     expect(m.db.prepare("SELECT COUNT(*) AS n FROM bundle_proposals").get()).toEqual({ n: 0 });
   });
 
-  it("migrasi 1104 pada basis data lama mempertahankan usulan dan menandai sumbernya accept", async () => {
+  it("migration 1104 on an old database keeps the proposals and marks their source as accept", async () => {
     const { default: Database } = await import("better-sqlite3");
     const { migrate } = await import("../../src/db/migrate.js");
     const { MARKETPLACE_MIGRATIONS } = await import("../../src/marketplace/migrations.js");

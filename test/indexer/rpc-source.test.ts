@@ -6,7 +6,7 @@ import { CONTRACT, eventLog, joinLog, acct } from "../helpers/fx-log42.js";
 
 const USDT = "usdt.tether-token.near";
 
-/** Rantai tiruan: blok 100..105; blok 103 dilewati. */
+/** Fake chain: blocks 100..105; block 103 is skipped. */
 class FakeChain implements ChainReader {
   endpoint = "fake://sandbox";
   readonly txCalls: string[] = [];
@@ -29,20 +29,20 @@ class FakeChain implements ChainReader {
 describe("ADR-34 RpcBlockSource", () => {
   function chain(): FakeChain {
     const c = new FakeChain(105);
-    // Transaksi ke USDT (ft_transfer_call) di blok 100: receipt kontrak dieksekusi di blok 102 (dua log).
+    // Transaction to USDT (ft_transfer_call) in block 100: the contract receipt executes in block 102 (two logs).
     c.chunkTxs.set("c100", [{ hash: "tx-a", signerId: acct("translator") }]);
     c.outcomes.set("tx-a", [
       { receiptId: "ra0", executorId: USDT, logs: ["Transfer"], blockHash: "h101" },
       { receiptId: "ra1", executorId: CONTRACT, logs: [joinLog("translator"), "plain"], blockHash: "h102" },
       { receiptId: "ra2", executorId: USDT, logs: [], blockHash: "h104" },
     ]);
-    // Transaksi langsung ke kontrak di blok 102, dieksekusi di blok 104 (blok 103 dilewati chain).
+    // Direct transaction to the contract in block 102, executed in block 104 (block 103 is skipped by the chain).
     c.chunkTxs.set("c102", [{ hash: "tx-b", signerId: acct("gpu") }]);
     c.outcomes.set("tx-b", [{ receiptId: "rb1", executorId: CONTRACT, logs: [eventLog("member_admitted", { account_id: acct("translator"), status: "pending" })], blockHash: "h104" }]);
     return c;
   }
 
-  it("outcome diatribusikan ke blok eksekusinya, bukan blok transaksi; filter executor kontrak", async () => {
+  it("outcome is attributed to its execution block, not the transaction block; contract executor filter", async () => {
     const src = new RpcBlockSource(chain(), CONTRACT, 100);
     const heights: Record<number, string[]> = {};
     for (const h of [100, 101, 102, 103, 104, 105]) {
@@ -52,7 +52,7 @@ describe("ADR-34 RpcBlockSource", () => {
     expect(heights).toEqual({ 100: [], 101: [], 102: ["ra1#0", "ra1#1"], 103: ["skipped"], 104: ["rb1#0"], 105: [] });
   });
 
-  it("txHash, header blok, dan log_index = posisi di daftar log outcome", async () => {
+  it("txHash, block header, and log_index = position in the outcome's log list", async () => {
     const src = new RpcBlockSource(chain(), CONTRACT, 100);
     for (const h of [100, 101]) await src.getBlock(h);
     const block = await src.getBlock(102);
@@ -60,20 +60,20 @@ describe("ADR-34 RpcBlockSource", () => {
     expect(block?.logs[1]).toMatchObject({ receiptId: "ra1", logIndex: 1, txHash: "tx-a", log: "plain" });
   });
 
-  it("tiap transaksi hanya ditelusuri sekali", async () => {
+  it("each transaction is traced only once", async () => {
     const c = chain();
     const src = new RpcBlockSource(c, CONTRACT, 100);
     for (const h of [100, 101, 102, 103, 104, 105]) await src.getBlock(h);
     expect(c.txCalls).toEqual(["tx-a", "tx-b"]);
   });
 
-  it("lompat langsung ke blok jauh memindai semua blok sebelumnya", async () => {
+  it("jumping straight to a far block scans all earlier blocks", async () => {
     const src = new RpcBlockSource(chain(), CONTRACT, 100);
     const block = await src.getBlock(104);
     expect(block?.logs.map((l) => l.receiptId)).toEqual(["rb1"]);
   });
 
-  it("indexer penuh di atas RpcBlockSource: event masuk D9 dengan blok eksekusi", async () => {
+  it("full indexer on top of RpcBlockSource: events enter D9 with the execution block", async () => {
     const db = openDatabase(":memory:");
     const ix = new Indexer({ db, source: new RpcBlockSource(chain(), CONTRACT, 100), circleId: "agents-main", contractId: CONTRACT, startBlock: 100 });
     await ix.bootstrap();

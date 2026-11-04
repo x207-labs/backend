@@ -21,7 +21,7 @@ interface MemberRow {
 const MEMBER_COLUMNS = `account_id, status, stake, credit_limit, outstanding_debt, terms_hash, pubkey_voucher,
   settled_history, joined_at_ns, exit_requested_epoch`;
 
-/** Headroom on-chain = limit − outstandingDebt; 0 untuk anggota yang tidak `active` (view `headroom` kontrak). */
+/** Headroom on-chain = limit − outstandingDebt; 0 for a member that is not `active` (the contract's `headroom` view). */
 function headroom(m: MemberRow): bigint {
   if (m.status !== "active") return 0n;
   const diff = m.credit_limit - m.outstanding_debt;

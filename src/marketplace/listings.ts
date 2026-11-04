@@ -1,5 +1,5 @@
-// Buku listing D12 (BE-040, F9): `POST/GET /x207/circles/{circle}/listings`, `GET …/listings/{hash}`, `POST …/listings/{hash}/cancel`.
-// Listing tetap ada tanpa lawan sampai dicocokkan, dibatalkan, atau kedaluwarsa; kedaluwarsa dihitung saat dibaca.
+// D12 listing book (BE-040, F9): `POST/GET /x207/circles/{circle}/listings`, `GET …/listings/{hash}`, `POST …/listings/{hash}/cancel`.
+// A listing stays without a counterparty until it is matched, cancelled, or expired; expiry is computed at read time.
 import type Database from "better-sqlite3";
 import {
   BarterFormatError, listingHash, validateListing, verifyCancelSignature, verifyListingSignature, type Listing,
@@ -68,7 +68,7 @@ export function findListing(db: Database.Database, circleId: string, hash: strin
   return found;
 }
 
-/** Fungsi pemeriksa tambahan sebelum format listing divalidasi (mis. kelas aset, BE-042). */
+/** Extra checker run before the listing format is validated (e.g. asset class, BE-042). */
 export type ListingCheck = (listing: Listing, context: { db: Database.Database; circleId: string; nowS: number }) => void;
 /** BE-074: a check that asks the outside (the DNS of a domain) and so is async; it runs after the signature and the duplicate, with the hash of the listing. */
 export type ListingAsyncCheck = (listing: Listing, hash: string, context: { db: Database.Database; circleId: string; nowS: number }) => Promise<void>;

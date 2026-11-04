@@ -1,5 +1,5 @@
-// Kelas aset marketplace (BE-042, F8): `asset_type` bebas, `asset_class` harus A/B/C/D, kelas `X` ditolak.
-// Daftar lokal ini dipakai sampai registri D10 kontrak (CT-069) ada; setelah itu daftar dibaca dari kontrak.
+// Marketplace asset classes (BE-042, F8): `asset_type` is free, `asset_class` must be A/B/C/D, class `X` is rejected.
+// This local list is used until the contract's D10 registry (CT-069) exists; after that the list is read from the contract.
 import { ASSET_CLASSES, type Listing } from "@x207/core";
 import { ApiError } from "../api/errors.js";
 import type { Route } from "../api/router.js";
@@ -12,7 +12,7 @@ export const ASSET_CLASS_REGISTRY = [
   { class: "D", delivery: "x402", description: "Service paid directly with a voucher (flow F2)" },
 ] as const;
 
-/** Tolak sisi listing yang `asset_class`-nya di luar A/B/C/D (termasuk `X`) dengan 400 `asset_class_rejected`. */
+/** Reject a listing side whose `asset_class` is outside A/B/C/D (including `X`) with 400 `asset_class_rejected`. */
 export const assetClassCheck: ListingCheck = (listing: Listing) => {
   for (const side of ["offer", "want"] as const) {
     const assetClass = (listing[side] as { asset_class?: unknown } | undefined)?.asset_class;

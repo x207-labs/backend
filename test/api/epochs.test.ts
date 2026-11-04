@@ -5,7 +5,7 @@ import { listen, seedCircle, seedEpoch, ISO_NS, type TestServer } from "../helpe
 const BASE = "/x207/circles/agents-main";
 const NOW = Date.parse("2026-11-09T11:25:00Z");
 
-describe("BE-014 read API daftar epoch", () => {
+describe("BE-014 read API epoch list", () => {
   let db: Database.Database;
   let srv: TestServer;
 
@@ -29,7 +29,7 @@ describe("BE-014 read API daftar epoch", () => {
     db.close();
   });
 
-  it("TC-BE-014-12 daftar epoch urut turun dengan phase dan proposalDeadline", async () => {
+  it("TC-BE-014-12 epoch list in descending order with phase and proposalDeadline", async () => {
     const res = await fetch(srv.url + `${BASE}/epochs`);
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -44,7 +44,7 @@ describe("BE-014 read API daftar epoch", () => {
     expect(body.nextCursor).toBeNull();
   });
 
-  it("TC-BE-014-12b fase turunan cutoff dan commit dihitung dari waktu (K-41)", async () => {
+  it("TC-BE-014-12b derived cutoff and commit phases are computed from time (K-41)", async () => {
     const at = async (iso: string) => {
       const s = await listen({ db, now: () => Date.parse(iso) });
       const body = await (await fetch(s.url + `${BASE}/epochs`)).json();
@@ -70,7 +70,7 @@ describe("BE-014 read API daftar epoch", () => {
     expect([closed.edgeCount, closed.totalObligation]).toEqual([7, "190000000"]);
   });
 
-  it("TC-BE-014-13 paginasi epoch 2/2", async () => {
+  it("TC-BE-014-13 epoch pagination 2/2", async () => {
     const first = await (await fetch(srv.url + `${BASE}/epochs?limit=2`)).json();
     expect(first.items.map((e: { epoch: number }) => e.epoch)).toEqual([43, 42]);
     expect(first.nextCursor).not.toBeNull();
@@ -79,7 +79,7 @@ describe("BE-014 read API daftar epoch", () => {
     expect(second.nextCursor).toBeNull();
   });
 
-  it("TC-BE-014-14 lingkaran tidak ada", async () => {
+  it("TC-BE-014-14 circle does not exist", async () => {
     const res = await fetch(srv.url + "/x207/circles/nope/epochs");
     expect(res.status).toBe(404);
     expect((await res.json()).error.code).toBe("circle_not_found");

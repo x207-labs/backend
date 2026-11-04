@@ -1,7 +1,7 @@
 import type { HandlerMap } from "./context.js";
 import { IndexerHaltError } from "../errors.js";
 
-/** BE-012: satu baris riwayat per nama di `changed`; nilai disimpan sebagai JSON. */
+/** BE-012: one history row per name in `changed`; the value is stored as JSON. */
 export const paramsHandlers: HandlerMap = {
   params_updated(ctx, e) {
     const insert = ctx.db.prepare(

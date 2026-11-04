@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { listing, startMarket, type Market } from "./helpers.js";
 
-describe("BE-042 asset_type bebas dan kelas A/B/C/D", () => {
+describe("BE-042 free asset_type and classes A/B/C/D", () => {
   let market: Market | undefined;
   afterEach(async () => {
     await market?.srv.close();
@@ -10,7 +10,7 @@ describe("BE-042 asset_type bebas dan kelas A/B/C/D", () => {
 
   const typed = (assetType: string, assetClass: string) => ({ asset_type: assetType, asset_class: assetClass as "A", quantity: 1, value: "1000000" });
 
-  it("aset beragam dengan kelas sah diterima, bentuk apa pun", async () => {
+  it("assorted assets with a valid class are accepted, in any form", async () => {
     market = await startMarket();
     const m = market;
     const { signListing } = await import("@x207/core");
@@ -24,7 +24,7 @@ describe("BE-042 asset_type bebas dan kelas A/B/C/D", () => {
     expect((await m.get("/listings")).json.items).toHaveLength(4);
   });
 
-  it("kelas X ditolak dengan error jelas di offer maupun want", async () => {
+  it("class X is rejected with a clear error in both offer and want", async () => {
     market = await startMarket();
     const m = market;
     for (const side of ["offer", "want"] as const) {
@@ -37,7 +37,7 @@ describe("BE-042 asset_type bebas dan kelas A/B/C/D", () => {
     expect((await m.get("/listings?status=all")).json.items).toHaveLength(0);
   });
 
-  it("kelas tidak dikenal juga ditolak; asset_type berformat salah tetap invalid_request", async () => {
+  it("an unknown class is rejected too; a malformed asset_type is still invalid_request", async () => {
     market = await startMarket();
     const m = market;
     const unknown = await m.post("/listings", { listing: listing("andi", { offer: typed("x", "Z") }), signature: "ed25519:x" });
@@ -46,7 +46,7 @@ describe("BE-042 asset_type bebas dan kelas A/B/C/D", () => {
     expect([badType.status, badType.json.error.code]).toEqual([400, "invalid_request"]);
   });
 
-  it("GET asset-classes menampilkan daftar lokal", async () => {
+  it("GET asset-classes shows the local list", async () => {
     market = await startMarket();
     const res = await market.get("/marketplace/asset-classes");
     expect(res.status).toBe(200);

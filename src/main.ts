@@ -20,7 +20,7 @@ import { rpcViewFunction } from "./settlement/intents.js";
 import { OneClickClient } from "./settlement/one-click.js";
 import { viewClearedEdges, viewMembers } from "./indexer/view-edges.js";
 
-/** Variabel `.env` proses utama; nama RPC dan settlement ada di `.env.example`. */
+/** `.env` variables of the main process; the RPC and settlement names are in `.env.example`. */
 export interface AppConfig {
   dbPath: string;
   contractId: string;
@@ -49,9 +49,9 @@ function integer(env: NodeJS.ProcessEnv, name: string, fallback?: number): numbe
 }
 
 /**
- * `X207_CONTRACT_ID`, `X207_START_BLOCK` (blok deploy), `NEAR_RPC_PRIMARY_URL` wajib; `NEAR_RPC_FALLBACK_URL`,
+ * `X207_CONTRACT_ID`, `X207_START_BLOCK` (deploy block), `NEAR_RPC_PRIMARY_URL` are required; `NEAR_RPC_FALLBACK_URL`,
  * `X207_CIRCLE_ID` (default `agents-main`), `X207_DB_PATH` (default `x207.sqlite`), `X207_API_HOST`
- * (default `127.0.0.1`), `X207_API_PORT` (default 8080), `X207_JOB_POLL_MS` (default 15000) opsional.
+ * (default `127.0.0.1`), `X207_API_PORT` (default 8080), `X207_JOB_POLL_MS` (default 15000) are optional.
  */
 export function appConfigFromEnv(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const rpcEndpoints = [required(env, "NEAR_RPC_PRIMARY_URL"), env.NEAR_RPC_FALLBACK_URL ?? ""].filter((u) => u !== "");
@@ -86,13 +86,13 @@ export interface App {
   db: Database.Database;
   server: Server;
   indexer: Indexer;
-  /** Hentikan indexer, pemantau job dan server, lalu tutup database. */
+  /** Stop the indexer, the job monitor and the server, then close the database. */
   stop(): Promise<void>;
 }
 
 /**
- * Proses utama: indexer RPC, read API, endpoint settlement (deposit, withdraw, job) dan pemantau job.
- * Worker tidak memegang kunci; mode 1Click dari `X207_SETTLEMENT_MODE` (default `dry`).
+ * Main process: RPC indexer, read API, settlement endpoints (deposit, withdraw, job) and the job monitor.
+ * The worker holds no keys; the 1Click mode comes from `X207_SETTLEMENT_MODE` (default `dry`).
  */
 export async function startApp(env: NodeJS.ProcessEnv = process.env, log: (line: string) => void = console.error): Promise<App> {
   const config = appConfigFromEnv(env);

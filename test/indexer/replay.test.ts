@@ -13,7 +13,7 @@ import {
 const CIRCLE = "agents-main";
 const TABLES = ["events_raw", "members", "member_limits", "epochs", "obligations", "clearing_log", "settlements", "params"];
 
-describe("BE-006 replay dan rebuild", () => {
+describe("BE-006 replay and rebuild", () => {
   let db: Database.Database;
 
   beforeEach(() => {
@@ -36,7 +36,7 @@ describe("BE-006 replay dan rebuild", () => {
     return ix;
   }
 
-  it("TC-BE-006-05 idempotensi per (receipt_id, log_index)", async () => {
+  it("TC-BE-006-05 idempotency per (receipt_id, log_index)", async () => {
     const source = new ArrayBlockSource(fxLog42());
     await run(source);
     const before = snapshot();
@@ -46,7 +46,7 @@ describe("BE-006 replay dan rebuild", () => {
     expect(db.prepare("SELECT settled_history FROM members WHERE account_id = ?").safeIntegers(true).get(acct("cleaner"))).toEqual({ settled_history: 10_000_000n });
   });
 
-  it("TC-BE-006-14 putar ulang dari cursor lama menghasilkan read model identik", async () => {
+  it("TC-BE-006-14 replay from an old cursor yields an identical read model", async () => {
     const source = new ArrayBlockSource(fxLog42());
     await run(source);
     const before = snapshot();
@@ -55,7 +55,7 @@ describe("BE-006 replay dan rebuild", () => {
     expect(snapshot()).toEqual(before);
   });
 
-  it("TC-BE-006-15 clearing_applied berpotongan", async () => {
+  it("TC-BE-006-15 clearing_applied in chunks", async () => {
     const setup = fxLog42().slice(0, 7);
     const chunk0 = appliedLog([1, 2, 3, 4], { chunk: 0, chunks: 2 });
     const chunk1 = appliedLog([5, 6, 7], { chunk: 1, chunks: 2 });
@@ -71,7 +71,7 @@ describe("BE-006 replay dan rebuild", () => {
     expect(snapshot()).toEqual(before);
   });
 
-  it("TC-BE-006-17 epoch_cutoff tidak cocok: handled 0, henti, fase tetap open", async () => {
+  it("TC-BE-006-17 epoch_cutoff mismatch: handled 0, halt, phase stays open", async () => {
     const blocks = [...fxLog42().slice(0, 3), block(1003, { logs: [cutoffLog({ edge_count: 8 })] })];
     const ix = indexer(new ArrayBlockSource(blocks));
     await ix.bootstrap();
@@ -81,7 +81,7 @@ describe("BE-006 replay dan rebuild", () => {
     expect(cursor().last_block_height).toBe(1002);
   });
 
-  it("TC-BE-006-18 rebuild penuh tanpa RPC", async () => {
+  it("TC-BE-006-18 full rebuild without RPC", async () => {
     const source = new ArrayBlockSource(fxLog42());
     await run(source, { fetchParams: () => Promise.resolve(DEFAULT_PARAMS as never) });
     const before = snapshot();

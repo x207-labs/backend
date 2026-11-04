@@ -2,7 +2,7 @@
   "$id": "metrics.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "GET /x207/circles/{circle}/epochs/{n}/metrics",
-  "description": "Nilai kosong mengikuti K-38: rasio dengan pembagi nol dan metrik pasca-commit pada epoch belum commit bernilai null.",
+  "description": "Empty values follow K-38: ratios with a zero divisor and post-commit metrics on an epoch that is not committed yet are null.",
   "type": "object",
   "required": ["circle", "epoch", "phase", "unit", "decimals", "totalVoucherValue", "cleared", "clearedRatio", "voucherCount", "residualTransfers", "transferSavings", "debtBefore", "debtAfter", "debtReduction", "netDebt", "defaultRate", "clearingTimeSeconds", "graph"],
   "properties": {

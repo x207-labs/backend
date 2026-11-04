@@ -1,7 +1,7 @@
 {
   "error": {
     "code": "epoch_not_found",
-    "message": "Epoch 99 belum ada di D9",
+    "message": "Epoch 99 does not exist in D9 yet",
     "details": { "circle": "agents-main", "epoch": 99 }
   }
 }

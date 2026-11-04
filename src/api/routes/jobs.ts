@@ -6,7 +6,7 @@ import { ApiError } from "../errors.js";
 import { isoFromMs } from "../format.js";
 import type { Route } from "../router.js";
 
-/** `GET /x207/settlement/jobs/{jobId}` (Spec API Backend 6.5): memperbarui job dari 1Click lalu menjawab. */
+/** `GET /x207/settlement/jobs/{jobId}` (Spec API Backend 6.5): refreshes the job from 1Click, then answers. */
 export function jobRoutes(client: OneClickClient): Route[] {
   return [
     {

@@ -35,7 +35,7 @@ describe("BE-006 GET /x207/health", () => {
     expect(validate(body)).toBe(true);
   });
 
-  it("TC-BE-006-21 tertinggal lebih dari 100 blok: degraded", async () => {
+  it("TC-BE-006-21 more than 100 blocks behind: degraded", async () => {
     db = openDatabase(":memory:");
     seedCircle(db);
     db.prepare("UPDATE indexer_cursor SET lag_blocks = 101").run();
@@ -45,7 +45,7 @@ describe("BE-006 GET /x207/health", () => {
     expect((await res.json()).status).toBe("degraded");
   });
 
-  it("TC-BE-006-22 sebelum bootstrap: 503 indexer_unavailable", async () => {
+  it("TC-BE-006-22 before bootstrap: 503 indexer_unavailable", async () => {
     db = openDatabase(":memory:");
     srv = await listen({ db });
     const res = await fetch(srv.url + "/x207/health");

@@ -49,7 +49,7 @@ describe("BE-027 POST /x207/settlement/deposit/quote", () => {
     refundType: "INTENTS", refundTo: acct("scraper"), dry: false, ...over,
   });
 
-  it("TC-BE-027-01 stake 50 USD dari USDC Base", async () => {
+  it("TC-BE-027-01 stake 50 USD from USDC on Base", async () => {
     const { res, json, transport } = await post(stake());
     expect(res.status).toBe(201);
     expect(json).toMatchObject({
@@ -65,7 +65,7 @@ describe("BE-027 POST /x207/settlement/deposit/quote", () => {
     expect(sent.recipientType).toBe(QuoteRequest.recipientType.INTENTS);
   });
 
-  it("TC-BE-027-02 pelunasan due dari D9", async () => {
+  it("TC-BE-027-02 settling a due amount from D9", async () => {
     const { res, json, db, transport } = await post(settle());
     expect(res.status).toBe(201);
     expect(json).toMatchObject({ amountOut: "35000000", paymentDeadline: "2026-11-09T12:00:00Z", purpose: "settle" });
@@ -77,21 +77,21 @@ describe("BE-027 POST /x207/settlement/deposit/quote", () => {
     ]);
   });
 
-  it("TC-BE-027-03 amount diabaikan untuk settle", async () => {
+  it("TC-BE-027-03 amount is ignored for settle", async () => {
     const { json } = await post(settle({ amount: "1" }));
     expect(json.amountOut).toBe("35000000");
   });
 
   it.each([
-    ["debtor yang sudah lunas", { account: acct("cleaner"), refundTo: acct("cleaner") }, 9],
+    ["debtor already paid", { account: acct("cleaner"), refundTo: acct("cleaner") }, 9],
     ["posisi nol", { account: acct("translator"), refundTo: acct("translator") }, 8],
-  ])("TC-BE-027-04 tidak ada tagihan: %s", async (_label, over, upTo) => {
+  ])("TC-BE-027-04 nothing owed: %s", async (_label, over, upTo) => {
     const { res, json } = await post(settle(over), { upTo });
     expect(res.status).toBe(409);
     expect(json.error.code).toBe("nothing_due");
   });
 
-  it("TC-BE-027-05 refundTo yang tidak ada ditolak sebelum 1Click", async () => {
+  it("TC-BE-027-05 a non-existent refundTo is rejected before 1Click", async () => {
     const { res, json, db, transport } = await post(stake({ refundTo: "x207-probe.near" }), { exists: async (a) => a !== "x207-probe.near" });
     expect(res.status).toBe(422);
     expect(json.error.code).toBe("refund_account_not_found");
@@ -99,13 +99,13 @@ describe("BE-027 POST /x207/settlement/deposit/quote", () => {
     expect(db.prepare("SELECT COUNT(*) AS n FROM settlement_jobs").get()).toEqual({ n: 0 });
   });
 
-  it("TC-BE-027-06 aset tidak didukung", async () => {
+  it("TC-BE-027-06 unsupported asset", async () => {
     const { res, json } = await post(stake({ originAsset: "nep141:unknown.near" }));
     expect(res.status).toBe(422);
     expect(json.error.code).toBe("asset_not_supported");
   });
 
-  it.each(["jumlah di bawah minimum", "alamat tidak valid"])("TC-BE-027-07/08 1Click menolak: %s", async (reason) => {
+  it.each(["amount below minimum", "invalid address"])("TC-BE-027-07/08 1Click rejects: %s", async (reason) => {
     class Rejecting extends MockOneClickTransport {
       override async getQuote(): Promise<never> {
         throw new Error(reason);
@@ -118,19 +118,19 @@ describe("BE-027 POST /x207/settlement/deposit/quote", () => {
   });
 
   it.each([
-    ["purpose salah", stake({ purpose: "foo" })],
-    ["stake tanpa amount", stake({ amount: undefined })],
-    ["settle tanpa epoch", settle({ epoch: undefined })],
-    ["amount nol", stake({ amount: "0" })],
-    ["bukan objek", "[1,2]"],
-    ["bukan JSON", "{oops"],
-  ])("TC-BE-027-09 body tidak valid: %s", async (_label, body) => {
+    ["wrong purpose", stake({ purpose: "foo" })],
+    ["stake without amount", stake({ amount: undefined })],
+    ["settle without epoch", settle({ epoch: undefined })],
+    ["zero amount", stake({ amount: "0" })],
+    ["not an object", "[1,2]"],
+    ["not JSON", "{oops"],
+  ])("TC-BE-027-09 invalid body: %s", async (_label, body) => {
     const { res, json } = await post(body);
     expect(res.status).toBe(400);
     expect(json.error.code).toBe("invalid_request");
   });
 
-  it("TC-BE-027-10 lingkaran atau anggota tidak ada", async () => {
+  it("TC-BE-027-10 circle or member does not exist", async () => {
     const a = await post(stake({ circle: "nope" }));
     expect([a.res.status, a.json.error.code]).toEqual([404, "circle_not_found"]);
     await close?.();
@@ -138,7 +138,7 @@ describe("BE-027 POST /x207/settlement/deposit/quote", () => {
     expect([b.res.status, b.json.error.code]).toEqual([404, "member_not_found"]);
   });
 
-  it("TC-BE-027-11 tenggat bayar terancam", async () => {
+  it("TC-BE-027-11 payment deadline at risk", async () => {
     class Slow extends MockOneClickTransport {
       override async getQuote(req: QuoteRequest) {
         const quote = await super.getQuote(req);
@@ -146,13 +146,13 @@ describe("BE-027 POST /x207/settlement/deposit/quote", () => {
         return quote;
       }
     }
-    // 11:41:00 → batas 12:00:00 = 1140 detik; estimasi 2000 detik
+    // 11:41:00 → limit 12:00:00 = 1140 seconds; estimate 2000 seconds
     const { json } = await post(settle(), { transport: new Slow() });
     expect(json.warnings).toEqual(["deadline_risk"]);
     expect(json.timeEstimateSeconds).toBe(2000);
   });
 
-  it("dry: true (default) tidak butuh mode live dan tidak menampilkan deposit address", async () => {
+  it("dry: true (default) does not need live mode and does not show a deposit address", async () => {
     const transport = new Recording();
     const client = new OneClickClient({ config: { mode: "dry", baseUrl: "mock://", jwt: undefined, appFees: [] }, transport, now: () => NOW });
     const s = await fxServer(8, [], () => NOW, depositQuoteRoutes({ client, accountExists: async () => true }));
@@ -164,7 +164,7 @@ describe("BE-027 POST /x207/settlement/deposit/quote", () => {
     expect(transport.quotes[0]?.dry).toBe(true);
   });
 
-  it("dry: false di luar mode live ditolak", async () => {
+  it("dry: false outside live mode is rejected", async () => {
     const client = new OneClickClient({ config: { mode: "dry", baseUrl: "mock://", jwt: undefined, appFees: [] }, transport: new Recording(), now: () => NOW });
     const s = await fxServer(8, [], () => NOW, depositQuoteRoutes({ client, accountExists: async () => true }));
     close = s.close;

@@ -19,7 +19,7 @@ interface Entry {
 
 const index = readJson("index.json") as { endpoints: Entry[]; error: string };
 
-/** Endpoint tabel 2.1 dan 2.2 Spec API Backend. */
+/** Endpoints of tables 2.1 and 2.2 of the Backend API spec. */
 const SPEC_ENDPOINTS = [
   "GET /x207/health",
   "GET /x207/circles/{circle}/members",
@@ -52,23 +52,23 @@ function buildAjv(): Ajv {
   return ajv;
 }
 
-describe("BE-014 skema endpoint di docs/api-schemas", () => {
+describe("BE-014 endpoint schemas in docs/api-schemas", () => {
   const ajv = buildAjv();
   const validator = (name: string): ValidateFunction => {
     const v = ajv.getSchema(name);
-    if (!v) throw new Error(`skema ${name} tidak ada`);
+    if (!v) throw new Error(`schema ${name} does not exist`);
     return v;
   };
 
-  it("TC-BE-014-15 setiap endpoint tabel 2.1 dan 2.2 tercatat di index.json", () => {
+  it("TC-BE-014-15 every endpoint of tables 2.1 and 2.2 is listed in index.json", () => {
     const listed = index.endpoints.map((e) => `${e.method} ${e.path}`);
     expect([...listed].sort()).toEqual([...SPEC_ENDPOINTS].sort());
   });
 
-  it("TC-BE-014-15 setiap endpoint dengan format spec punya skema dan contoh yang lolos validasi", () => {
+  it("TC-BE-014-15 every endpoint with a spec format has a schema and an example that pass validation", () => {
     for (const e of index.endpoints) {
       if (e.response === null) {
-        expect(e.pending, `${e.method} ${e.path} tanpa skema harus punya alasan`).toBeTruthy();
+        expect(e.pending, `${e.method} ${e.path} without a schema must have a reason`).toBeTruthy();
         continue;
       }
       for (const name of [e.request, e.response].filter((n): n is string => Boolean(n))) {
@@ -80,20 +80,20 @@ describe("BE-014 skema endpoint di docs/api-schemas", () => {
     }
   });
 
-  it("contoh error lolos skema error", () => {
+  it("error example passes the error schema", () => {
     const validate = validator(index.error);
     expect(validate(readJson("examples/error.json"))).toBe(true);
     const below = {
       error: {
         code: "below_withdraw_threshold",
-        message: "Pencairan ke Base minimal 0,25 USD; 0,10 USD kehilangan sekitar 2,55%",
+        message: "Withdrawals to Base need at least 0.25 USD; 0.10 USD would lose about 2.55%",
         details: { chain: "base", minAmount: "250000", amount: "100000", withdrawFee: "2400", estimatedLossPct: 2.55 },
       },
     };
     expect(validate(below)).toBe(true);
   });
 
-  it("entri default 4.4 lolos skema laporan 207", () => {
+  it("default entry 4.4 passes the 207 report schema", () => {
     const report = readJson("examples/report-207.json");
     report.phase = "finalized";
     report.finalized = true;
@@ -106,7 +106,7 @@ describe("BE-014 skema endpoint di docs/api-schemas", () => {
     expect(validator("report-207.json")(report)).toBe(true);
   });
 
-  it("skema menolak pelanggaran satuan (jumlah angka, net tanpa tanda, waktu bukan UTC)", () => {
+  it("schema rejects unit violations (numeric amount, unsigned net, non-UTC time)", () => {
     const member = readJson("examples/member.json");
     expect(validator("member.json")({ ...member, stake: 50000000 })).toBe(false);
     expect(validator("member.json")({ ...member, joinedAt: "2026-11-03T08:12:44+07:00" })).toBe(false);
@@ -116,7 +116,7 @@ describe("BE-014 skema endpoint di docs/api-schemas", () => {
   });
 });
 
-describe("BE-014 respons live lolos skema (contract)", () => {
+describe("BE-014 live responses pass the schema (contract)", () => {
   let db: Database.Database;
   let srv: TestServer;
   const ajv = buildAjv();
@@ -144,10 +144,10 @@ describe("BE-014 respons live lolos skema (contract)", () => {
     expect(validate(body), JSON.stringify(validate.errors)).toBe(true);
   };
 
-  it("daftar anggota", () => check("/x207/circles/agents-main/members", "members-list.json"));
-  it("satu anggota", () => check(`/x207/circles/agents-main/members/${acct("scraper")}`, "member.json"));
-  it("daftar epoch", () => check("/x207/circles/agents-main/epochs", "epochs-list.json"));
-  it("error 404 anggota", () => check("/x207/circles/agents-main/members/nobody.near", "error.json", 404));
+  it("member list", () => check("/x207/circles/agents-main/members", "members-list.json"));
+  it("single member", () => check(`/x207/circles/agents-main/members/${acct("scraper")}`, "member.json"));
+  it("epoch list", () => check("/x207/circles/agents-main/epochs", "epochs-list.json"));
+  it("error 404 member", () => check("/x207/circles/agents-main/members/nobody.near", "error.json", 404));
   it("error 400 limit", () => check("/x207/circles/agents-main/members?limit=999", "error.json", 400));
-  it("error 404 lingkaran", () => check("/x207/circles/nope/epochs", "error.json", 404));
+  it("error 404 circle", () => check("/x207/circles/nope/epochs", "error.json", 404));
 });

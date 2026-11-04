@@ -2,7 +2,7 @@
   "$id": "member-limits.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "GET /x207/circles/{circle}/members/{account}/limits",
-  "description": "Spec API Backend tidak memberi contoh; item = kolom query Spec Skema D9 6.1 dalam camelCase.",
+  "description": "Spec API Backend gives no example; item = query columns of Spec Skema D9 6.1 in camelCase.",
   "type": "object",
   "required": ["circle", "unit", "decimals", "items", "nextCursor"],
   "properties": {

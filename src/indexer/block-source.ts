@@ -1,7 +1,7 @@
-/** Satu log dari outcome receipt yang dieksekusi di sebuah blok. */
+/** One log from an outcome receipt executed in a block. */
 export interface BlockLog {
   receiptId: string;
-  /** Posisi log di daftar log outcome receipt itu (Spec Skema D9 5.1 langkah 2). */
+  /** Position of the log in that outcome receipt's log list (Spec Skema D9 5.1 step 2). */
   logIndex: number;
   executorId: string;
   txHash: string | null;
@@ -19,14 +19,14 @@ export interface SourceBlock {
 }
 
 /**
- * Sumber log indexer (ADR-34). Implementasi menghasilkan bentuk yang sama untuk semua jaringan:
- * Neardata FastNEAR di mainnet; penelusuran JSON-RPC di near-sandbox dan testnet.
+ * Indexer log source (ADR-34). Implementations produce the same shape for all networks:
+ * Neardata FastNEAR on mainnet; JSON-RPC tracing on near-sandbox and testnet.
  */
 export interface BlockSource {
-  /** Endpoint yang menjawab permintaan terakhir; nilai `indexer_cursor.rpc_endpoint`. */
+  /** Endpoint that answered the last request; value of `indexer_cursor.rpc_endpoint`. */
   readonly endpoint: string;
-  /** Tinggi blok final terbaru. */
+  /** Latest final block height. */
   finalHeight(): Promise<number>;
-  /** Blok final di `height`, atau `null` bila tinggi itu dilewati chain. */
+  /** Final block at `height`, or `null` if the chain skipped that height. */
   getBlock(height: number): Promise<SourceBlock | null>;
 }

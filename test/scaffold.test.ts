@@ -12,11 +12,11 @@ describe("BE-003 scaffold", () => {
     "src/settlement/withdraw",
     "src/settlement/claims",
     "src/db",
-  ])("folder %s ada", (folder) => {
+  ])("folder %s exists", (folder) => {
     expect(existsSync(fileURLToPath(new URL(`../${folder}`, import.meta.url)))).toBe(true);
   });
 
-  it("dependensi SQLite bisa dimuat", () => {
+  it("SQLite dependency can be loaded", () => {
     const db = new Database(":memory:");
     expect(db.prepare("SELECT 1 AS one").get()).toEqual({ one: 1 });
     db.close();

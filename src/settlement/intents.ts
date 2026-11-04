@@ -3,7 +3,7 @@ import { JsonRpcProvider } from "near-api-js";
 export const INTENTS_CONTRACT = "intents.near";
 export const USDT_TOKEN_ID = "usdt.tether-token.near";
 
-/** Pemanggilan view NEAR; produksi memakai RPC, test memakai tiruan. */
+/** NEAR view call; production uses the RPC, tests use a fake. */
 export type ViewFunction = (contractId: string, method: string, args: Record<string, unknown>) => Promise<unknown>;
 
 export function rpcViewFunction(rpcUrl: string): ViewFunction {
@@ -15,8 +15,8 @@ export function rpcViewFunction(rpcUrl: string): ViewFunction {
 export type SimulationResult = { ok: true; result: unknown } | { ok: false; code: "simulation_failed"; message: string };
 
 /**
- * View `simulate_intents` di `intents.near`: tanpa dana, tanpa transaksi. Hasil sukses dikembalikan apa
- * adanya; error view dipetakan ke `simulation_failed` (kode internal, bukan HTTP).
+ * `simulate_intents` view on `intents.near`: no funds, no transaction. A successful result is returned as
+ * is; a view error is mapped to `simulation_failed` (internal code, not HTTP).
  */
 export async function simulateIntents(view: ViewFunction, signed: unknown[]): Promise<SimulationResult> {
   try {
@@ -26,19 +26,19 @@ export async function simulateIntents(view: ViewFunction, signed: unknown[]): Pr
   }
 }
 
-/** Panggilan kontrak yang ditandatangani pemilik di wallet; worker tidak memegang kunci. */
+/** Contract call signed by the owner in the wallet; the worker holds no keys. */
 export interface ContractCall {
   contractId: string;
   methodName: string;
   args: Record<string, unknown>;
-  /** 1 yoctoNEAR untuk method NEP-141/verifier yang mewajibkannya. */
+  /** 1 yoctoNEAR for NEP-141/verifier methods that require it. */
   deposit: "1";
   gas?: string;
 }
 
 /**
- * `ft_withdraw` dari `intents.near` ke akun NEAR. Tanpa `msg`: `ft_withdraw` ber-`msg` ke
- * `x207-circle` tidak dipakai (ADR-19).
+ * `ft_withdraw` from `intents.near` to a NEAR account. Without `msg`: an `ft_withdraw` with `msg` to
+ * `x207-circle` is not used (ADR-19).
  */
 export function buildFtWithdraw(params: {
   token?: string;
@@ -55,7 +55,7 @@ export function buildFtWithdraw(params: {
   };
 }
 
-/** `msg` untuk `ft_on_transfer` `x207-circle` (Spec Antarmuka Kontrak bagian 3). */
+/** `msg` for the `ft_on_transfer` of `x207-circle` (Spec Antarmuka Kontrak section 3). */
 export function stakeMsg(memberId?: string): string {
   return JSON.stringify({ action: "stake", ...(memberId ? { member_id: memberId } : {}) });
 }
@@ -64,7 +64,7 @@ export function settleMsg(epoch: number, memberId?: string): string {
   return JSON.stringify({ action: "settle", epoch, ...(memberId ? { member_id: memberId } : {}) });
 }
 
-/** `ft_transfer_call` USDT ke `x207-circle` dengan `msg` stake atau settle. */
+/** `ft_transfer_call` of USDT to `x207-circle` with a stake or settle `msg`. */
 export function buildFtTransferCall(params: {
   token?: string;
   receiverId: string;

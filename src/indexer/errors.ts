@@ -4,8 +4,8 @@ export interface UnhandledRow {
 }
 
 /**
- * Indexer harus berhenti: transaksi blok di-rollback dan cursor tidak maju. Dengan `keepRow`, baris
- * `events_raw` pemicunya disimpan dengan `handled = 0` setelah rollback (Spec Skema D9 4, `epoch_cutoff`).
+ * The indexer must stop: the block transaction is rolled back and the cursor does not advance. With `keepRow`, the
+ * triggering `events_raw` row is kept with `handled = 0` after the rollback (Spec Skema D9 4, `epoch_cutoff`).
  */
 export class IndexerHaltError extends Error {
   row: UnhandledRow | undefined;

@@ -146,7 +146,7 @@ describe("BE-057 proof of the grantee_ref in the adapters", () => {
     it("TC-BE-057-P5 a gist of another account, a signature of another key, a private address, a proof of another kind and a missing key are refused", async () => {
       expect(await (await prove({})).run()).toBe(true);
       await expect((await prove({ owner: "mallory" })).run()).rejects.toThrow(/owner_mismatch|milik/);
-      await expect((await prove({ secret: otherKeys.secretKey })).run()).rejects.toThrow(/bad_signature|tidak sah/);
+      await expect((await prove({ secret: otherKeys.secretKey })).run()).rejects.toThrow(/bad_signature/);
       const priv = await prove({ resolve: ["10.0.0.5"] });
       await expect(priv.run()).rejects.toThrow(); // the guard refuses the private address: no request
       expect(priv.calls).toEqual([]);

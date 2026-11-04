@@ -34,12 +34,12 @@ describe("BE-012 params_updated", () => {
       await ix.drain();
     };
 
-    it("TC-BE-012-01 satu field berubah", async () => {
+    it("TC-BE-012-01 one field changes", async () => {
       await init([block(1000, { logs: [paramsUpdatedLog()] })]);
       expect(one("SELECT old_value, new_value, effective_epoch FROM params WHERE field = 'payment_window' AND old_value IS NOT NULL")).toEqual({ old_value: "1800", new_value: "2700", effective_epoch: 43n });
     });
 
-    it("TC-BE-012-02 beberapa field sekaligus", async () => {
+    it("TC-BE-012-02 several fields at once", async () => {
       await init([block(1000, { logs: [eventLog("params_updated", { old: DEFAULT_PARAMS, new: { ...DEFAULT_PARAMS, proposal_window: 900, limit_cap: "2000000000" }, changed: ["proposal_window", "limit_cap"], effective_epoch: 43 })] })]);
       const rows = all<{ field: string; receipt_id: string; log_index: bigint; new_value: string }>("SELECT field, receipt_id, log_index, new_value FROM params WHERE receipt_id NOT LIKE 'init:%' ORDER BY field");
       expect(rows.map((r) => r.field)).toEqual(["limit_cap", "proposal_window"]);
@@ -47,13 +47,13 @@ describe("BE-012 params_updated", () => {
       expect(rows.map((r) => r.new_value)).toEqual(['"2000000000"', "900"]);
     });
 
-    it("TC-BE-012-03 usulan kedua di epoch sama: params_active mengikuti yang terbaru", async () => {
+    it("TC-BE-012-03 second proposal in the same epoch: params_active follows the latest", async () => {
       await init([block(1000, { logs: [paramsUpdatedLog()] }), block(1001, { logs: [eventLog("params_updated", { old: DEFAULT_PARAMS, new: { ...DEFAULT_PARAMS, payment_window: 2400 }, changed: ["payment_window"], effective_epoch: 43 })] })]);
       expect(one("SELECT COUNT(*) AS n FROM params WHERE field = 'payment_window'")).toEqual({ n: 3n });
       expect(one("SELECT value FROM params_active WHERE field = 'payment_window'")).toEqual({ value: "2400" });
     });
 
-    it("TC-BE-012-04 struktur fees", async () => {
+    it("TC-BE-012-04 fees structure", async () => {
       const fees = { clearing_fee_bps: 10, solver_fee_bps: 5 };
       await init([block(1000, { logs: [eventLog("params_updated", { old: DEFAULT_PARAMS, new: { ...DEFAULT_PARAMS, fees }, changed: ["fees"], effective_epoch: 43 })] })]);
       expect(JSON.parse((one("SELECT new_value FROM params WHERE field = 'fees' AND old_value IS NOT NULL") as { new_value: string }).new_value)).toEqual(fees);

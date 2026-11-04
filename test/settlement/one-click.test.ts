@@ -23,7 +23,7 @@ const config = (over: Partial<SettlementConfig> = {}): SettlementConfig => ({
   ...over,
 });
 
-/** Transport tiruan yang merekam request. */
+/** Fake transport that records requests. */
 function fakeTransport(over: Partial<OneClickTransport> = {}) {
   const calls = { quote: [] as QuoteRequest[], tokens: 0, status: [] as string[], generate: [] as unknown[], submit: [] as unknown[] };
   const transport: OneClickTransport = {
@@ -64,17 +64,17 @@ const baseQuote: QuoteParams = {
   recipient: "scraper.x207-circle.near",
 };
 
-describe("BE-025 klien E6 1Click/Intents", () => {
-  it("TC-BE-025-01 versi SDK dipin tanpa ^ atau ~", () => {
+describe("BE-025 E6 1Click/Intents client", () => {
+  it("TC-BE-025-01 SDK version is pinned without ^ or ~", () => {
     const pkg = JSON.parse(readFileSync(fileURLToPath(new URL("../../package.json", import.meta.url)), "utf8"));
     expect(pkg.dependencies["@defuse-protocol/one-click-sdk-typescript"]).toBe("0.1.26");
     expect(pkg.dependencies["@defuse-protocol/intents-sdk"]).toBe("0.93.0");
   });
 
-  it("TC-BE-025-02 mode mock menjawab dari FX-1C tanpa jaringan", async () => {
+  it("TC-BE-025-02 mock mode answers from FX-1C without a network", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const client = new OneClickClient({ config: config({ mode: "mock" }) });
-    // B2.1: 0,01 USDT Intents → USDC Base
+    // B2.1: 0.01 USDT Intents → USDC Base
     const q = await client.quote({
       ...baseQuote,
       swapType: "EXACT_INPUT",
@@ -93,7 +93,7 @@ describe("BE-025 klien E6 1Click/Intents", () => {
     fetchSpy.mockRestore();
   });
 
-  it("TC-BE-025-02b mock memuat nominal B2.1–B2.5, B1.1, B1.4, dan Tron", async () => {
+  it("TC-BE-025-02b mock carries the amounts B2.1–B2.5, B1.1, B1.4, and Tron", async () => {
     const client = new OneClickClient({ config: config({ mode: "mock" }) });
     const out = async (amount: string, dest = USDC_BASE) =>
       (
@@ -113,14 +113,14 @@ describe("BE-025 klien E6 1Click/Intents", () => {
     expect(b14.quote.amountOut).toBe("1001078");
   });
 
-  it("TC-BE-025-03 mode dry: request membawa dry true", async () => {
+  it("TC-BE-025-03 dry mode: the request carries dry true", async () => {
     const { transport, calls } = fakeTransport();
     const client = new OneClickClient({ config: config({ mode: "dry" }), transport });
     await client.quote({ ...baseQuote, dry: true });
     expect(calls.quote[0]?.dry).toBe(true);
   });
 
-  it("TC-BE-025-04 dry:false tanpa mode live → 422 live_mode_disabled, 0 request ke 1Click", async () => {
+  it("TC-BE-025-04 dry:false without live mode → 422 live_mode_disabled, 0 requests to 1Click", async () => {
     for (const mode of ["dry", "mock"] as const) {
       const { transport, calls } = fakeTransport();
       const client = new OneClickClient({ config: config({ mode }), transport });
@@ -133,21 +133,21 @@ describe("BE-025 klien E6 1Click/Intents", () => {
     }
   });
 
-  it("TC-BE-025-05 mode live eksplisit: dry false diteruskan", async () => {
+  it("TC-BE-025-05 explicit live mode: dry false is passed through", async () => {
     const { transport, calls } = fakeTransport();
     const client = new OneClickClient({ config: config({ mode: "live" }), transport });
     await client.quote({ ...baseQuote, dry: false });
     expect(calls.quote[0]?.dry).toBe(false);
   });
 
-  it("TC-BE-025-06 tanpa field dry diperlakukan dry true, juga di mode live", async () => {
+  it("TC-BE-025-06 without a dry field it is treated as dry true, also in live mode", async () => {
     const { transport, calls } = fakeTransport();
     const client = new OneClickClient({ config: config({ mode: "live" }), transport });
     await client.quote(baseQuote);
     expect(calls.quote[0]?.dry).toBe(true);
   });
 
-  it("TC-BE-025-07 daftar tujuan dari /v0/tokens: aset di luar daftar ditolak 422", async () => {
+  it("TC-BE-025-07 destination list from /v0/tokens: an asset outside the list is rejected 422", async () => {
     const { transport, calls } = fakeTransport();
     const client = new OneClickClient({ config: config(), transport });
     const err = await client
@@ -158,10 +158,10 @@ describe("BE-025 klien E6 1Click/Intents", () => {
     expect(calls.quote).toHaveLength(0);
     await expect(client.quote(baseQuote)).resolves.toBeDefined();
     expect(calls.quote).toHaveLength(1);
-    expect(calls.tokens).toBe(1); // daftar di-cache
+    expect(calls.tokens).toBe(1); // the list is cached
   });
 
-  it("TC-BE-025-07b daftar tokens dimuat ulang setelah TTL", async () => {
+  it("TC-BE-025-07b the tokens list is reloaded after the TTL", async () => {
     const { transport, calls } = fakeTransport();
     let t = 0;
     const client = new OneClickClient({ config: config(), transport, now: () => t, tokensTtlMs: 1000 });
@@ -174,7 +174,7 @@ describe("BE-025 klien E6 1Click/Intents", () => {
     expect(calls.tokens).toBe(2);
   });
 
-  it("TC-BE-025-08 appFees: default kosong, lalu dari env", async () => {
+  it("TC-BE-025-08 appFees: empty by default, then from env", async () => {
     const empty = fakeTransport();
     await new OneClickClient({ config: settlementConfigFromEnv({}), transport: empty.transport }).quote(baseQuote);
     expect(empty.calls.quote[0]).not.toHaveProperty("appFees");
@@ -185,7 +185,7 @@ describe("BE-025 klien E6 1Click/Intents", () => {
     expect(withFee.calls.quote[0]?.appFees).toEqual([{ recipient: "fee.near", fee: 1 }]);
   });
 
-  it("konfigurasi env: mode default dry, nilai tak sah ditolak", () => {
+  it("env configuration: default mode dry, invalid values are rejected", () => {
     expect(settlementConfigFromEnv({}).mode).toBe("dry");
     expect(settlementConfigFromEnv({ X207_SETTLEMENT_MODE: "live" }).mode).toBe("live");
     expect(() => settlementConfigFromEnv({ X207_SETTLEMENT_MODE: "yolo" })).toThrow();
@@ -193,7 +193,7 @@ describe("BE-025 klien E6 1Click/Intents", () => {
     expect(() => settlementConfigFromEnv({ X207_APP_FEES: '[{"recipient":"a","fee":0}]' })).toThrow();
   });
 
-  it("quote EXACT_OUTPUT ke INTENTS membawa field yang benar", async () => {
+  it("EXACT_OUTPUT quote to INTENTS carries the right fields", async () => {
     const { transport, calls } = fakeTransport();
     const client = new OneClickClient({ config: config(), transport, now: () => Date.parse("2026-11-09T11:00:00Z") });
     await client.quote(baseQuote);
@@ -208,7 +208,7 @@ describe("BE-025 klien E6 1Click/Intents", () => {
     });
   });
 
-  it("TC-BE-025-09 simulate_intents: sukses apa adanya, error → simulation_failed", async () => {
+  it("TC-BE-025-09 simulate_intents: success as is, error → simulation_failed", async () => {
     const ok: ViewFunction = vi.fn(async () => ({ intents_executed: [], logs: [] }));
     expect(await simulateIntents(ok, [])).toEqual({ ok: true, result: { intents_executed: [], logs: [] } });
     expect(ok).toHaveBeenCalledWith("intents.near", "simulate_intents", { signed: [] });
@@ -218,7 +218,7 @@ describe("BE-025 klien E6 1Click/Intents", () => {
     expect(await simulateIntents(bad, [{}])).toEqual({ ok: false, code: "simulation_failed", message: "invalid signature" });
   });
 
-  it("TC-BE-025-10 status, generate-intent, submit-intent memakai argumen job", async () => {
+  it("TC-BE-025-10 status, generate-intent, submit-intent use the job's arguments", async () => {
     const { transport, calls } = fakeTransport();
     const client = new OneClickClient({ config: config(), transport });
     expect((await client.status("0xdeposit")).status).toBe("PROCESSING");
@@ -230,7 +230,7 @@ describe("BE-025 klien E6 1Click/Intents", () => {
     expect(calls.submit[0]).toEqual({ type: "swap_transfer", signedData: signed });
   });
 
-  it("TC-BE-025-10b error upstream menjadi one_click_error dengan pesan asli", async () => {
+  it("TC-BE-025-10b an upstream error becomes one_click_error with the original message", async () => {
     const apiError = new ApiError(
       { method: "POST", url: "/v0/quote" },
       { url: "/v0/quote", ok: false, status: 400, statusText: "Bad Request", body: { message: "Amount is too low for bridge, try at least 1000000" } },
@@ -250,7 +250,7 @@ describe("BE-025 klien E6 1Click/Intents", () => {
     expect(e2.details.upstream).toBe("ECONNREFUSED");
   });
 
-  it("builder ft_withdraw tanpa msg dan ft_transfer_call dengan msg stake/settle (ADR-19)", () => {
+  it("builder: ft_withdraw without msg and ft_transfer_call with msg stake/settle (ADR-19)", () => {
     const w = buildFtWithdraw({ receiverId: "scraper.x207-circle.near", amount: "35000000" });
     expect(w).toEqual({
       contractId: "intents.near",

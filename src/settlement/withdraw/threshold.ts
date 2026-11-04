@@ -1,16 +1,16 @@
-/** Ambang pencairan kreditor (ADR-19, BE-031). Fungsi murni; dipanggil endpoint withdraw quote (BE-030). */
+/** Creditor withdrawal threshold (ADR-19, BE-031). Pure function; called by the withdraw quote endpoint (BE-030). */
 
 const BASE_MIN_AMOUNT = 250_000n;
-const HIGH_FEE_PCT_NUM = 1n; // fee > 1% nominal
+const HIGH_FEE_PCT_NUM = 1n; // fee > 1% of nominal
 const VARIABLE_FEE_BPS_ESTIMATE = 14;
 
 export interface WithdrawThresholdInput {
-  /** Aset tujuan 1Click, mis. `nep141:base-0x….omft.near`. */
+  /** 1Click destination asset, e.g. `nep141:base-0x….omft.near`. */
   destinationAsset: string;
-  /** Satuan terkecil, 6 desimal. */
+  /** Smallest unit, 6 decimals. */
   amount: string;
   withdrawFee: string;
-  /** `amountOut` dari quote `dry`; bila ada, dipakai untuk estimasi kerugian. */
+  /** `amountOut` from the `dry` quote; if present, used to estimate the loss. */
   amountOut?: string;
   acceptHighFee?: boolean;
 }
@@ -60,7 +60,7 @@ export function evaluateWithdrawThreshold(input: WithdrawThresholdInput): Withdr
         ok: false,
         error: {
           code: "below_withdraw_threshold",
-          message: `Pencairan ke Base minimal ${usd(BASE_MIN_AMOUNT)} USD; ${usd(amount)} USD kehilangan sekitar ${pct(estimatedLossPct)}`,
+          message: `Withdrawals to Base need at least ${usd(BASE_MIN_AMOUNT)} USD; ${usd(amount)} USD would lose about ${pct(estimatedLossPct)}`,
           details: { chain, minAmount: BASE_MIN_AMOUNT.toString(), amount: input.amount, withdrawFee: input.withdrawFee, estimatedLossPct },
         },
       };
@@ -68,7 +68,7 @@ export function evaluateWithdrawThreshold(input: WithdrawThresholdInput): Withdr
     return { ok: true, threshold: { chain, minAmount: BASE_MIN_AMOUNT.toString(), ok: true }, warnings: [] };
   }
 
-  // Chain selain Base: biaya tetap > 1% nominal butuh persetujuan eksplisit.
+  // Chains other than Base: a fixed cost > 1% of nominal needs explicit approval.
   if (fee * 100n > amount * HIGH_FEE_PCT_NUM) {
     const message = `Fixed withdrawal fee to ${chain} is ${usd(fee)} USD, estimated loss ${pct(estimatedLossPct)} of ${usd(amount)} USD`;
     if (!input.acceptHighFee) {
@@ -98,9 +98,9 @@ function round2(value: number): number {
 
 function usd(units: bigint): string {
   const cents = units / 10_000n;
-  return `${cents / 100n},${(cents % 100n).toString().padStart(2, "0")}`;
+  return `${cents / 100n}.${(cents % 100n).toString().padStart(2, "0")}`;
 }
 
 function pct(value: number): string {
-  return value >= 10 ? `~${Math.round(value)}%` : `${value.toFixed(2).replace(".", ",")}%`;
+  return value >= 10 ? `~${Math.round(value)}%` : `${value.toFixed(2)}%`;
 }

@@ -6,7 +6,7 @@ import { ArrayBlockSource, CONTRACT, DEFAULT_PARAMS, fxLog42 } from "./fx-log42.
 import type { Route } from "../../src/api/router.js";
 import { listen, type TestServer } from "./d9-fixtures.js";
 
-/** D9 hasil indexer `FX-LOG42` sampai blok ke-`upTo` (11 = seluruh skenario), dilayani oleh read API. */
+/** D9 produced by the indexer from `FX-LOG42` up to block `upTo` (11 = the whole scenario), served by the read API. */
 export async function fxServer(
   upTo = 11,
   extra: SourceBlock[] = [],

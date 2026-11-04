@@ -8,7 +8,7 @@ export interface BlockRequest {
   finality?: string;
 }
 
-/** Node NEAR tiruan: `heights` = blok yang ada, puncaknya head final. */
+/** Mock NEAR node: `heights` = existing blocks, the highest is the final head. */
 export class MockRpc {
   mode: MockMode = "ok";
   readonly blockRequests: BlockRequest[] = [];
@@ -52,7 +52,7 @@ export class MockRpc {
     return this;
   }
 
-  /** Matikan server sungguhan, sehingga klien mendapat koneksi ditolak. */
+  /** Shut down the real server so the client gets a refused connection. */
   async kill(): Promise<void> {
     const server = this.#server;
     if (!server) return;

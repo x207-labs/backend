@@ -4,7 +4,7 @@ import { acct, listen, seedAg6, seedCircle, seedMember, type TestServer } from "
 
 const BASE = "/x207/circles/agents-main";
 
-describe("BE-014 read API anggota", () => {
+describe("BE-014 member read API", () => {
   let db: Database.Database;
   let srv: TestServer;
 
@@ -21,7 +21,7 @@ describe("BE-014 read API anggota", () => {
     db.close();
   });
 
-  it("TC-BE-014-01 daftar anggota urut account dengan unit dan decimals", async () => {
+  it("TC-BE-014-01 member list ordered by account with unit and decimals", async () => {
     await start();
     const res = await get(`${BASE}/members`);
     expect(res.status).toBe(200);
@@ -41,7 +41,7 @@ describe("BE-014 read API anggota", () => {
     );
   });
 
-  it("TC-BE-014-02 filter status", async () => {
+  it("TC-BE-014-02 status filter", async () => {
     await start("L29");
     const active = await (await get(`${BASE}/members?status=active`)).json();
     expect(active.items.map((m: { account: string }) => m.account)).toEqual(
@@ -51,7 +51,7 @@ describe("BE-014 read API anggota", () => {
     expect(suspended.items.map((m: { account: string }) => m.account)).toEqual([acct("scraper")]);
   });
 
-  it("TC-BE-014-03 paginasi cursor keyset 2/2/2 tanpa duplikat", async () => {
+  it("TC-BE-014-03 keyset cursor pagination 2/2/2 without duplicates", async () => {
     await start();
     const seen: string[] = [];
     const sizes: number[] = [];
@@ -68,7 +68,7 @@ describe("BE-014 read API anggota", () => {
     expect(seen).toEqual(["cleaner", "gpu", "image", "scraper", "summarizer", "translator"].map(acct));
   });
 
-  it("TC-BE-014-04 limit di luar batas ditolak 400", async () => {
+  it("TC-BE-014-04 limit out of range is rejected with 400", async () => {
     await start();
     for (const bad of ["201", "0", "abc", "-1"]) {
       const res = await get(`${BASE}/members?limit=${bad}`);
@@ -81,28 +81,28 @@ describe("BE-014 read API anggota", () => {
     expect((await get(`${BASE}/members?limit=200`)).status).toBe(200);
   });
 
-  it("TC-BE-014-04b cursor rusak ditolak 400", async () => {
+  it("TC-BE-014-04b malformed cursor is rejected with 400", async () => {
     await start();
     const res = await get(`${BASE}/members?cursor=!!!`);
     expect(res.status).toBe(400);
     expect((await res.json()).error.code).toBe("invalid_request");
   });
 
-  it("TC-BE-014-05 status tidak dikenal", async () => {
+  it("TC-BE-014-05 unknown status", async () => {
     await start();
     const res = await get(`${BASE}/members?status=banned`);
     expect(res.status).toBe(400);
     expect((await res.json()).error.code).toBe("invalid_request");
   });
 
-  it("TC-BE-014-06 lingkaran tidak ada", async () => {
+  it("TC-BE-014-06 circle does not exist", async () => {
     await start();
     const res = await get("/x207/circles/nope/members");
     expect(res.status).toBe(404);
     expect((await res.json()).error.code).toBe("circle_not_found");
   });
 
-  it("TC-BE-014-07 satu anggota", async () => {
+  it("TC-BE-014-07 single member", async () => {
     await start();
     const res = await get(`${BASE}/members/${acct("scraper")}`);
     expect(res.status).toBe(200);
@@ -124,7 +124,7 @@ describe("BE-014 read API anggota", () => {
     });
   });
 
-  it("TC-BE-014-08 headroom 0 untuk anggota tidak active", async () => {
+  it("TC-BE-014-08 headroom 0 for a member that is not active", async () => {
     await start();
     seedMember(db, { name: "newbie", status: "pending", stake: 0, limit: 0, debt: 0 });
     seedMember(db, { name: "slashed", status: "suspended", stake: 5, limit: 80_000_000, debt: 10 });
@@ -135,21 +135,21 @@ describe("BE-014 read API anggota", () => {
     expect(suspended.headroom).toBe("0");
   });
 
-  it("TC-BE-014-08b exitRequestedEpoch tampil untuk anggota yang meminta keluar (ADR-29)", async () => {
+  it("TC-BE-014-08b exitRequestedEpoch shown for a member that requested exit (ADR-29)", async () => {
     await start();
     seedMember(db, { name: "leaver", exitRequestedEpoch: 43 });
     const body = await (await get(`${BASE}/members/${acct("leaver")}`)).json();
     expect(body.exitRequestedEpoch).toBe(43);
   });
 
-  it("TC-BE-014-09 anggota tidak ada", async () => {
+  it("TC-BE-014-09 member does not exist", async () => {
     await start();
     const res = await get(`${BASE}/members/nobody.near`);
     expect(res.status).toBe(404);
     expect((await res.json()).error.code).toBe("member_not_found");
   });
 
-  it("TC-BE-014-10 header kesegaran dan CORS", async () => {
+  it("TC-BE-014-10 freshness headers and CORS", async () => {
     await start();
     const ok = await get(`${BASE}/members`);
     expect(ok.headers.get("x-x207-indexed-block")).toBe("171234567");
@@ -163,7 +163,7 @@ describe("BE-014 read API anggota", () => {
     expect(preflight.headers.get("access-control-allow-origin")).toBe("*");
   });
 
-  it("TC-BE-014-16 jumlah string bilangan bulat, waktu ISO 8601 UTC, field camelCase", async () => {
+  it("TC-BE-014-16 amounts as integer strings, times in ISO 8601 UTC, camelCase fields", async () => {
     await start();
     const body = await (await get(`${BASE}/members`)).json();
     for (const m of body.items) {
@@ -175,7 +175,7 @@ describe("BE-014 read API anggota", () => {
     }
   });
 
-  it("jumlah di atas 2^53 tidak kehilangan presisi", async () => {
+  it("amounts above 2^53 keep their precision", async () => {
     await start();
     seedMember(db, { name: "whale", stake: 9007199254740993n, limit: 9007199254740995n, debt: 2n });
     const body = await (await get(`${BASE}/members/${acct("whale")}`)).json();

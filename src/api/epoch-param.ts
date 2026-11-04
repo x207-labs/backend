@@ -6,7 +6,7 @@ import type { EpochRow } from "./routes/epochs.js";
 const EPOCH_COLUMNS = `epoch, phase, cutoff_at_ns, closed_at_ns, proposal_deadline_ns, committed_at_ns,
   payment_deadline_ns, finalized_at_ns, edge_count, total_obligation, cleared_total`;
 
-/** `{n}` = bilangan bulat ≥ 0 atau `current` (epoch terbesar di D9); 404 `epoch_not_found` bila belum ada. */
+/** `{n}` = integer ≥ 0 or `current` (the largest epoch in D9); 404 `epoch_not_found` if it does not exist yet. */
 export function resolveEpoch(ctx: Pick<RouteContext, "db" | "circle" | "params">): EpochRow {
   const raw = ctx.params.n as string;
   if (raw !== "current" && !/^\d+$/.test(raw)) throw invalidRequest("{n} must be an integer >= 0 or current", { n: raw });

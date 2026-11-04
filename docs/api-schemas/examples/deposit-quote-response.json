@@ -17,9 +17,9 @@
   "paymentDeadline": "2026-11-09T12:00:00Z",
   "warnings": [],
   "nextSteps": [
-    "kirim amountIn ke depositAddress",
-    "tunggu job berstatus ready_withdraw",
-    "ft_withdraw dari intents.near ke akun NEAR tanpa msg",
-    "ft_transfer_call ke x207-circle dengan msg settle epoch 42"
+    "send amountIn to depositAddress",
+    "wait until the job is ready_withdraw",
+    "ft_withdraw from intents.near to the NEAR account without msg",
+    "ft_transfer_call to x207-circle with msg settle epoch 42"
   ]
 }

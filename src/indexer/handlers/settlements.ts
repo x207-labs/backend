@@ -1,7 +1,7 @@
 import type { HandlerMap } from "./context.js";
 import { units } from "../units.js";
 
-/** BE-010: pembayaran residual dan klaim kreditor. */
+/** BE-010: residual payment and creditor claim. */
 export const settlementHandlers: HandlerMap = {
   residual_paid(ctx, e) {
     const amount = units(e.amount, "amount");
@@ -30,7 +30,7 @@ export const settlementHandlers: HandlerMap = {
   },
 
   residual_claim_failed(ctx, e) {
-    // Gagal penuh: sudah `claimable`. Sebagian: kembali dari `claimed` dengan sisa yang dipulihkan (ADR-24).
+    // Full failure: already `claimable`. Partial: back from `claimed` with the remainder restored (ADR-24).
     ctx.db
       .prepare(
         `UPDATE settlements SET status = 'claimable', amount = ?, destination = NULL, tx_hash = NULL, updated_block = ?

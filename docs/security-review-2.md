@@ -1,17 +1,17 @@
 # Second security review: facilitator, chainCache, broker (interface 0.0.8)
 
-Read as an attacker. This lists what was tested, what was found and what was not checked; it is not a statement that the code is safe. "Test" means a test in the repository. A test marked `it.fails` asserts the safe behaviour and passes only while the bug exists: when the SDK is fixed it turns red and `.fails` is removed. The SDK belongs to Main B and was not changed.
+Read as an attacker. This lists what was tested, what was found and what was not checked; it is not a statement that the code is safe. "Test" means a test in the repository. A test marked `it.fails` asserts the safe behaviour and passes only while the bug exists: when the SDK is fixed it turns red and `.fails` is removed. The SDK belongs to sdk and frontend team and was not changed.
 
 Tests: `tests/security-review-facilitator.test.ts` (umbrella, facilitator and `chainCache`) and `backend/broker/test/security-review.test.ts` (broker).
 
-## Open in the SDK (reported to the coordinator, not changed)
+## Open in the SDK (reported to the project lead, not changed)
 | # | Finding | Test | Worst case |
 | --- | --- | --- | --- |
 | R1 | **High.** Replay in parallel. `/verify` reserves nothing and `/settle` answers success again to the payload that is already stored (idempotence by commitment id). The middleware calls `/verify`, the handler, then `/settle`, so n parallel requests with one voucher all pass `/verify`, run the seller's handler n times, and all settle OK. The payer pays one price and gets n resources. | `TC-SR2-04` (`it.fails`) | (n-1) x price for each voucher the payer signs; n is limited only by the concurrency of the seller. Repeats with each new voucher. |
 | C1 | `chainCache`: a payer suspended or defaulted inside the window still passes `/verify`. `member` is kept 15 s and `headroom` 10 s, and the status in `member` is checked by `verify`. The registration is refused on chain (`ERR_PAYER_NOT_ACTIVE`) and the row is dropped. | `TC-SR2-06` (`it.fails`); `TC-SR2-05` shows the same case is refused at once without the cache | Per payer and event: at most the headroom that was cached (`<=` the limit of the member), because every accepted voucher lowers the headroom that `verify` computes. About 10 s from the last read of `headroom`; after that the real `0` is read (`TC-SR2-08`). Not repeatable by the same payer: once the window ends the payer is refused. |
 | C2 | `chainCache`: with no pending row for the pair, the base of the voucher is the cached `obligation`. A registration by another relayer is not seen for 10 s, so vouchers the chain already counts pass `/verify` and are served once each. Own registrations are not affected: they drop the cache (`invalidatePayer`) and the pending row is the base. | `TC-SR2-09` (`it.fails`) | At most the cumulative that the other relayer registered for that pair, times 1: each old voucher once, inside 10 s. The registration of those vouchers fails on chain (seq not above). |
 
-Proposed fix for R1 (Main B): the seller keeps the commitment id (`payer:payee:epoch:seq`) of every request in flight and refuses a second one; or `/verify` records a short reservation of `(payer, payee, epoch, seq)` in the pending store. The broker already does the first (below). For C1 and C2: skip the cache for `member` and `headroom` of a payer that has a rejected or failed registration, or lower the TTLs to what a loss of one headroom per event accepts; the numbers above are the loss to weigh.
+Proposed fix for R1 (sdk and frontend team): the seller keeps the commitment id (`payer:payee:epoch:seq`) of every request in flight and refuses a second one; or `/verify` records a short reservation of `(payer, payee, epoch, seq)` in the pending store. The broker already does the first (below). For C1 and C2: skip the cache for `member` and `headroom` of a payer that has a rejected or failed registration, or lower the TTLs to what a loss of one headroom per event accepts; the numbers above are the loss to weigh.
 
 ## Fixed in the broker (the test failed first)
 | # | Finding | Test | Fix |
@@ -45,7 +45,7 @@ Proposed fix for R1 (Main B): the seller keeps the commitment id (`payer:payee:e
 ## Cross review of the SDK (2026-11-03): InFlightGuard, exact NEP-366, gas key lanes, mock Intents fixture
 Read as an attacker, no SDK file changed. Tests: `tests/security-review-sdk.test.ts` (umbrella; `it.fails` = open finding, red when the SDK is fixed).
 
-### Open in the SDK (reported to the coordinator)
+### Open in the SDK (reported to the project lead)
 | # | Finding | Test | Worst case and proposed fix |
 | --- | --- | --- | --- |
 | G1 | **Medium (denial of service).** `x207Middleware` (SD-017) takes the commitment id `payer:payee:epoch:seq` *before* `/verify`. The four parts are public (`/x207/pair-state` gives `lastSeq`), so anybody can send a request with the id of the victim's next voucher and a signature that `/verify` will refuse. While that request waits for `/verify` the real voucher gets `409 voucher_in_flight`. A loop of such requests keeps the id taken almost all the time, so the victim's payments to that seller fail. Cost to the attacker: one request per `/verify` round trip. | `TC-SR3-02` (`it.fails`) | Take the id only when `/verify` answered `isValid`: a forged voucher never takes it, and parallel valid replays are still serialised, because the handler runs only after the id is taken (the others get 409). |

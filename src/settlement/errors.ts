@@ -1,4 +1,4 @@
-/** Error settlement worker; kode dan status HTTP mengikuti Spec API Backend 1.2. */
+/** Settlement worker errors; codes and HTTP statuses follow Spec API Backend 1.2. */
 export type SettlementErrorCode = "live_mode_disabled" | "asset_not_supported" | "one_click_error";
 
 const STATUS: Record<SettlementErrorCode, number> = {

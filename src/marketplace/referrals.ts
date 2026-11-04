@@ -1,8 +1,8 @@
-// Kotak masuk ajakan pencari (BE-044, FIT-F9-08): `POST/GET /x207/circles/{circle}/referrals`, `POST …/referrals/{hash}/refuse`.
-// Pencari tidak bisa menawar atas nama agent lain, jadi ia menandatangani ajakan dan mengirimnya ke kotak masuk agent tujuan; agent menawar sendiri
-// (`POST …/offers` dengan `referralHash`). Jatah pencari lalu melekat pada utas penawaran itu dan dipakai saat penerimaan (bundles.ts).
-// Pagar spam sisi server (SV-016): pencari dan tujuan anggota aktif, listing terbuka dan `discoverable`, jatah tidak melebihi diskon listing,
-// satu ajakan pending per (pencari, tujuan, listing), batas ajakan pending per agent, dan pasangan yang ditolak tidak boleh diajak lagi.
+// Searcher referral inbox (BE-044, FIT-F9-08): `POST/GET /x207/circles/{circle}/referrals`, `POST …/referrals/{hash}/refuse`.
+// A searcher cannot bid on behalf of another agent, so it signs a referral and sends it to the target agent's inbox; the agent bids on its own
+// (`POST …/offers` with `referralHash`). The searcher's share then attaches to that offer thread and is used at acceptance (bundles.ts).
+// Server-side spam guard (SV-016): searcher and target are active members, the listing is open and `discoverable`, the share does not exceed the listing discount,
+// one pending referral per (searcher, target, listing), a limit on pending referrals per agent, and a pair that was refused may not be invited again.
 import type Database from "better-sqlite3";
 import { BarterFormatError, referralHash, validateReferral, verifyRefuseReferral, verifyReferralSignature, type Referral } from "@x207/core";
 import { ApiError, invalidRequest } from "../api/errors.js";
@@ -65,7 +65,7 @@ export function findReferral(db: Database.Database, circleId: string, hash: stri
   return found;
 }
 
-/** Ajakan yang melekat pada utas penawaran `offer` (lewat penawaran ronde 1 utas itu), atau `undefined`. */
+/** Referral attached to the thread of offer `offer` (through the round 1 offer of that thread), or `undefined`. */
 export function threadReferral(db: Database.Database, circleId: string, offer: OfferRow): ReferralRow | undefined {
   const first = row<{ referral_hash: string | null }>(
     db,
@@ -140,7 +140,7 @@ export function referralRoutes(options: { maxPending?: number } = {}): Route[] {
       },
     },
     {
-      // Kotak masuk (`box=inbox`, default) atau ajakan terkirim (`box=sent`) satu akun.
+      // Inbox (`box=inbox`, default) or sent referrals (`box=sent`) of one account.
       method: "GET",
       pattern: "/x207/circles/{circle}/referrals",
       circleScoped: true,

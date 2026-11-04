@@ -1,7 +1,7 @@
 import type { BlockLog, BlockSource, SourceBlock } from "./block-source.js";
 
 export interface NeardataSourceOptions {
-  /** Mis. `https://mainnet.neardata.xyz`; tanpa nilai bawaan di kode. */
+  /** E.g. `https://mainnet.neardata.xyz`; no default value in the code. */
   baseUrl: string;
   contractId: string;
   timeoutMs?: number;
@@ -20,7 +20,7 @@ interface NeardataBlock {
   shards: { receipt_execution_outcomes?: NeardataOutcome[] }[];
 }
 
-/** Respons Neardata untuk blok yang belum ada. */
+/** Neardata response for a block that does not exist yet. */
 const FUTURE_BLOCK = "BLOCK_DOES_NOT_EXIST";
 
 export class NeardataError extends Error {
@@ -30,7 +30,7 @@ export class NeardataError extends Error {
   }
 }
 
-/** Mainnet: `GET /v0/block/{height}` memuat outcome receipt semua shard dalam satu respons. */
+/** Mainnet: `GET /v0/block/{height}` contains the outcome receipts of all shards in one response. */
 export class NeardataBlockSource implements BlockSource {
   readonly endpoint: string;
   readonly #contractId: string;

@@ -41,7 +41,7 @@ function addEpoch(db: Db, epoch = 1): void {
   db.prepare("INSERT INTO epochs (circle_id, epoch, phase) VALUES (?, ?, 'open')").run(CIRCLE, epoch);
 }
 
-describe("BE-004 migrasi skema D9", () => {
+describe("BE-004 D9 schema migration", () => {
   let db: Db;
   let dir: string;
 
@@ -55,7 +55,7 @@ describe("BE-004 migrasi skema D9", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("TC-BE-004-01 semua tabel, view, dan indeks dibuat", () => {
+  it("TC-BE-004-01 all tables, views, and indexes are created", () => {
     expect(names(db, "table")).toEqual(
       expect.arrayContaining([
         "circles",
@@ -90,7 +90,7 @@ describe("BE-004 migrasi skema D9", () => {
     );
   });
 
-  it("TC-BE-004-02 migrasi dua kali tidak error dan skema tidak berubah", () => {
+  it("TC-BE-004-02 migrating twice does not error and the schema does not change", () => {
     const before = schemaSnapshot(db);
     expect(() => migrate(db)).not.toThrow();
     expect(schemaSnapshot(db)).toEqual(before);
@@ -98,7 +98,7 @@ describe("BE-004 migrasi skema D9", () => {
     expect(versions).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }, { version: 5 }, { version: 6 }, { version: 7 }, { version: 8 }, { version: 9 }, { version: 10 }, { version: 11 }, { version: 12 }, { version: 13 }, { version: 14 }]);
   });
 
-  it("TC-BE-004-03 kunci unik events_raw per (receipt_id, log_index)", () => {
+  it("TC-BE-004-03 events_raw unique key per (receipt_id, log_index)", () => {
     const insert = (verb: string) =>
       db.prepare(
         `INSERT ${verb} INTO events_raw
@@ -110,7 +110,7 @@ describe("BE-004 migrasi skema D9", () => {
     expect(insert("OR IGNORE").run().changes).toBe(0);
   });
 
-  it("TC-BE-004-04 status anggota mengikuti ADR-26", () => {
+  it("TC-BE-004-04 member status follows ADR-26", () => {
     addCircle(db);
     for (const status of ["pending", "active", "suspended", "exited"]) {
       expect(() => addMember(db, `${status}.near`, status)).not.toThrow();
@@ -118,7 +118,7 @@ describe("BE-004 migrasi skema D9", () => {
     expect(() => addMember(db, "banned.near", "banned")).toThrow(/CHECK/);
   });
 
-  it("TC-BE-004-05 status settlement dan konsistensi peran", () => {
+  it("TC-BE-004-05 settlement status and role consistency", () => {
     addCircle(db);
     addEpoch(db);
     const insert = (account: string, role: string, net: number, status: string | null) =>
@@ -135,7 +135,7 @@ describe("BE-004 migrasi skema D9", () => {
     expect(() => insert("e.near", "creditor", 1, "paid")).toThrow(/CHECK/);
   });
 
-  it("TC-BE-004-05b semua nama status settlement ADR-26 diterima pada peran yang sesuai", () => {
+  it("TC-BE-004-05b all ADR-26 settlement status names are accepted for the matching role", () => {
     addCircle(db);
     addEpoch(db);
     const insert = (account: string, role: string, net: number, status: string) =>
@@ -150,7 +150,7 @@ describe("BE-004 migrasi skema D9", () => {
     expect(() => insert("x.near", "debtor", -5, "unknown")).toThrow(/CHECK/);
   });
 
-  it("TC-BE-004-06 batas cleared di obligations", () => {
+  it("TC-BE-004-06 cleared bound in obligations", () => {
     addCircle(db);
     addEpoch(db);
     const insert = (n: number, cleared: number | null) =>
@@ -168,7 +168,7 @@ describe("BE-004 migrasi skema D9", () => {
     expect(() => insert(5, 100)).not.toThrow();
   });
 
-  it("TC-BE-004-07 params.field memuat field ADR-26", () => {
+  it("TC-BE-004-07 params.field holds the ADR-26 fields", () => {
     addCircle(db);
     const insert = (field: string, i: number) =>
       db
@@ -183,7 +183,7 @@ describe("BE-004 migrasi skema D9", () => {
     expect(() => insert("foo", 4)).toThrow(/CHECK/);
   });
 
-  it("TC-BE-004-07b view params_active memuat nilai terakhir per field", () => {
+  it("TC-BE-004-07b view params_active holds the latest value per field", () => {
     addCircle(db);
     const insert = (value: string, receipt: string) =>
       db
@@ -199,7 +199,7 @@ describe("BE-004 migrasi skema D9", () => {
     ]);
   });
 
-  it("TC-BE-004-08 circles.network konsisten dengan circle_id", () => {
+  it("TC-BE-004-08 circles.network is consistent with circle_id", () => {
     const insert = (network: string) =>
       db.prepare("INSERT INTO circles (circle_id, contract_id, network) VALUES (?, 'x207-circle.near', ?)").run(
         CIRCLE,
@@ -209,12 +209,12 @@ describe("BE-004 migrasi skema D9", () => {
     expect(() => insert(`x207:${CIRCLE}`)).not.toThrow();
   });
 
-  it("TC-BE-004-09 setiap kolom read model terlacak ke field D1/D2/D4/D5/D7 atau teknis", () => {
+  it("TC-BE-004-09 every read-model column traces to a D1/D2/D4/D5/D7 field or technical", () => {
     const doc = readFileSync(fileURLToPath(new URL("../../docs/d9-column-mapping.md", import.meta.url)), "utf8");
     const mapping = new Map<string, string>();
     for (const line of doc.split("\n")) {
       const cells = line.split("|").map((c) => c.trim());
-      // | tabel | kolom | field D | catatan |
+      // | table | column | D field | notes |
       const [, table, column, fieldD] = cells;
       if (!table || !column || !fieldD || !/^[a-z_]+$/.test(table) || !/^[a-z_]+$/.test(column)) continue;
       mapping.set(`${table}.${column}`, fieldD.replace(/`/g, ""));
@@ -229,17 +229,17 @@ describe("BE-004 migrasi skema D9", () => {
 
     for (const key of actual) {
       const fieldD = mapping.get(key);
-      expect(fieldD, `kolom ${key} tidak ada di docs/d9-column-mapping.md`).toBeDefined();
-      expect(fieldD, `kolom ${key} tanpa field D`).toMatch(/^(D[1-7]\b|teknis)/);
+      expect(fieldD, `column ${key} is missing from docs/d9-column-mapping.md`).toBeDefined();
+      expect(fieldD, `column ${key} has no D field`).toMatch(/^(D[1-7]\b|teknis)/);
     }
     for (const key of mapping.keys()) {
-      expect(actual.has(key), `docs memuat kolom ${key} yang tidak ada di skema`).toBe(true);
+      expect(actual.has(key), `docs list column ${key} that is not in the schema`).toBe(true);
     }
     expect(mapping.get("members.terms_hash")).toMatch(/^D1/);
     expect(mapping.get("members.exit_requested_epoch")).toMatch(/^D1/);
   });
 
-  it("TC-BE-004-10 status job 1Click", () => {
+  it("TC-BE-004-10 1Click job status", () => {
     const statuses = [
       "quoted",
       "awaiting_signature",
@@ -265,14 +265,14 @@ describe("BE-004 migrasi skema D9", () => {
     expect(() => insert("jx", "done")).toThrow(/CHECK/);
   });
 
-  it("TC-BE-004-11 mode WAL", () => {
+  it("TC-BE-004-11 WAL mode", () => {
     expect(db.pragma("journal_mode", { simple: true })).toBe("wal");
     const reopened = new Database(join(dir, "d9.db"));
     expect(reopened.pragma("journal_mode", { simple: true })).toBe("wal");
     reopened.close();
   });
 
-  it("kunci asing aktif: member tanpa circle ditolak", () => {
+  it("foreign keys enforced: member without circle is rejected", () => {
     expect(() => addMember(db, "a.near")).toThrow(/FOREIGN KEY/);
   });
 });

@@ -60,7 +60,7 @@ Fix: (1) `slash_bond` takes `amount.min(stake)` and emits what it moved, never p
 Fix: require `deal.locked[me]` in `dispute_deal` (a party that has no bond at risk cannot accuse), or let a released complainant lose the right to dispute.
 
 ### C-9 (Low): limits and events
-The note promises `limits_updated` for the loser; `bound_member_limit` (`deal.rs:220-225`) changes the limit and emits nothing. The events `bond_locked`, `deal_confirmed`, `deal_disputed`, `deal_ruled`, `bond_slashed`, `bond_released` are not in `X207EventMap` of the SDK nor in the handlers of the indexer (`backend/src/indexer/indexer.ts`): they are stored as unknown events and `stake` and `credit_limit` of the read model stay at their old values after a slash. Fix: SDK events (Main B) and handlers `bond_slashed` (stake of both), plus `limits_updated` from the contract (A2); until then the read API is wrong for a member that won or lost a bond.
+The note promises `limits_updated` for the loser; `bound_member_limit` (`deal.rs:220-225`) changes the limit and emits nothing. The events `bond_locked`, `deal_confirmed`, `deal_disputed`, `deal_ruled`, `bond_slashed`, `bond_released` are not in `X207EventMap` of the SDK nor in the handlers of the indexer (`backend/src/indexer/indexer.ts`): they are stored as unknown events and `stake` and `credit_limit` of the read model stay at their old values after a slash. Fix: SDK events (sdk and frontend team) and handlers `bond_slashed` (stake of both), plus `limits_updated` from the contract (A2); until then the read API is wrong for a member that won or lost a bond.
 
 ### C-10 (Low): the boundary of the window
 `dispute_deal` allows `now <= confirm_by` (`deal.rs:268`), `settle_deal` allows `now >= confirm_by` (`deal.rs:323`). In the block of `confirm_by` both are valid; whoever is first wins, and a settle there ends the right to dispute. Fix: `dispute_deal` requires `now < confirm_by`.
@@ -75,7 +75,7 @@ The note promises `limits_updated` for the loser; `bound_member_limit` (`deal.rs
 - The bond is `value * bond_bps / 10_000` with an overflow fallback, and a bond that rounds to 0 is refused; `bond_threshold` 10 to 1,000,000 credit and `bond_bps` 500 to 5000 are validated.
 - `terms_hash` of a bundle without an arbiter is unchanged (the three keys are appended only when present), and `confirm_by` is a string in the terms.
 - The money moves only between the stakes of the two parties (`total_stake` is unchanged), by the verdict of the arbiter named in the signed terms; `no_fault` and the silence of the arbiter release both bonds; a verdict after 7 days is refused (`ERR_RULING_WINDOW`).
-- `StorageKey::Deals = b'd'` is a new byte (no reuse); the two rules are in a raw key `x207_rules` that reads as the defaults when absent, so a state of 0.0.11 reads as before (the test `ct094_upgrade_from_0_0_11` of A2 covers the upgrade); the join deposit went to 0.35 NEAR to pay for 8 open deals and a freeze record.
+- `StorageKey::Deals = b'd'` is a new byte (no reuse); the two rules are in a raw key `x207_rules` that reads as the defaults when absent, so a state of 0.0.11 reads as before (the test `ct094_upgrade_from_0_0_11` of contracts team covers the upgrade); the join deposit went to 0.35 NEAR to pay for 8 open deals and a freeze record.
 - Freeze: a frozen member still `confirm_deal`, `dispute_deal` and `settle_deal`; the voucher of the freeze epoch still registers (`freeze.rs:73`, see C-2).
 - An empty list of official contracts is the old behaviour (see C-5).
 

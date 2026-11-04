@@ -23,7 +23,7 @@ import { referralRoutes } from "./referrals.js";
 import { MARKETPLACE_MIGRATIONS } from "./migrations.js";
 import { transferCheck, transferRoutes, transferSellerCheck, type TransferOptions } from "./transfers.js";
 
-/** Terapkan tabel M11 lalu kembalikan route marketplace; dipasang lewat `extraRoutes` server. */
+/** Apply the M11 tables, then return the marketplace routes; mounted through the server's `extraRoutes`. */
 export function marketplaceRoutes(db: Database.Database, options: { maxRounds?: number; chainView?: ViewFunction; maxReferrals?: number; confirmClasses?: readonly string[]; disputeWindowSeconds?: number } & ScopeOptions & InvoiceOptions & OrderOptions & ClaimOptions & PurchaseOptions & TransferOptions & { daoRegistry?: readonly DaoRegistryItem[] } = {}): Route[] {
   migrate(db, MARKETPLACE_MIGRATIONS);
   return [...intentRoutes, ...listingRoutes([assetClassCheck, scopeCheck(options), resourceCheck, licenseCheck(options), codeCheck(options), transferCheck(options)], [transferSellerCheck(options)]), ...assetClassRoutes, ...offerRoutes(options), ...bundleRoutes(openEpochResolver(options.chainView), options.confirmClasses === undefined ? {} : { confirmClasses: options.confirmClasses }), ...deliveryRoutes(options.disputeWindowSeconds === undefined ? {} : { disputeWindowSeconds: options.disputeWindowSeconds }), ...invoiceRoutes(openEpochResolver(options.chainView), options),

@@ -71,7 +71,7 @@ Per stage: UTC date, mode, result (pass or fail), `amountIn` / `amountOut` / `wi
 
 BE-026 is complete when stages 1–3 pass and stage 4 succeeds once. This document is the procedure; execution of stage 4 awaits owner approval and has not been done.
 
-## Results already run (2026-11-02, Main A2)
+## Results already run (2026-11-02, contracts team)
 Stages without funds (1–3), using `X207_INTEGRATION=1 npx vitest run test/settlement` against real 1Click and mainnet RPC, always `dry: true`:
 - Deposit quote for a 50 USDC Base stake and the settle quote from D9: 201, job `waiting_deposit` (TC-BE-027-12, TC-BE-032-01).
 - Withdraw quote of 1 USDT to USDC Base: 201, `withdrawFee` `"2400"` (TC-BE-030-13, TC-BE-032-02).

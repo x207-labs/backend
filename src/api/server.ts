@@ -30,33 +30,33 @@ import { withdrawRoutes } from "../settlement/withdraw/routes.js";
 
 export interface ApiServerOptions {
   db: Database.Database;
-  /** Permintaan per menit per IP; 0 atau kosong = tanpa batas. */
+  /** Requests per minute per IP; 0 or empty = no limit. */
   rateLimitPerMinute?: number;
-  /** Batas penyalahgunaan (BE-066): rate tulis per IP dan per akun, ukuran body, ukuran halaman. Tanpa ini: hanya ukuran body 64 KiB dan halaman 200. */
+  /** Abuse limits (BE-066): write rate per IP and per account, body size, page size. Without this: only a 64 KiB body size and a page size of 200. */
   abuse?: Partial<AbuseLimits>;
   now?: () => number;
-  /** Route tambahan dari modul lain (laporan 207, settlement, dll.). */
+  /** Extra routes from other modules (report 207, settlement, etc.). */
   extraRoutes?: readonly Route[];
   /**
-   * Settlement worker (M5): bila diisi, server melayani `POST /x207/settlement/deposit/quote`,
-   * `POST /x207/settlement/withdraw/{quote,intent,submit}` dan `GET /x207/settlement/jobs/{jobId}`.
+   * Settlement worker (M5): when set, the server serves `POST /x207/settlement/deposit/quote`,
+   * `POST /x207/settlement/withdraw/{quote,intent,submit}` and `GET /x207/settlement/jobs/{jobId}`.
    */
   settlement?: { client: OneClickClient; accountExists: AccountExists };
-  /** Log terstruktur JSON (BE-071); default: tidak mencatat. */
+  /** Structured JSON log (BE-071); default: does not log. */
   logger?: Logger;
-  /** Penghitung metrik proses ini; default dibuat sendiri. */
+  /** Metrics counter of this process; created internally by default. */
   telemetry?: Telemetry;
-  /** Bearer token untuk `GET /metrics` (env `METRICS_TOKEN`); kosong = terbuka. */
+  /** Bearer token for `GET /metrics` (env `METRICS_TOKEN`); empty = open. */
   metricsToken?: string;
-  /** Pertanyaan murah ke RPC untuk `GET /healthz`; melempar bila RPC gagal. */
+  /** Cheap query to the RPC for `GET /healthz`; throws if the RPC fails. */
   rpcProbe?: () => Promise<{ endpoint?: string }>;
-  /** Baris tambahan untuk `GET /metrics`. */
+  /** Extra lines for `GET /metrics`. */
   extraMetrics?: () => string[];
-  /** View NEAR untuk `GET …/proposals` (BE-023); tanpa ini path itu tidak ada. */
+  /** NEAR view for `GET …/proposals` (BE-023); without it that path does not exist. */
   daoView?: ViewFunction;
 }
 
-/** Body JSON sebuah `POST`: objek apa pun yang muat di `maxBytes`; lebih besar dari itu 413 `payload_too_large`, bukan JSON 400 `invalid_request`. */
+/** JSON body of a `POST`: any object that fits in `maxBytes`; larger than that is 413 `payload_too_large`, not JSON 400 `invalid_request`. */
 async function readJsonBody(req: IncomingMessage, maxBytes: number): Promise<unknown> {
   const tooLarge = () => new ApiError(413, "payload_too_large", "Body too large", { maxBytes }, { Connection: "close" });
   const declared = Number(req.headers["content-length"]);
@@ -77,7 +77,7 @@ async function readJsonBody(req: IncomingMessage, maxBytes: number): Promise<unk
 
 const REQUIRED_TABLES = ["circles", "indexer_cursor", "members", "epochs"];
 
-/** Variabel `.env`: `API_RATE_LIMIT_PER_MINUTE` (bilangan bulat ≥ 0). */
+/** `.env` variable: `API_RATE_LIMIT_PER_MINUTE` (integer ≥ 0). */
 export function apiOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): { rateLimitPerMinute: number; abuse: AbuseLimits } {
   const { limits } = abuseFromEnv(env);
   return { rateLimitPerMinute: limits.ipPerMinute, abuse: limits };
@@ -106,12 +106,12 @@ function workerRoutes(settlement: ApiServerOptions["settlement"]): Route[] {
   return [...depositQuoteRoutes(settlement), ...withdrawRoutes(settlement), ...jobRoutes(settlement.client)];
 }
 
-/** Semua route yang dilayani server ini; dipakai juga oleh test dokumen OpenAPI (BE-068) supaya dokumen dan router tidak berpisah. */
+/** All routes served by this server; also used by the OpenAPI document test (BE-068) so the document and the router do not drift apart. */
 export function collectRoutes(options: Pick<ApiServerOptions, "settlement" | "daoView" | "extraRoutes" | "telemetry" | "metricsToken" | "rpcProbe" | "extraMetrics">): Route[] {
   return [...opsRoutes({ telemetry: options.telemetry ?? new Telemetry(), ...(options.metricsToken ? { metricsToken: options.metricsToken } : {}), ...(options.rpcProbe ? { rpcProbe: options.rpcProbe } : {}), ...(options.extraMetrics ? { extraMetrics: options.extraMetrics } : {}) }), ...healthRoutes, ...memberRoutes, ...limitRoutes, ...epochRoutes, ...obligationRoutes, ...settlementRoutes, ...paramRoutes, ...bundleRoutes, ...grantRoutes, ...intentRoutes, ...eventRoutes, ...metricRoutes, ...ruleRoutes, ...reportRoutes, ...workerRoutes(options.settlement), ...(options.daoView ? proposalRoutes(options.daoView) : []), ...(options.extraRoutes ?? [])];
 }
 
-/** Server read API (Spec API Backend). Pemanggil yang memanggil `listen`. */
+/** Read API server (Spec API Backend). The caller is the one that calls `listen`. */
 export function createApiServer(options: ApiServerOptions): Server {
   const { db } = options;
   const now = options.now ?? Date.now;

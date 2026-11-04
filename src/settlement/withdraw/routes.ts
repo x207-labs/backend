@@ -15,9 +15,9 @@ const VARIABLE_FEE_BPS_ESTIMATE = 14;
 
 export interface WithdrawOptions {
   client: OneClickClient;
-  /** Cek `refundTo` sebelum quote: 1Click menjawab error internal untuk akun NEAR yang tidak ada (Spec API Backend 6.1). */
+  /** Check `refundTo` before the quote: 1Click answers with an internal error for a non-existent NEAR account (Spec API Backend 6.1). */
   accountExists: AccountExists;
-  /** Dipakai untuk ID job; default `randomUUID`. */
+  /** Used for the job ID; default `randomUUID`. */
   newJobId?: () => string;
 }
 
@@ -46,15 +46,15 @@ function conflict(jobId: string, status: string, expected: string): ApiError {
 }
 
 /**
- * Jalur keluar kreditor (Spec API Backend 6.3, 6.4; BE-030): `POST /x207/settlement/withdraw/quote`, `…/intent`
- * dan `…/submit`. Urutannya quote → intent → submit; langkah di luar urutan ditolak `job_state_conflict`.
- * Worker tidak menandatangani: intent ditandatangani wallet kreditor (spec 2.2).
+ * Creditor outbound path (Spec API Backend 6.3, 6.4; BE-030): `POST /x207/settlement/withdraw/quote`, `…/intent`
+ * and `…/submit`. The order is quote → intent → submit; a step out of order is rejected with `job_state_conflict`.
+ * The worker does not sign: the intent is signed by the creditor's wallet (spec 2.2).
  */
 export function withdrawRoutes(options: WithdrawOptions): Route[] {
   const { client, accountExists } = options;
   const newJobId = options.newJobId ?? randomUUID;
 
-  /** Mode `dry` bicara ke 1Click sungguhan: boleh quote, tetapi tidak boleh mengirim intent bertanda tangan. */
+  /** `dry` mode talks to the real 1Click: quotes are allowed, but sending a signed intent is not. */
   const assertMayMoveFunds = () => {
     if (client.mode === "dry") throw new ApiError(422, "live_mode_disabled", "submit-intent needs X207_SETTLEMENT_MODE=live", { mode: client.mode });
   };
@@ -171,7 +171,7 @@ export function withdrawRoutes(options: WithdrawOptions): Route[] {
         const jobId = text(objectBody(body), "jobId");
         const job = getJob(db, jobId);
         if (!job) throw new ApiError(404, "job_not_found", `Unknown job ${jobId}`, { jobId });
-        // job deposit dan intent kedua jatuh di sini juga (K-39)
+        // a deposit job and a second intent land here too (K-39)
         if (job.kind !== "withdraw" || job.status !== "quoted") throw conflict(jobId, job.status, "withdraw must be quoted");
         const response = await oneClick(() =>
           client.generateIntent({ depositAddress: job.deposit_address ?? "", signerId: job.account_id, standard: "nep413" as IntentStandardEnum }),

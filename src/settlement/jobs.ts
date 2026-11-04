@@ -12,7 +12,7 @@ export type JobStatus =
   | "expired"
   | "refunded";
 
-/** Baris `settlement_jobs` (Spec Skema D9 3.9). Jumlah 1Click tetap string. */
+/** `settlement_jobs` row (Spec Skema D9 3.9). 1Click amounts stay strings. */
 export interface JobRow {
   job_id: string;
   kind: JobKind;
@@ -38,7 +38,7 @@ export interface JobRow {
   updated_at: number;
 }
 
-/** Status akhir: tidak ada langkah lanjut dan tidak dipantau lagi. */
+/** Final status: no further steps and no longer monitored. */
 export const FINAL_STATUSES: readonly JobStatus[] = ["ready_withdraw", "completed", "failed", "expired", "refunded"];
 
 export type NewJob = Omit<JobRow, "one_click_status" | "intent_hash" | "updated_at"> &
@@ -61,7 +61,7 @@ export function getJob(db: Database.Database, jobId: string): JobRow | undefined
   return db.prepare("SELECT * FROM settlement_jobs WHERE job_id = ?").get(jobId) as JobRow | undefined;
 }
 
-/** Job yang masih menunggu 1Click: deposit `waiting_deposit`/`processing`, withdraw `processing`. */
+/** Jobs still waiting on 1Click: deposit `waiting_deposit`/`processing`, withdraw `processing`. */
 export function listPollableJobs(db: Database.Database): JobRow[] {
   return db
     .prepare(
@@ -84,7 +84,7 @@ export function updateJobStatus(
   ).run({ ...patch, job_id: jobId });
 }
 
-/** Pindahkan job ke status baru; `intentHash` hanya diisi bila diberikan. */
+/** Move the job to a new status; `intentHash` is set only when given. */
 export function setJobState(
   db: Database.Database,
   jobId: string,

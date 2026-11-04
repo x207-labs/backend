@@ -1,6 +1,6 @@
 import type { AppFee } from "@defuse-protocol/one-click-sdk-typescript";
 
-/** `mock`: tanpa jaringan (FX-1C). `dry`: 1Click nyata, selalu `dry: true`. `live`: `dry: false` diizinkan. */
+/** `mock`: no network (FX-1C). `dry`: real 1Click, always `dry: true`. `live`: `dry: false` is allowed. */
 export type SettlementMode = "mock" | "dry" | "live";
 
 export interface SettlementConfig {
@@ -15,8 +15,8 @@ export const DEFAULT_ONECLICK_BASE_URL = "https://1click.chaindefuser.com";
 const MODES: readonly SettlementMode[] = ["mock", "dry", "live"];
 
 /**
- * Variabel `.env`: `X207_SETTLEMENT_MODE` (default `dry`), `ONECLICK_BASE_URL`, `ONECLICK_JWT`,
- * `X207_APP_FEES` (JSON `[{"recipient":"<akun Intents>","fee":<bps>}]`; kosong = tanpa app fee).
+ * `.env` variables: `X207_SETTLEMENT_MODE` (default `dry`), `ONECLICK_BASE_URL`, `ONECLICK_JWT`,
+ * `X207_APP_FEES` (JSON `[{"recipient":"<Intents account>","fee":<bps>}]`; empty = no app fee).
  */
 export function settlementConfigFromEnv(env: NodeJS.ProcessEnv = process.env): SettlementConfig {
   const rawMode = env.X207_SETTLEMENT_MODE || "dry";

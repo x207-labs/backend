@@ -1,4 +1,4 @@
-// Test: body JSON respons dibaca sebagai any agar assertion tidak perlu cast satu per satu.
+// Test: the JSON response body is read as any so assertions need no per-call cast.
 export {};
 declare global {
   interface Response {

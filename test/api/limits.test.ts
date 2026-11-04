@@ -25,7 +25,7 @@ describe("BE-011 GET …/members/{account}/limits", () => {
     srv = await listen({ db });
   }
 
-  it("TC-BE-011-06 riwayat terbaru dulu, jumlah string", async () => {
+  it("TC-BE-011-06 history newest first, amounts as strings", async () => {
     await fx();
     const res = await fetch(`${srv.url}${BASE}/members/${acct("scraper")}/limits`);
     expect(res.status).toBe(200);
@@ -37,7 +37,7 @@ describe("BE-011 GET …/members/{account}/limits", () => {
     expect(body.nextCursor).toBeNull();
   });
 
-  it("TC-BE-011-07 paginasi 2/2/1 tanpa baris ganda", async () => {
+  it("TC-BE-011-07 pagination 2/2/1 without duplicate rows", async () => {
     db = openDatabase(":memory:");
     seedCircle(db);
     seedAg6(db);
@@ -60,7 +60,7 @@ describe("BE-011 GET …/members/{account}/limits", () => {
     expect(seen).toEqual([5, 4, 3, 2, 1]);
   });
 
-  it("TC-BE-011-08 akun tidak ada: 404 member_not_found", async () => {
+  it("TC-BE-011-08 account does not exist: 404 member_not_found", async () => {
     await fx();
     const res = await fetch(`${srv.url}${BASE}/members/nobody.near/limits`);
     expect(res.status).toBe(404);

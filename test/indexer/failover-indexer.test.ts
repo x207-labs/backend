@@ -8,7 +8,7 @@ import { MockRpc } from "../helpers/mock-rpc.js";
 
 const HEIGHTS = [100, 101, 102, 103, 104, 105];
 
-describe("BE-005 klien RPC di bawah indexer", () => {
+describe("BE-005 RPC client under the indexer", () => {
   const started: MockRpc[] = [];
   afterEach(async () => {
     await Promise.all(started.splice(0).map((rpc) => rpc.kill()));
@@ -24,7 +24,7 @@ describe("BE-005 klien RPC di bawah indexer", () => {
   }
   const cursor = (db: ReturnType<typeof openDatabase>) => db.prepare("SELECT last_block_height, rpc_endpoint FROM indexer_cursor").get();
 
-  it("TC-BE-005-01 utama sehat: rpc_endpoint = URL utama", async () => {
+  it("TC-BE-005-01 primary healthy: rpc_endpoint = primary URL", async () => {
     const [primary, fallback] = [await mock(), await mock()];
     const { db, ix } = indexer(new FailoverRpcClient({ endpoints: [primary.url, fallback.url], timeoutMs: 300 }));
     await ix.bootstrap();
@@ -33,7 +33,7 @@ describe("BE-005 klien RPC di bawah indexer", () => {
     expect(fallback.methods).toEqual([]);
   });
 
-  it("TC-BE-005-02 utama mati di tengah: cursor lanjut tanpa melompat, rpc_endpoint = cadangan", async () => {
+  it("TC-BE-005-02 primary dies midway: cursor continues without skipping, rpc_endpoint = fallback", async () => {
     const [primary, fallback] = [await mock(), await mock()];
     const { db, ix } = indexer(new FailoverRpcClient({ endpoints: [primary.url, fallback.url], timeoutMs: 300 }));
     await ix.bootstrap();
@@ -45,7 +45,7 @@ describe("BE-005 klien RPC di bawah indexer", () => {
     expect(fallback.blockRequests.map((r) => r.block_id).filter((h) => h !== undefined)).toEqual([103, 104, 105]);
   });
 
-  it("TC-BE-005-04 kedua RPC mati: cursor tidak maju, indexer mencoba lagi dan pulih", async () => {
+  it("TC-BE-005-04 both RPCs down: cursor does not advance, the indexer retries and recovers", async () => {
     const [primary, fallback] = [await mock(), await mock()];
     const { db, ix } = indexer(new FailoverRpcClient({ endpoints: [primary.url, fallback.url], timeoutMs: 300, cooldownMs: 0 }));
     await ix.bootstrap();

@@ -8,7 +8,7 @@ import { verifyMembers, type ViewMember } from "./fee-charges.js";
 import { prefetchClearingEdges, type FetchClearedEdges, type PrefetchOptions } from "./clearing-edges.js";
 import { assertAmountsInRange } from "./units.js";
 
-/** `events_raw.handled`: 0 belum/gagal diproses, 1 diproses (atau tanpa read model), 2 nama event tak dikenal. */
+/** `events_raw.handled`: 0 not yet processed or failed, 1 processed (or no read model), 2 unknown event name. */
 export const HANDLED = { pending: 0, done: 1, unknown: 2 } as const;
 
 export interface IndexerOptions {
@@ -16,10 +16,10 @@ export interface IndexerOptions {
   source: BlockSource;
   circleId: string;
   contractId: string;
-  /** Blok deploy kontrak; blok pertama yang dibaca (Spec Skema D9 5.3). */
+  /** Contract deploy block; the first block that is read (Spec Skema D9 5.3). */
   startBlock: number;
   handlers?: HandlerMap;
-  /** Hasil view `get_params`, untuk baris awal tabel `params` saat bootstrap. */
+  /** Result of the `get_params` view, for the initial `params` row at bootstrap. */
   fetchParams?: () => Promise<ContractAbi.Params>;
   /** BE-077: reads the cleared edges of an epoch (view `list_obligations`) for a `clearing_applied` summary; needed to apply interface 0.0.13. */
   fetchClearedEdges?: FetchClearedEdges;
@@ -65,8 +65,8 @@ const INSERT_EVENT = `INSERT OR IGNORE INTO events_raw (receipt_id, log_index, b
   @version, @event, @data_json, @handled)`;
 
 /**
- * Inti indexer M6 (BE-006): satu blok final per `step()`, satu transaksi SQLite per blok yang memuat
- * `events_raw`, efek handler, dan kemajuan cursor (Spec Skema D9 5.1).
+ * Core of the M6 indexer (BE-006): one final block per `step()`, one SQLite transaction per block that holds
+ * `events_raw`, the handler effects, and the cursor advance (Spec Skema D9 5.1).
  */
 export class Indexer {
   readonly #db: Database.Database;
@@ -96,7 +96,7 @@ export class Indexer {
     this.#fetchMembers = options.fetchMembers;
   }
 
-  /** Buat cursor dan baris awal `params` bila belum ada; aman dipanggil berulang. */
+  /** Create the cursor and the initial `params` row if they do not exist yet; safe to call repeatedly. */
   async bootstrap(): Promise<void> {
     const db = this.#db;
     const exists = db.prepare("SELECT 1 FROM indexer_cursor WHERE name = ?").get(this.#contractId);
@@ -127,7 +127,7 @@ export class Indexer {
     })();
   }
 
-  /** Proses blok final berikutnya, atau `idle` bila head belum sampai. Error sumber tidak memajukan cursor. */
+  /** Process the next final block, or `idle` if the head has not been reached. A source error does not advance the cursor. */
   async step(): Promise<StepResult> {
     const cursor = this.#cursor();
     const next = cursor.last_block_height + 1;
@@ -157,7 +157,7 @@ export class Indexer {
     }
   }
 
-  /** Baca sampai head, lalu berhenti; berguna untuk test dan catch-up. */
+  /** Read up to the head, then stop; useful for tests and catch-up. */
   async drain(maxBlocks = Number.POSITIVE_INFINITY): Promise<number> {
     let processed = 0;
     while (processed < maxBlocks && (await this.step()).kind === "processed") processed += 1;
@@ -165,8 +165,8 @@ export class Indexer {
   }
 
   /**
-   * Loop polling. Error sumber (semua RPC mati, dsb.) dicoba lagi dengan backoff eksponensial; cursor
-   * tidak maju. `IndexerHaltError` menghentikan loop dan dilempar ke pemanggil.
+   * Polling loop. A source error (all RPCs down, etc.) is retried with exponential backoff; the cursor
+   * does not advance. `IndexerHaltError` stops the loop and is thrown to the caller.
    */
   async run(options: { signal: AbortSignal; pollMs?: number; maxBackoffMs?: number; onError?: (error: unknown) => void }): Promise<void> {
     const pollMs = options.pollMs ?? 1_000;
@@ -226,7 +226,7 @@ export class Indexer {
     return events;
   }
 
-  /** Simpan, setelah rollback, baris pemicu henti dengan `handled = 0` agar terlihat oleh operator. */
+  /** After a rollback, store the row that triggered the halt with `handled = 0` so the operator can see it. */
   #keepUnhandled(block: SourceBlock, error: IndexerHaltError): void {
     const log = block.logs.find((l) => l.receiptId === error.row?.receiptId && l.logIndex === error.row.logIndex);
     if (!log) return;
@@ -234,7 +234,7 @@ export class Indexer {
     if (row) this.#db.prepare(INSERT_EVENT).run({ ...row, handled: HANDLED.pending });
   }
 
-  /** Simpan satu log dan jalankan handler-nya; mengembalikan jumlah event yang diproses. */
+  /** Store one log and run its handler; returns the number of events processed. */
   #ingest(block: SourceBlock, log: BlockLog): number {
     if (log.executorId !== this.#contractId || !log.log.startsWith(EVENT_PREFIX)) return 0;
     const row = toRow(block, log, this.#contractId);
@@ -244,7 +244,7 @@ export class Indexer {
 
     const inserted = this.#db.prepare(INSERT_EVENT).run({ ...row, handled: HANDLED.pending });
     if (inserted.changes === 0) {
-      // Sudah ada: lewati, kecuali baris yang dulu berhenti di tengah jalan (`handled = 0`) dicoba lagi.
+      // Already exists: skip, except a row that earlier stopped midway (`handled = 0`) is retried.
       const existing = this.#db
         .prepare("SELECT handled FROM events_raw WHERE receipt_id = ? AND log_index = ?")
         .get(row.receipt_id, row.log_index) as { handled: number };
@@ -261,13 +261,13 @@ export class Indexer {
   }
 }
 
-/** Urutan tetap `(receipt_id, log_index)`, sama dengan urutan rebuild (Spec Skema D9 5.3). */
+/** Fixed order `(receipt_id, log_index)`, same as the rebuild order (Spec Skema D9 5.3). */
 function compareLogs(a: BlockLog, b: BlockLog): number {
   if (a.receiptId !== b.receiptId) return a.receiptId < b.receiptId ? -1 : 1;
   return a.logIndex - b.logIndex;
 }
 
-/** Bangun baris `events_raw` dari log; `null` bila bukan event standar `x207`. */
+/** Build the `events_raw` row from a log; `null` if it is not a standard `x207` event. */
 function toRow(block: SourceBlock, log: BlockLog, contractId: string): EventRow | null {
   let envelope: unknown;
   try {
@@ -295,7 +295,7 @@ function toRow(block: SourceBlock, log: BlockLog, contractId: string): EventRow 
   };
 }
 
-/** Jalankan handler tiap elemen `data`; mengembalikan nilai `handled` baris. */
+/** Run the handler for each element of `data`; returns the row's `handled` value. */
 function dispatch(db: Database.Database, circleId: string, handlers: HandlerMap, row: EventRow): number {
   const log = `${EVENT_PREFIX}${JSON.stringify({ standard: row.standard, version: row.version, event: row.event, data: JSON.parse(row.data_json) })}`;
   let parsed;
@@ -323,7 +323,7 @@ function dispatch(db: Database.Database, circleId: string, handlers: HandlerMap,
   return HANDLED.done;
 }
 
-/** Event tanpa read model (Spec Skema D9 4): hanya disimpan di `events_raw` dengan `handled = 1`. */
+/** Event without a read model (Spec Skema D9 4): only stored in `events_raw` with `handled = 1`. */
 const NO_READ_MODEL = new Set([
   "solver_fee_claimed", "solver_fee_claim_failed", "upgrade_proposed", "upgrade_applied", "intent_posted",
   "stake_withdraw_failed",

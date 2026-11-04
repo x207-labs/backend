@@ -15,7 +15,7 @@ describe("BE-015 GET …/epochs/{n}/obligations", () => {
     return { res, body: await res.json() };
   }
 
-  it("TC-BE-015-01 snapshot cutoff (default)", async () => {
+  it("TC-BE-015-01 cutoff snapshot (default)", async () => {
     const { res, body } = await get("/epochs/42/obligations");
     expect(res.status).toBe(200);
     expect(body).toMatchObject({ circle: "agents-main", epoch: 42, phase: "clearing", stage: "cutoff", unit: "credit", decimals: 6, edgeCount: 7, totalObligation: "190000000" });
@@ -30,19 +30,19 @@ describe("BE-015 GET …/epochs/{n}/obligations", () => {
     }
   });
 
-  it("TC-BE-015-02 total cocok", async () => {
+  it("TC-BE-015-02 totals match", async () => {
     const { body } = await get("/epochs/42/obligations");
     expect(body.edges.reduce((s: bigint, e: { amount: string }) => s + BigInt(e.amount), 0n)).toBe(BigInt(body.totalObligation));
     expect(body.edges.length).toBe(body.edgeCount);
   });
 
-  it("TC-BE-015-03 cutoff saat epoch masih open: 409 epoch_not_closed", async () => {
+  it("TC-BE-015-03 cutoff while the epoch is still open: 409 epoch_not_closed", async () => {
     const { res, body } = await get("/epochs/43/obligations?stage=cutoff");
     expect(res.status).toBe(409);
     expect(body.error.code).toBe("epoch_not_closed");
   });
 
-  it("TC-BE-015-04 live: edge epoch berjalan tanpa cleared", async () => {
+  it("TC-BE-015-04 live: edges of the running epoch without cleared", async () => {
     const extra = [block(1011, { logs: [voucherLog(0, { epoch: 43 }), voucherLog(3, { epoch: 43 })] })];
     const { res, body } = await get("/epochs/43/obligations?stage=live", 5, extra);
     expect(res.status).toBe(200);
@@ -51,7 +51,7 @@ describe("BE-015 GET …/epochs/{n}/obligations", () => {
     expect(body.edgeCount).toBe(2);
   });
 
-  it("TC-BE-015-05 cleared setelah commit", async () => {
+  it("TC-BE-015-05 cleared after commit", async () => {
     const { body } = await get("/epochs/42/obligations?stage=cleared", 8);
     const byPair = Object.fromEntries(body.edges.map((e: { debtor: string; creditor: string }) => [`${e.debtor}>${e.creditor}`, e]));
     expect(byPair[`${acct("scraper")}>${acct("gpu")}`]).toMatchObject({ cleared: "15000000", remaining: "35000000" });
@@ -62,31 +62,31 @@ describe("BE-015 GET …/epochs/{n}/obligations", () => {
     }
   });
 
-  it("TC-BE-015-06 cleared sebelum commit: edges kosong", async () => {
+  it("TC-BE-015-06 cleared before commit: edges empty", async () => {
     const { res, body } = await get("/epochs/42/obligations?stage=cleared", 5);
     expect(res.status).toBe(200);
     expect(body.edges).toEqual([]);
   });
 
-  it("TC-BE-015-07 stage tidak dikenal", async () => {
+  it("TC-BE-015-07 unknown stage", async () => {
     const { res, body } = await get("/epochs/42/obligations?stage=foo");
     expect(res.status).toBe(400);
     expect(body.error.code).toBe("invalid_request");
   });
 
-  it("TC-BE-015-08 epoch tidak ada", async () => {
+  it("TC-BE-015-08 epoch does not exist", async () => {
     const { res, body } = await get("/epochs/99/obligations");
     expect(res.status).toBe(404);
     expect(body.error).toMatchObject({ code: "epoch_not_found", details: { circle: "agents-main", epoch: 99 } });
   });
 
-  it("TC-BE-015-09 current = epoch terbesar", async () => {
+  it("TC-BE-015-09 current = largest epoch", async () => {
     const { res, body } = await get("/epochs/current/obligations?stage=cutoff");
     expect(res.status).toBe(409);
     expect(body.error.details.epoch).toBe(43);
   });
 
-  it("{n} bukan bilangan bulat: 400", async () => {
+  it("{n} is not an integer: 400", async () => {
     const { res } = await get("/epochs/abc/obligations");
     expect(res.status).toBe(400);
   });

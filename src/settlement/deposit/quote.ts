@@ -9,10 +9,10 @@ import type { OneClickClient } from "../one-click.js";
 
 const U128_MAX = (1n << 128n) - 1n;
 
-/** Apakah akun NEAR ada (RPC `view_account`); aturan `refundTo` di Spec API Backend 6.1. */
+/** Whether the NEAR account exists (RPC `view_account`); `refundTo` rule in Spec API Backend 6.1. */
 export type AccountExists = (accountId: string) => Promise<boolean>;
 
-/** `view_account` lewat JSON-RPC; "does not exist" berarti tidak ada, error lain dilempar. */
+/** `view_account` over JSON-RPC; "does not exist" means it does not exist, any other error is thrown. */
 export function nearAccountExists(rpcUrl: string, fetchFn: typeof fetch = fetch): AccountExists {
   return async (accountId) => {
     const response = await fetchFn(rpcUrl, {
@@ -22,7 +22,7 @@ export function nearAccountExists(rpcUrl: string, fetchFn: typeof fetch = fetch)
       signal: AbortSignal.timeout(10_000),
     });
     const body = (await response.json()) as { result?: { error?: string }; error?: { cause?: { name?: string } } };
-    // RPC mainnet saat ini menjawab akun yang tidak ada dengan error tingkat atas UNKNOWN_ACCOUNT, bukan `result.error`
+    // The mainnet RPC currently answers a non-existent account with a top-level UNKNOWN_ACCOUNT error, not `result.error`
     if (body.error?.cause?.name === "UNKNOWN_ACCOUNT") return false;
     if (body.error !== undefined) throw new Error(`RPC view_account failed: ${JSON.stringify(body.error)}`);
     const error = body.result?.error;
@@ -35,7 +35,7 @@ export function nearAccountExists(rpcUrl: string, fetchFn: typeof fetch = fetch)
 export interface DepositQuoteOptions {
   client: OneClickClient;
   accountExists: AccountExists;
-  /** Dipakai untuk ID job; default `randomUUID`. */
+  /** Used for the job ID; default `randomUUID`. */
   newJobId?: () => string;
 }
 
@@ -97,8 +97,8 @@ function parse(raw: unknown): Request {
 }
 
 /**
- * `POST /x207/settlement/deposit/quote` (Spec API Backend 6.2, BE-027): quote 1Click `EXACT_OUTPUT` dari aset
- * asal ke USDT NEAR di saldo Intents akun anggota, untuk stake (F1) atau pelunasan `due` (F4).
+ * `POST /x207/settlement/deposit/quote` (Spec API Backend 6.2, BE-027): 1Click `EXACT_OUTPUT` quote from the origin
+ * asset to USDT NEAR in the member account's Intents balance, for a stake (F1) or payment of a `due` (F4).
  */
 export function depositQuoteRoutes(options: DepositQuoteOptions): Route[] {
   const { client, accountExists } = options;
@@ -117,7 +117,7 @@ export function depositQuoteRoutes(options: DepositQuoteOptions): Route[] {
           throw new ApiError(404, "member_not_found", `Member ${req.account} not found`, { circle: req.circle, account: req.account });
         }
 
-        // `settle`: jumlah dan batas bayar dari D9, `amount` di body diabaikan.
+        // `settle`: amount and payment limit come from D9, `amount` in the body is ignored.
         let amountOut = req.amount;
         let paymentDeadlineNs: bigint | null = null;
         if (req.purpose === "settle") {
@@ -135,7 +135,7 @@ export function depositQuoteRoutes(options: DepositQuoteOptions): Route[] {
           paymentDeadlineNs = due.due_at_ns;
         }
 
-        // 1Click menolak refund ke akun yang tidak ada dengan error internal, jadi dicek sebelum quote (aturan 6.1).
+        // 1Click rejects a refund to a non-existent account with an internal error, so it is checked before the quote (rule 6.1).
         if (req.refundType === "INTENTS" && !(await accountExists(req.refundTo))) {
           throw new ApiError(422, "refund_account_not_found", `refundTo account ${req.refundTo} not found`, { refundTo: req.refundTo });
         }

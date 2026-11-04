@@ -12,7 +12,7 @@ export interface ChainOutcome {
   receiptId: string;
   executorId: string;
   logs: string[];
-  /** Blok tempat outcome ini dieksekusi. */
+  /** Block in which this outcome was executed. */
   blockHash: string;
 }
 
@@ -20,40 +20,40 @@ export interface ChainBlock {
   height: number;
   hash: string;
   timestampNs: bigint;
-  /** Chunk yang baru dimasukkan di blok ini (`height_included` = tinggi blok). */
+  /** Chunk that was newly included in this block (`height_included` = block height). */
   newChunkHashes: string[];
 }
 
-/** Bacaan JSON-RPC yang dibutuhkan penelusuran blok → chunk → tx (ADR-34). */
+/** JSON-RPC reads needed for the block → chunk → tx walk (ADR-34). */
 export interface ChainReader {
   readonly endpoint: string;
   finalHeight(): Promise<number>;
   block(height: number): Promise<ChainBlock | null>;
   heightOfBlock(hash: string): Promise<number>;
   chunkTransactions(chunkHash: string): Promise<ChainTx[]>;
-  /** Semua outcome receipt satu transaksi, setelah seluruh pohon receipt-nya final. */
+  /** All outcome receipts of one transaction, after its whole receipt tree is final. */
   txOutcomes(tx: ChainTx): Promise<ChainOutcome[]>;
 }
 
 /**
- * Near-sandbox dan testnet (ADR-34): JSON-RPC standar tidak memberi outcome per blok, jadi tiap transaksi di
- * chunk ditelusuri lewat status `tx` (menunggu FINAL) dan outcome-nya diatribusikan ke blok eksekusinya.
- * Outcome blok H hanya berasal dari transaksi yang dimasukkan di blok < H, jadi `getBlock(H)` memindai
- * blok sampai H − 1. Hanya cocok untuk jaringan kecil; mainnet memakai Neardata.
+ * Near-sandbox and testnet (ADR-34): standard JSON-RPC does not give outcomes per block, so each transaction in a
+ * chunk is traced through the `tx` status (waiting for FINAL) and its outcome is attributed to its execution block.
+ * The outcomes of block H only come from transactions included in blocks < H, so `getBlock(H)` scans
+ * blocks up to H − 1. Only suitable for small networks; mainnet uses Neardata.
  */
 export class RpcBlockSource implements BlockSource {
   readonly #chain: ChainReader;
   readonly #contractId: string;
-  /** Tinggi blok eksekusi → log kontrak yang sudah ditemukan tetapi belum diambil. */
+  /** Execution block height → contract logs that have been found but not yet fetched. */
   readonly #found = new Map<number, BlockLog[]>();
   #scanned: number;
-  /** Header blok yang baru dibaca; `getBlock(H)` dan pemindaian blok H pada panggilan berikutnya memakainya bersama. */
+  /** Block header that was just read; `getBlock(H)` and the scan of block H on the next call share it. */
   readonly #headers = new Map<number, ChainBlock | null>();
 
   constructor(chain: ChainReader, contractId: string, startBlock: number) {
     this.#chain = chain;
     this.#contractId = contractId;
-    // Transaksi sebelum blok mulai tidak dipindai: outcome-nya sebelum `startBlock` juga tidak dibaca.
+    // Transactions before the start block are not scanned: their outcomes before `startBlock` are not read either.
     this.#scanned = startBlock - 1;
   }
 
@@ -67,7 +67,7 @@ export class RpcBlockSource implements BlockSource {
 
   async getBlock(height: number): Promise<SourceBlock | null> {
     const header = await this.#header(height);
-    // Pindai transaksi blok yang dilewati/ada sampai height − 1 agar outcome blok `height` sudah dikenal.
+    // Scan the transactions of skipped/existing blocks up to height − 1 so the outcomes of block `height` are already known.
     for (let h = this.#scanned + 1; h < height; h++) await this.#scan(h);
     if (header === null) return null;
     const logs = this.#found.get(height) ?? [];

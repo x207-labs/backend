@@ -4,7 +4,7 @@ import { ratio4 } from "../api/metrics.js";
 import type { Route } from "../api/router.js";
 import { derivedPhase } from "../api/routes/epochs.js";
 
-/** Status per anggota dari D5 (Spec API Backend 4.2, ADR-26). */
+/** Status per member from D5 (Spec API Backend 4.2, ADR-26). */
 export type MemberStatus = 200 | 402 | 202 | 409;
 
 const STATUS_OF: Record<string, MemberStatus> = { due: 402, claimable: 202, defaulted: 409, paid: 200, claimed: 200 };
@@ -14,7 +14,7 @@ export function memberStatus(settlement: string | null): MemberStatus {
   return settlement === null ? 200 : (STATUS_OF[settlement] as MemberStatus);
 }
 
-/** Posisi bersih bertanda: `+45000000`, `-35000000`, `0`. */
+/** Signed net position: `+45000000`, `-35000000`, `0`. */
 export function formatNet(net: bigint): string {
   return net > 0n ? `+${net}` : net.toString();
 }
@@ -37,7 +37,7 @@ function member(r: SettlementRow, finalized: boolean) {
     case 402:
       return { ...base, amount: amount(r.amount), due: isoFromNs(r.due_at_ns), haircut: amount(r.haircut) };
     case 202:
-      // `claim` hanya boleh setelah `finalize_epoch` (ADR-24).
+      // `claim` is allowed only after `finalize_epoch` (ADR-24).
       return { ...base, amount: amount(r.amount), claimable: finalized, haircut: amount(r.haircut) };
     case 409:
       return { ...base, amount: amount(r.amount), stakeSlashed: amount(r.stake_slashed), haircut: amount(r.haircut) };
@@ -47,8 +47,8 @@ function member(r: SettlementRow, finalized: boolean) {
 }
 
 /**
- * `GET /x207/circles/{circle}/epochs/{n}`: laporan kliring `207 Multi-Status` (Spec API Backend 4, BE-020).
- * Epoch yang belum `commit_epoch` dijawab 200 dengan `committed: false` dan `members: []`.
+ * `GET /x207/circles/{circle}/epochs/{n}`: clearing report `207 Multi-Status` (Spec API Backend 4, BE-020).
+ * An epoch that has not been through `commit_epoch` is answered 200 with `committed: false` and `members: []`.
  */
 export const reportRoutes: Route[] = [
   {

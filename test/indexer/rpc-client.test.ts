@@ -28,7 +28,7 @@ describe("BE-005 FailoverRpcClient", () => {
     await Promise.all(started.splice(0).map((rpc) => rpc.kill()));
   });
 
-  it("TC-BE-005-01 utama sehat: blok dibaca dari utama", async () => {
+  it("TC-BE-005-01 primary healthy: block read from the primary", async () => {
     const [primary, fallback] = [await mock(), await mock()];
     const rpc = client(primary, fallback);
 
@@ -39,7 +39,7 @@ describe("BE-005 FailoverRpcClient", () => {
     expect(fallback.methods).toEqual([]);
   });
 
-  it("TC-BE-005-02 utama mati di tengah rentang: cadangan melanjutkan tanpa melompat", async () => {
+  it("TC-BE-005-02 primary dies mid-range: the fallback continues without skipping", async () => {
     const [primary, fallback] = [await mock(), await mock()];
     const changes: EndpointChange[] = [];
     const rpc = client(primary, fallback, { onEndpointChange: (c: EndpointChange) => changes.push(c) });
@@ -58,7 +58,7 @@ describe("BE-005 FailoverRpcClient", () => {
     expect(changes[0]?.failures[0]?.endpoint).toBe(primary.url);
   });
 
-  it("TC-BE-005-02 utama timeout: pindah ke cadangan", async () => {
+  it("TC-BE-005-02 primary times out: switch to the fallback", async () => {
     const [primary, fallback] = [await mock(), await mock()];
     primary.mode = "hang";
     const rpc = client(primary, fallback, { timeoutMs: 50 });
@@ -67,7 +67,7 @@ describe("BE-005 FailoverRpcClient", () => {
     expect(rpc.activeEndpoint).toBe(fallback.url);
   });
 
-  it.each([503, 500, 502, 504, 429])("TC-BE-005-03 utama menjawab HTTP %i: pindah ke cadangan", async (status) => {
+  it.each([503, 500, 502, 504, 429])("TC-BE-005-03 primary answers HTTP %i: switch to the fallback", async (status) => {
     const [primary, fallback] = [await mock(), await mock()];
     primary.mode = status;
     const rpc = client(primary, fallback);
@@ -76,7 +76,7 @@ describe("BE-005 FailoverRpcClient", () => {
     expect(rpc.activeEndpoint).toBe(fallback.url);
   });
 
-  it("TC-BE-005-04 kedua RPC mati: error membawa semua kegagalan, panggilan berikutnya pulih", async () => {
+  it("TC-BE-005-04 both RPCs down: the error carries all failures, the next call recovers", async () => {
     const [primary, fallback] = [await mock(), await mock()];
     primary.mode = 503;
     fallback.mode = 503;
@@ -87,13 +87,13 @@ describe("BE-005 FailoverRpcClient", () => {
     expect(error).toBeInstanceOf(AllRpcEndpointsFailedError);
     expect((error as AllRpcEndpointsFailedError).failures.map((f) => f.endpoint)).toEqual([primary.url, fallback.url]);
 
-    // Masih dalam cooldown: semua endpoint tetap dicoba, jadi retry indexer tidak macet.
+    // Still in cooldown: all endpoints are still tried, so the indexer retry does not get stuck.
     fallback.mode = "ok";
     expect((await rpc.getBlock(101))?.header.height).toBe(101);
     expect(rpc.activeEndpoint).toBe(fallback.url);
   });
 
-  it("kembali ke utama setelah cooldown, tidak sebelumnya", async () => {
+  it("returns to the primary after cooldown, not before", async () => {
     const [primary, fallback] = [await mock(), await mock()];
     let now = 1_000;
     primary.mode = 503;
@@ -110,7 +110,7 @@ describe("BE-005 FailoverRpcClient", () => {
     expect(rpc.activeEndpoint).toBe(primary.url);
   });
 
-  it("TC-BE-005-05 endpoint dari env", async () => {
+  it("TC-BE-005-05 endpoints from env", async () => {
     const [primary, fallback] = [await mock(), await mock()];
     const rpc = rpcClientFromEnv({ NEAR_RPC_PRIMARY_URL: primary.url, NEAR_RPC_FALLBACK_URL: fallback.url });
 
@@ -120,12 +120,12 @@ describe("BE-005 FailoverRpcClient", () => {
     expect(primary.methods).toEqual(["block"]);
   });
 
-  it.each(["NEAR_RPC_PRIMARY_URL", "NEAR_RPC_FALLBACK_URL"])("TC-BE-005-05 tanpa %s: gagal, tidak memakai URL bawaan", (name) => {
+  it.each(["NEAR_RPC_PRIMARY_URL", "NEAR_RPC_FALLBACK_URL"])("TC-BE-005-05 without %s: fails, does not use a default URL", (name) => {
     const env = { NEAR_RPC_PRIMARY_URL: "http://a.test", NEAR_RPC_FALLBACK_URL: "http://b.test", [name]: "" };
     expect(() => rpcClientFromEnv(env)).toThrow(`Missing env ${name}`);
   });
 
-  it("TC-BE-005-06 hanya blok final: tinggi di atas head final tidak pernah diminta", async () => {
+  it("TC-BE-005-06 only final blocks: heights above the final head are never requested", async () => {
     const [primary, fallback] = [await mock(), await mock()];
     const rpc = client(primary, fallback);
 
@@ -141,7 +141,7 @@ describe("BE-005 FailoverRpcClient", () => {
     }
   });
 
-  it("TC-BE-005-07 tanpa NEAR Lake", () => {
+  it("TC-BE-005-07 without NEAR Lake", () => {
     const manifest = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as {
       dependencies?: object;
       devDependencies?: object;
@@ -151,7 +151,7 @@ describe("BE-005 FailoverRpcClient", () => {
     expect(names.filter((name) => name.includes("near-lake"))).toEqual([]);
   });
 
-  it("tinggi yang dilewati chain: null tanpa failover", async () => {
+  it("a height skipped by the chain: null without failover", async () => {
     const [primary, fallback] = [await mock([100, 101, 103]), await mock([100, 101, 103])];
     const rpc = client(primary, fallback);
 
@@ -161,7 +161,7 @@ describe("BE-005 FailoverRpcClient", () => {
     expect(fallback.methods).toEqual([]);
   });
 
-  it("cadangan tertinggal tidak dianggap blok dilewati", async () => {
+  it("a lagging fallback is not treated as a skipped block", async () => {
     const [primary, fallback] = [await mock(), await mock([100, 101])];
     const rpc = client(primary, fallback);
     await rpc.getBlock(103);

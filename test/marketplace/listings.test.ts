@@ -2,14 +2,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import { listingHash, signCancelListing } from "@x207/core";
 import { acct, listing, NOW_S, signedListing, startMarket, type Market } from "./helpers.js";
 
-describe("BE-040 buku listing D12", () => {
+describe("BE-040 listing book D12", () => {
   let market: Market | undefined;
   afterEach(async () => {
     await market?.srv.close();
     market?.db.close();
   });
 
-  it("listing tersimpan tanpa lawan, terbaca per hash dan lewat daftar", async () => {
+  it("a listing is stored without a counterparty, read by hash and through the list", async () => {
     market = await startMarket();
     const m = market;
     const body = signedListing(m, "andi");
@@ -32,7 +32,7 @@ describe("BE-040 buku listing D12", () => {
     expect((await m.get("/listings/xyz")).status).toBe(400);
   });
 
-  it("filter: aset, kelas, pemasang, discoverable dan accept_payment", async () => {
+  it("filters: asset, class, lister, discoverable and accept_payment", async () => {
     market = await startMarket();
     const m = market;
     await m.post("/listings", signedListing(m, "andi"));
@@ -53,7 +53,7 @@ describe("BE-040 buku listing D12", () => {
     expect((await m.get("/listings?status=zzz")).status).toBe(400);
   });
 
-  it("listing kedaluwarsa hilang dari hasil open dan muncul di expired", async () => {
+  it("an expired listing disappears from the open results and appears in expired", async () => {
     market = await startMarket();
     const m = market;
     const l = await m.post("/listings", signedListing(m, "andi", { expires_at: NOW_S + 60 }));
@@ -67,7 +67,7 @@ describe("BE-040 buku listing D12", () => {
     expect((await m.get("/listings?status=all")).json.items).toHaveLength(1);
   });
 
-  it("pembatalan bertanda tangan pemasang; pihak lain atau pembatalan ulang ditolak", async () => {
+  it("cancellation signed by the lister; another party or a repeated cancellation is rejected", async () => {
     market = await startMarket();
     const m = market;
     const body = signedListing(m, "andi");
@@ -86,7 +86,7 @@ describe("BE-040 buku listing D12", () => {
     expect(again.json.error.code).toBe("listing_not_open");
   });
 
-  it("menolak tanda tangan salah, anggota tidak aktif, duplikat, lingkaran salah, kedaluwarsa dan format", async () => {
+  it("rejects a wrong signature, an inactive member, a duplicate, a wrong circle, expiry and format", async () => {
     market = await startMarket(["andi", "budi"], ["gita"]);
     const m = market;
     const good = signedListing(m, "andi");
@@ -101,7 +101,7 @@ describe("BE-040 buku listing D12", () => {
     expect((await m.post("/listings", [])).status).toBe(400);
   });
 
-  it("paginasi dengan cursor", async () => {
+  it("pagination with cursor", async () => {
     market = await startMarket();
     const m = market;
     for (const name of ["andi", "budi", "citra"]) await m.post("/listings", signedListing(m, name));

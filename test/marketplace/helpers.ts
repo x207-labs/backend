@@ -12,13 +12,13 @@ export interface Market {
   db: Database.Database;
   srv: TestServer;
   keys: Record<string, ReturnType<typeof generateVoucherKeypair>>;
-  /** Waktu server yang bisa digeser oleh test. */
+  /** Server time that the test can shift. */
   clock: { now: number };
   get: (path: string) => Promise<{ status: number; json: any }>;
   post: (path: string, body: unknown) => Promise<{ status: number; json: any }>;
 }
 
-/** D9 dengan anggota `names` (kunci voucher nyata) dan route marketplace terpasang. */
+/** D9 with members `names` (real voucher keys) and the marketplace routes mounted. */
 export async function startMarket(names: string[] = ["andi", "budi", "citra"], inactive: string[] = [], chainView?: ViewFunction, routeOptions: NonNullable<Parameters<typeof marketplaceRoutes>[1]> = {}, serverOptions: { abuse?: Partial<AbuseLimits>; rateLimitPerMinute?: number } = {}): Promise<Market> {
   const db = new Database(":memory:");
   seedCircle(db);
@@ -70,8 +70,8 @@ import { seedEpoch } from "../helpers/d9-fixtures.js";
 export const openEpoch = (m: Market, epoch = 42): void => seedEpoch(m.db, { epoch, phase: "open", cutoffAt: "2026-11-05T00:00:00Z" });
 
 /**
- * Penawaran bertanda tangan dari `name` atas `l`, ronde berikutnya setelah `previous` bila ada. Dibangun langsung (bukan lewat
- * `counterOffer`) agar test bisa mengirim penawaran yang dilarang helper SDK.
+ * Offer signed by `name` over `l`, the round after `previous` if there is one. Built directly (not through
+ * `counterOffer`) so tests can send offers that the SDK helper forbids.
  */
 export function bid(m: Market, name: string, l: Listing, over: { mode?: "pay" | "barter"; value?: string; previous?: Offer; round?: number } = {}) {
   const offer: Offer = {

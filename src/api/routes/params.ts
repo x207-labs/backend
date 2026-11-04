@@ -14,7 +14,7 @@ interface ParamRow {
 
 const json = (text: string | null): unknown => (text === null ? null : (JSON.parse(text) as unknown));
 
-/** BE-017: parameter aktif dan riwayat perubahan (Spec API Backend 3.5, Spec Skema D9 6.7). */
+/** BE-017: active parameters and change history (Spec API Backend 3.5, Spec Skema D9 6.7). */
 export const paramRoutes: Route[] = [
   {
     method: "GET",
@@ -22,7 +22,7 @@ export const paramRoutes: Route[] = [
     circleScoped: true,
     handler: ({ db, circle }) => {
       const current = row<{ epoch: bigint }>(db, "SELECT COALESCE(MAX(epoch), 0) AS epoch FROM epochs WHERE circle_id = ?", circle.circle_id)?.epoch ?? 0n;
-      // Nilai terbaru per field; yang `effective_epoch`-nya belum tiba adalah perubahan tertunda.
+      // Latest value per field; those whose `effective_epoch` has not arrived yet are pending changes.
       const latest = rows<ParamRow>(
         db,
         `SELECT id, field, old_value, new_value, effective_epoch, block_height FROM params p

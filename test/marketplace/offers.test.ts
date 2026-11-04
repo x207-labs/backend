@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { listingHash, offerHash } from "@x207/core";
 import { acct, bid, signedListing, startMarket, type Market } from "./helpers.js";
 
-describe("BE-041 negosiasi: penawaran dan penawaran balik", () => {
+describe("BE-041 negotiation: offers and counter-offers", () => {
   let market: Market | undefined;
   afterEach(async () => {
     await market?.srv.close();
@@ -18,7 +18,7 @@ describe("BE-041 negosiasi: penawaran dan penawaran balik", () => {
     return { m, l: body.listing, hash };
   }
 
-  it("satu putaran tawar: lawan menawar, pemasang membalas, status utas berpindah", async () => {
+  it("one bargaining round: the counterparty bids, the lister replies, the thread status moves", async () => {
     const { m, l, hash } = await withListing();
     const first = bid(m, "budi", l, { value: "95000000" });
     const r1 = await m.post(`/listings/${hash}/offers`, first);
@@ -35,7 +35,7 @@ describe("BE-041 negosiasi: penawaran dan penawaran balik", () => {
     expect((await m.get(`/listings/${hash}/offers?status=pending`)).json.items).toHaveLength(1);
   });
 
-  it("kotak masuk per agent: pemasang melihat tawaran yang menunggunya; hilang bila listing kedaluwarsa", async () => {
+  it("inbox per agent: the lister sees the offers waiting for them; they disappear when the listing expires", async () => {
     const { m, l, hash } = await withListing();
     await m.post(`/listings/${hash}/offers`, bid(m, "budi", l));
     await m.post(`/listings/${hash}/offers`, bid(m, "citra", l));
@@ -49,26 +49,26 @@ describe("BE-041 negosiasi: penawaran dan penawaran balik", () => {
     expect((await m.get(`/offers?account=${acct("andi")}`)).json.items).toHaveLength(0);
   });
 
-  it("aturan ronde: pemasang tak menawar sendiri, lawan tak membalas dirinya, ronde naik satu, satu utas per lawan", async () => {
+  it("round rules: the lister does not bid on their own listing, the counterparty does not reply to itself, the round rises by one, one thread per counterparty", async () => {
     const { m, l, hash } = await withListing();
     const own = bid(m, "andi", l);
     expect((await m.post(`/listings/${hash}/offers`, own)).json.error.message).toContain("cannot make an offer on their own listing");
     const first = bid(m, "budi", l);
     const r1 = await m.post(`/listings/${hash}/offers`, first);
     expect((await m.post(`/listings/${hash}/offers`, bid(m, "budi", l, { value: "1" }))).json.error.code).toBe("already_exists");
-    // balasan tanpa inReplyTo, dari pihak yang salah, dan dengan ronde loncat
+    // a reply without inReplyTo, from the wrong party, and with a skipped round
     const reply = bid(m, "andi", l, { previous: first.offer });
     expect((await m.post(`/listings/${hash}/offers`, reply)).status).toBe(400);
     const sameSide = bid(m, "budi", l, { round: 2 });
     expect((await m.post(`/listings/${hash}/offers`, { ...sameSide, inReplyTo: r1.json.offerHash })).json.error.message).toContain("the other party");
     expect((await m.post(`/listings/${hash}/offers`, { ...reply, inReplyTo: "f".repeat(64) })).json.error.code).toBe("offer_not_found");
     expect((await m.post(`/listings/${hash}/offers`, { ...reply, inReplyTo: r1.json.offerHash })).status).toBe(201);
-    // penawaran yang sudah dibalas tidak bisa dibalas lagi
+    // an offer that has been replied to cannot be replied to again
     const again = bid(m, "andi", l, { previous: first.offer, value: "7" });
     expect((await m.post(`/listings/${hash}/offers`, { ...again, inReplyTo: r1.json.offerHash })).json.error.code).toBe("offer_not_open");
   });
 
-  it("menolak mode bayar tanpa accept_payment, tanda tangan salah, anggota tak aktif, listing tak terbuka", async () => {
+  it("rejects pay mode without accept_payment, a wrong signature, an inactive member, a listing that is not open", async () => {
     market = await startMarket(["andi", "budi"], ["gita"]);
     const m = market;
     const noPay = signedListing(m, "andi", { accept_payment: false });
@@ -86,7 +86,7 @@ describe("BE-041 negosiasi: penawaran dan penawaran balik", () => {
     expect((await m.post(`/listings/${hash}/offers`, good)).json.error.code).toBe("listing_not_open");
   });
 
-  it("ronde di atas batas ditolak dengan negotiation_closed", async () => {
+  it("a round above the limit is rejected with negotiation_closed", async () => {
     const { m, l, hash } = await withListing();
     const res = await m.post(`/listings/${hash}/offers`, bid(m, "budi", l, { round: 11 }));
     expect([res.status, res.json.error.code]).toEqual([409, "negotiation_closed"]);

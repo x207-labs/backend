@@ -13,7 +13,7 @@ import {
 const CIRCLE = "agents-main";
 const TABLES = ["events_raw", "members", "member_limits", "epochs", "obligations", "clearing_log", "settlements", "params"];
 
-describe("BE-006 inti indexer", () => {
+describe("BE-006 indexer core", () => {
   let db: Database.Database;
 
   beforeEach(() => {
@@ -36,21 +36,21 @@ describe("BE-006 inti indexer", () => {
     return ix;
   }
 
-  it("TC-BE-006-01 hanya log dari executor kontrak", async () => {
+  it("TC-BE-006-01 only logs from the contract executor", async () => {
     const b = block(1000, { logs: [eventLog("member_joined", { account_id: acct("translator"), pubkey_voucher: "k", terms_hash: "t", status: "pending", joined_at: "1" })] });
     b.logs.push({ receiptId: "other", logIndex: 0, executorId: "intents.near", txHash: null, log: b.logs[0]!.log.replace("translator", "intruder") });
     await run(new ArrayBlockSource([b]));
     expect(db.prepare("SELECT receipt_id FROM events_raw").all()).toEqual([{ receipt_id: b.logs[0]!.receiptId }]);
   });
 
-  it("TC-BE-006-02 log bukan EVENT_JSON diabaikan", async () => {
+  it("TC-BE-006-02 logs that are not EVENT_JSON are ignored", async () => {
     const b = block(1000, { logs: ["Transfer 5 to x", `EVENT_JSON:${JSON.stringify({ standard: "nep141", version: "1.0.0", event: "ft_mint", data: [] })}`] });
     await run(new ArrayBlockSource([b]));
     expect(count("events_raw")).toBe(0);
     expect(cursor().last_block_height).toBe(1000);
   });
 
-  it("TC-BE-006-03 parse NEP-297 ke events_raw", async () => {
+  it("TC-BE-006-03 parse NEP-297 into events_raw", async () => {
     await run(new ArrayBlockSource(fxLog42()));
     const row = db.prepare("SELECT * FROM events_raw WHERE event = 'voucher_registered' ORDER BY receipt_id LIMIT 1").get() as Record<string, unknown>;
     expect(row).toMatchObject({ standard: "x207", version: "0.0.1", event: "voucher_registered", block_height: 1002, block_hash: "hash-1002", handled: 1, contract_id: CONTRACT });
@@ -58,10 +58,10 @@ describe("BE-006 inti indexer", () => {
     expect(JSON.parse(row.data_json as string)).toEqual([JSON.parse(voucherLog(0).slice("EVENT_JSON:".length)).data[0]]);
   });
 
-  it("TC-BE-006-04 satu receipt beberapa log, diproses berurutan", async () => {
+  it("TC-BE-006-04 one receipt with several logs, processed in order", async () => {
     const setup = fxLog42().slice(0, 8);
     const b = block(1008, { id: "rz", logs: [claimedLog("30000000"), claimFailedLog("15000000")] });
-    // Posisi gpu harus claimable dulu: commit tanpa claim, lalu satu receipt berisi klaim sebagian.
+    // gpu's position must be claimable first: commit without a claim, then one receipt containing a partial claim.
     await run(new ArrayBlockSource([...setup, b]));
     expect(db.prepare("SELECT log_index, event FROM events_raw WHERE receipt_id = 'rz' ORDER BY log_index").all()).toEqual([
       { log_index: 0, event: "residual_claimed" },
@@ -69,7 +69,7 @@ describe("BE-006 inti indexer", () => {
     ]);
   });
 
-  it("TC-BE-006-06 handler tidak diulang untuk baris lama", async () => {
+  it("TC-BE-006-06 the handler is not repeated for an old row", async () => {
     const spy = vi.fn();
     const handlers: HandlerMap = { residual_paid: spy };
     const blocks = fxLog42().slice(0, 9);
@@ -81,7 +81,7 @@ describe("BE-006 inti indexer", () => {
     expect(spy).toHaveBeenCalledTimes(1);
   });
 
-  it("TC-BE-006-07 event tak dikenal: handled 2, cursor maju, read model tetap", async () => {
+  it("TC-BE-006-07 unknown event: handled 2, cursor advances, read model unchanged", async () => {
     const b = block(1000, { logs: [eventLog("foo_bar", { x: 1 })] });
     await run(new ArrayBlockSource([b]));
     expect(db.prepare("SELECT event, handled FROM events_raw").all()).toEqual([{ event: "foo_bar", handled: 2 }]);
@@ -89,7 +89,7 @@ describe("BE-006 inti indexer", () => {
     expect(cursor().last_block_height).toBe(1000);
   });
 
-  it("TC-BE-006-08 atomisitas per blok", async () => {
+  it("TC-BE-006-08 atomicity per block", async () => {
     const source = new ArrayBlockSource(fxLog42().slice(0, 9));
     const handlers: HandlerMap = { epoch_committed: () => { throw new Error("boom"); } };
     const ix = indexer(source, { handlers });
@@ -100,7 +100,7 @@ describe("BE-006 inti indexer", () => {
     expect(cursor().last_block_height).toBe(1006);
   });
 
-  it("TC-BE-006-09 bootstrap cursor dan params awal", async () => {
+  it("TC-BE-006-09 bootstrap of the cursor and initial params", async () => {
     const source = new ArrayBlockSource([], 1000);
     const ix = indexer(source, { fetchParams: () => Promise.resolve(DEFAULT_PARAMS as never) });
     await ix.bootstrap();
@@ -114,7 +114,7 @@ describe("BE-006 inti indexer", () => {
     expect(rows.find((r) => r.field === "fees")?.new_value).toBe('{"clearing_fee_bps":0,"solver_fee_bps":0}');
   });
 
-  it("TC-BE-006-10 lanjut setelah restart tanpa membaca blok dua kali", async () => {
+  it("TC-BE-006-10 continue after restart without reading a block twice", async () => {
     const blocks = fxLog42();
     const first = new ArrayBlockSource(blocks, 1003);
     await run(first);
@@ -126,13 +126,13 @@ describe("BE-006 inti indexer", () => {
     expect(second.requested).toEqual([1004, 1005]);
   });
 
-  it("TC-BE-006-11 blok tanpa event", async () => {
+  it("TC-BE-006-11 block without events", async () => {
     await run(new ArrayBlockSource([block(1000)], 1000));
     expect(cursor()).toMatchObject({ last_block_height: 1000, last_block_hash: "hash-1000" });
     expect(count("events_raw")).toBe(0);
   });
 
-  it("blok yang dilewati chain memajukan cursor tanpa mengubah hash", async () => {
+  it("a block skipped by the chain advances the cursor without changing the hash", async () => {
     await run(new ArrayBlockSource([block(1000), block(1002)], 1002));
     expect(cursor()).toMatchObject({ last_block_height: 1002, last_block_hash: "hash-1002" });
   });
@@ -146,7 +146,7 @@ describe("BE-006 inti indexer", () => {
     expect(cursor()).toMatchObject({ last_block_height: 1051, head_block_height: 1150, lag_blocks: 99 });
   });
 
-  it("TC-BE-006-13 head lebih rendah: cursor tidak mundur", async () => {
+  it("TC-BE-006-13 lower head: cursor does not go back", async () => {
     const source = new ArrayBlockSource([], 1010);
     const ix = indexer(source);
     await ix.bootstrap();
@@ -155,7 +155,7 @@ describe("BE-006 inti indexer", () => {
     expect(cursor()).toMatchObject({ last_block_height: 1050, lag_blocks: 0 });
   });
 
-  it("TC-BE-006-16 overflow u128: henti, rollback, cursor tidak maju", async () => {
+  it("TC-BE-006-16 u128 overflow: halt, rollback, cursor does not advance", async () => {
     const source = new ArrayBlockSource([block(1000, { logs: [voucherLog(0, { cumulative_amount: (2n ** 63n).toString() })] })]);
     const ix = indexer(source);
     await ix.bootstrap();
@@ -164,14 +164,14 @@ describe("BE-006 inti indexer", () => {
     expect(cursor().last_block_height).toBe(999);
   });
 
-  it("TC-BE-006-19 event P1 hanya disimpan", async () => {
+  it("TC-BE-006-19 P1 event is only stored", async () => {
     const b = block(1000, { logs: [eventLog("solver_fee_claimed", { account_id: "solver-b.near", amount: "5" })] });
     await run(new ArrayBlockSource([b]));
     expect(db.prepare("SELECT event, handled FROM events_raw").all()).toEqual([{ event: "solver_fee_claimed", handled: 1 }]);
     expect(count("members") + count("obligations")).toBe(0);
   });
 
-  it("run mencoba lagi dengan backoff saat sumber gagal, cursor tidak maju", async () => {
+  it("run retries with backoff when the source fails, cursor does not advance", async () => {
     const source = new ArrayBlockSource([block(1000)], 1000);
     let failures = 2;
     const original = source.getBlock.bind(source);
@@ -188,8 +188,8 @@ describe("BE-006 inti indexer", () => {
   });
 });
 
-describe("BE-006 ketergantungan fixture", () => {
-  it("paidLog dan committedLog tersedia", () => {
+describe("BE-006 fixture dependencies", () => {
+  it("paidLog and committedLog are available", () => {
     expect(paidLog()).toContain("residual_paid");
     expect(committedLog()).toContain("epoch_committed");
   });

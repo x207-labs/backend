@@ -2,7 +2,7 @@
   "$id": "epochs-list.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "GET /x207/circles/{circle}/epochs",
-  "description": "Spec API Backend hanya mewajibkan epoch, phase, proposalDeadline (K-41); field lain = kolom tabel epochs D9 dalam camelCase.",
+  "description": "Spec API Backend requires only epoch, phase, proposalDeadline (K-41); other fields = columns of the D9 epochs table in camelCase.",
   "type": "object",
   "required": ["circle", "unit", "decimals", "items", "nextCursor"],
   "additionalProperties": false,

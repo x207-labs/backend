@@ -18,17 +18,17 @@ export interface EndpointChange {
 }
 
 export interface RpcClientOptions {
-  /** Urutan prioritas: utama lebih dulu, lalu cadangan. */
+  /** Priority order: primary first, then fallback. */
   endpoints: string[];
-  /** Batas waktu satu operasi per endpoint; fetch near-api-js sendiri tidak punya timeout. */
+  /** Time limit for one operation per endpoint; near-api-js fetch has no timeout of its own. */
   timeoutMs?: number;
-  /** Lama endpoint yang gagal dilewati sebelum dicoba lagi sebagai pilihan pertama. */
+  /** How long a failed endpoint is skipped before it is tried again as the first choice. */
   cooldownMs?: number;
   onEndpointChange?: (change: EndpointChange) => void;
   now?: () => number;
 }
 
-/** Semua endpoint gagal: pemanggil tidak boleh memajukan cursor dan harus mencoba lagi. */
+/** All endpoints failed: the caller must not advance the cursor and must try again. */
 export class AllRpcEndpointsFailedError extends Error {
   constructor(readonly failures: EndpointFailure[]) {
     const detail = failures.map((f) => `${f.endpoint}: ${String(f.error)}`).join("; ");
@@ -37,7 +37,7 @@ export class AllRpcEndpointsFailedError extends Error {
   }
 }
 
-/** Endpoint belum memfinalkan tinggi yang diminta, jadi jawabannya tidak bisa dipercaya. */
+/** The endpoint has not finalized the requested height yet, so its answer cannot be trusted. */
 export class EndpointBehindError extends Error {
   constructor(
     readonly height: number,
@@ -66,7 +66,7 @@ export class FailoverRpcClient {
   constructor(options: RpcClientOptions) {
     const [first] = options.endpoints;
     if (first === undefined) throw new Error("At least one RPC endpoint is required");
-    // retries 1: failover lebih cepat daripada backoff bawaan near-api-js (12 percobaan).
+    // retries 1: failover is faster than the default near-api-js backoff (12 attempts).
     this.#endpoints = options.endpoints.map((url) => ({
       url,
       provider: new JsonRpcProvider({ url }, { retries: 1 }),
@@ -80,7 +80,7 @@ export class FailoverRpcClient {
     this.#now = options.now ?? Date.now;
   }
 
-  /** URL yang menjawab permintaan terakhir; nilai `indexer_cursor.rpc_endpoint`. */
+  /** URL that answered the last request; value of `indexer_cursor.rpc_endpoint`. */
   get activeEndpoint(): string {
     return this.#active.url;
   }
@@ -90,9 +90,9 @@ export class FailoverRpcClient {
   }
 
   /**
-   * Blok final di tinggi `height`, atau `null` bila tinggi itu dilewati chain.
-   * `null` hanya dikembalikan bila endpoint yang menjawab sudah final di atas `height`;
-   * endpoint yang tertinggal dianggap gagal agar cursor tidak melompati blok.
+   * Final block at height `height`, or `null` if the chain skipped that height.
+   * `null` is only returned if the endpoint that answered is already final above `height`;
+   * an endpoint that lags behind is treated as failed so the cursor does not jump over a block.
    */
   async getBlock(height: number): Promise<RpcBlock | null> {
     return this.#withFailover(async (endpoint) => {
@@ -107,7 +107,7 @@ export class FailoverRpcClient {
     });
   }
 
-  /** Operasi provider sembarang (mis. `chunk`, `tx`) dengan timeout dan failover yang sama. */
+  /** Arbitrary provider operation (e.g. `chunk`, `tx`) with the same timeout and failover. */
   async use<T>(operation: (provider: JsonRpcProvider) => Promise<T>): Promise<T> {
     return this.#withFailover((endpoint) => operation(endpoint.provider));
   }
@@ -146,7 +146,7 @@ export class FailoverRpcClient {
   }
 }
 
-/** Buat klien dari `NEAR_RPC_PRIMARY_URL` dan `NEAR_RPC_FALLBACK_URL`; tidak ada URL bawaan. */
+/** Create the client from `NEAR_RPC_PRIMARY_URL` and `NEAR_RPC_FALLBACK_URL`; there is no default URL. */
 export function rpcClientFromEnv(
   env: NodeJS.ProcessEnv = process.env,
   options: Omit<RpcClientOptions, "endpoints"> = {},

@@ -2,12 +2,12 @@ import { buildFtTransferCall, buildFtWithdraw, settleMsg, stakeMsg, type Contrac
 import type { JobRow } from "../jobs.js";
 
 /**
- * Dua panggilan yang menyelesaikan jalur masuk setelah job berstatus `ready_withdraw` (ADR-19): `ft_withdraw`
- * dari `intents.near` ke akun NEAR pemilik tanpa `msg`, lalu `ft_transfer_call` USDT ke kontrak lingkaran dengan
- * `msg` stake atau settle. Worker tidak menandatangani; wallet atau skrip demo yang mengirimnya.
+ * Two calls that finish the inbound path once the job has status `ready_withdraw` (ADR-19): `ft_withdraw`
+ * from `intents.near` to the owner's NEAR account without `msg`, then `ft_transfer_call` of USDT to the circle contract with
+ * a stake or settle `msg`. The worker does not sign; the wallet or a demo script sends them.
  *
- * `owner` adalah akun NEAR yang memegang USDT dan menandatangani; bila berbeda dari anggota, `member_id`
- * disertakan di `msg`.
+ * `owner` is the NEAR account that holds the USDT and signs; if it differs from the member, `member_id`
+ * is included in `msg`.
  */
 export function buildDepositSteps(params: {
   job: Pick<JobRow, "kind" | "status" | "account_id" | "epoch" | "amount_out">;

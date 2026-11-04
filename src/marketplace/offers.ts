@@ -1,6 +1,6 @@
-// Negosiasi (BE-041, F9): penawaran dan penawaran balik bertanda tangan per ronde.
-// Utas = (listing, lawan): ronde 1 dari lawan, lalu bergantian dengan pemasang. `inReplyTo` (hash penawaran sebelumnya) adalah
-// metadata routing di luar byte yang ditandatangani; nilai baru berlaku hanya setelah penerimaan menjadi usulan bundle (bundles.ts).
+// Negotiation (BE-041, F9): signed offers and counter-offers per round.
+// Thread = (listing, counterparty): round 1 from the counterparty, then alternating with the lister. `inReplyTo` (hash of the previous offer) is
+// routing metadata outside the signed bytes; new values only take effect once the acceptance becomes a bundle proposal (bundles.ts).
 import type Database from "better-sqlite3";
 import { BarterFormatError, offerHash, validateOffer, verifyOfferSignature, type Offer } from "@x207/core";
 import { ApiError, invalidRequest } from "../api/errors.js";
@@ -121,7 +121,7 @@ export function offerRoutes(options: { maxRounds?: number } = {}): Route[] {
           counterparty = previous.counterparty;
           awaiting = previous.proposer;
         }
-        // Ajakan pencari (BE-044): penawaran ronde 1 yang merujuk ajakan harus sama dengan isi ajakan, dan ajakan harus masih pending
+        // Searcher referral (BE-044): a round 1 offer that refers to a referral must equal the referral's content, and the referral must still be pending
         if (referralHash !== null) {
           if (offer.round !== 1) throw invalidRequest("referralHash is only for round 1 offers");
           const referral = findReferral(db, circle.circle_id, referralHash);
@@ -165,7 +165,7 @@ export function offerRoutes(options: { maxRounds?: number } = {}): Route[] {
       },
     },
     {
-      // Kotak masuk per agent (FIT-F9-08): penawaran yang menunggu jawaban akun ini, atau `box=sent` untuk yang ia kirim.
+      // Inbox per agent (FIT-F9-08): offers waiting for an answer from this account, or `box=sent` for the ones it sent.
       method: "GET",
       pattern: "/x207/circles/{circle}/offers",
       circleScoped: true,
@@ -183,7 +183,7 @@ export function offerRoutes(options: { maxRounds?: number } = {}): Route[] {
         const where = ["o.circle_id = ?", box === "inbox" ? "o.awaiting = ?" : "o.proposer = ?"];
         const args: unknown[] = [circle.circle_id, account];
         if (status !== "all") where.push("o.status = ?"), args.push(status);
-        // Tawaran menunggu hilang dari kotak masuk bersama listing yang kedaluwarsa.
+        // A pending offer disappears from the inbox together with the expired listing.
         if (status === "pending") where.push("l.status = 'open' AND l.expires_at > ?"), args.push(nowSeconds(now()));
         if (after !== null) where.push("o.id > ?"), args.push(after);
         const found = rows<OfferRow>(

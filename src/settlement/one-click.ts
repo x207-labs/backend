@@ -18,7 +18,7 @@ import type { SettlementConfig, SettlementMode } from "./config.js";
 import { SettlementError } from "./errors.js";
 import { MockOneClickTransport } from "./mock-transport.js";
 
-/** Permukaan 1Click yang dipakai worker; SDK 0.1.26 di produksi, tiruan di test. */
+/** 1Click surface used by the worker; SDK 0.1.26 in production, a fake in tests. */
 export interface OneClickTransport {
   getTokens(): Promise<TokenResponse[]>;
   getQuote(request: QuoteRequest): Promise<QuoteResponse>;
@@ -30,8 +30,8 @@ export interface OneClickTransport {
 const USER_AGENT = "x207-backend/0.0.1";
 
 /**
- * Transport berbasis SDK. SDK memakai konfigurasi global `OpenAPI`, jadi satu proses satu konfigurasi.
- * Header `User-Agent` wajib: tanpa itu 1Click menjawab `error code: 1010` (Runbook bagian 8).
+ * SDK-based transport. The SDK uses the global `OpenAPI` configuration, so one process has one configuration.
+ * The `User-Agent` header is required: without it 1Click answers `error code: 1010` (Runbook section 8).
  */
 export function sdkTransport(options: { baseUrl: string; jwt: string | undefined }): OneClickTransport {
   OpenAPI.BASE = options.baseUrl;
@@ -50,29 +50,29 @@ export interface QuoteParams {
   swapType: "EXACT_INPUT" | "EXACT_OUTPUT";
   originAsset: string;
   destinationAsset: string;
-  /** Satuan terkecil aset yang ditentukan `swapType`. */
+  /** Smallest unit of the asset determined by `swapType`. */
   amount: string;
   depositType: "ORIGIN_CHAIN" | "INTENTS";
   recipientType: "INTENTS" | "DESTINATION_CHAIN";
   refundType: "ORIGIN_CHAIN" | "INTENTS";
   refundTo: string;
   recipient: string;
-  /** Basis poin; default 100 (1%). */
+  /** Basis points; default 100 (1%). */
   slippageTolerance?: number;
-  /** ISO 8601; default sekarang + `quoteValidityMs`. */
+  /** ISO 8601; default now + `quoteValidityMs`. */
   deadline?: string;
-  /** Default `true`. `false` hanya diterima di mode `live`. */
+  /** Default `true`. `false` is accepted only in `live` mode. */
   dry?: boolean;
 }
 
 export interface OneClickClientOptions {
   config: SettlementConfig;
-  /** Menggantikan transport bawaan (test). Diabaikan di mode `mock`. */
+  /** Replaces the default transport (tests). Ignored in `mock` mode. */
   transport?: OneClickTransport;
   now?: () => number;
-  /** Masa berlaku `deadline` quote bila tidak diberikan. */
+  /** Validity of the quote `deadline` when not given. */
   quoteValidityMs?: number;
-  /** Lama daftar `/v0/tokens` di-cache. */
+  /** How long the `/v0/tokens` list is cached. */
   tokensTtlMs?: number;
 }
 
@@ -101,7 +101,7 @@ export class OneClickClient {
     this.#tokensTtlMs = options.tokensTtlMs ?? DEFAULT_TOKENS_TTL_MS;
   }
 
-  /** Aset yang didukung 1Click (`/v0/tokens`, Supported Assets). */
+  /** Assets supported by 1Click (`/v0/tokens`, Supported Assets). */
   async listTokens(): Promise<TokenResponse[]> {
     const t = this.#now();
     if (!this.#tokens || t - this.#tokens.at >= this.#tokensTtlMs) {
@@ -119,8 +119,8 @@ export class OneClickClient {
   }
 
   /**
-   * Quote 1Click. `dry` default `true`; `dry: false` hanya di mode `live`, selain itu ditolak
-   * `live_mode_disabled` sebelum ada request. Mode `dry` selalu mengirim `dry: true`.
+   * 1Click quote. `dry` defaults to `true`; `dry: false` only in `live` mode, otherwise it is rejected with
+   * `live_mode_disabled` before any request. `dry` mode always sends `dry: true`.
    */
   async quote(params: QuoteParams): Promise<QuoteResponse> {
     const wantsLive = params.dry === false;
@@ -152,7 +152,7 @@ export class OneClickClient {
     return this.#call(() => this.#transport.getExecutionStatus(depositAddress, depositMemo));
   }
 
-  /** Intent belum bertanda tangan untuk quote `depositAddress`; ditandatangani wallet kreditor. */
+  /** Unsigned intent for a `depositAddress` quote; signed by the creditor's wallet. */
   generateIntent(params: {
     depositAddress: string;
     signerId: string;

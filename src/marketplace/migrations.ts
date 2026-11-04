@@ -1,8 +1,8 @@
 import type { Migration } from "../db/migrations.js";
 
 /**
- * Tabel M11 (marketplace barter, D8 dan D12). Versi 1100+ agar tidak bertabrakan dengan migrasi D9 (1, 2, ...).
- * Nilai credit disimpan TEXT desimal (U128 melebihi INTEGER SQLite); waktu `expires_at` dalam detik unix.
+ * M11 tables (barter marketplace, D8 and D12). Versions 1100+ so they do not collide with the D9 migrations (1, 2, ...).
+ * Credit values are stored as decimal TEXT (U128 exceeds SQLite INTEGER); `expires_at` times are in unix seconds.
  */
 const V1101_INTENTS = `
 CREATE TABLE intents (
@@ -125,7 +125,7 @@ CREATE TABLE bundle_signatures (
 );
 `;
 
-// Usulan bundle dari solver (SV-011) tidak punya kecocokan listing: match_id boleh NULL dan sumbernya dicatat.
+// A bundle proposal from a solver (SV-011) has no listing match: match_id may be NULL and its source is recorded.
 const V1104_SOLVER_PROPOSALS = `
 CREATE TABLE bundle_proposals_new (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -145,7 +145,7 @@ DROP TABLE bundle_proposals;
 ALTER TABLE bundle_proposals_new RENAME TO bundle_proposals;
 `;
 
-// Kotak masuk ajakan pencari (BE-044): pencari menandatangani ajakan, agent tujuan menawar sendiri dengan merujuk hash ajakan.
+// Searcher referral inbox (BE-044): the searcher signs a referral, the target agent bids on its own by referring to the referral hash.
 const V1105_REFERRALS = `
 CREATE TABLE referrals (
   id                 INTEGER PRIMARY KEY AUTOINCREMENT,

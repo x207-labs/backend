@@ -1,4 +1,4 @@
-// Titik masuk paket backend x207 (M5, M6). Modul diekspor saat item-nya selesai.
+// Entry point of the x207 backend package (M5, M6). Modules are exported when their item is done.
 export * from "./indexer/rpc-client.js";
 export * from "./db/index.js";
 export * from "./api/index.js";

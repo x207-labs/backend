@@ -2,11 +2,11 @@ import type { HandlerMap } from "./context.js";
 import { ensureEpoch, requireChange } from "./context.js";
 import { units } from "../units.js";
 
-/** BE-008: `voucher_registered` (mode `cumulative` maupun `per_request`). */
+/** BE-008: `voucher_registered` (both `cumulative` and `per_request` modes). */
 export const voucherHandlers: HandlerMap = {
   voucher_registered(ctx, e) {
     ensureEpoch(ctx, e.epoch);
-    // Guard monoton (Spec Skema D9 5.2): seq yang tidak naik tidak mengubah baris.
+    // Monotonic guard (Spec Skema D9 5.2): a seq that does not increase leaves the row unchanged.
     const upsert = ctx.db
       .prepare(
         `INSERT INTO obligations (circle_id, epoch, debtor, creditor, seq, cumulative_amount, cleared,

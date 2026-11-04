@@ -14,8 +14,8 @@ const circle = "x207-circle.near";
 const job = (over: Record<string, unknown> = {}) =>
   ({ kind: "deposit_stake", status: "ready_withdraw", account_id: acct("scraper"), epoch: null, amount_out: "50000000", ...over }) as never;
 
-describe("BE-029 jalur masuk ADR-19", () => {
-  it("TC-BE-029-01 semua quote deposit ke INTENTS dengan tujuan USDT NEAR", async () => {
+describe("BE-029 deposit path ADR-19", () => {
+  it("TC-BE-029-01 all deposit quotes go to INTENTS with destination USDT NEAR", async () => {
     const sent: QuoteRequest[] = [];
     class Rec extends MockOneClickTransport {
       override async getQuote(req: QuoteRequest) {
@@ -48,7 +48,7 @@ describe("BE-029 jalur masuk ADR-19", () => {
     }
   });
 
-  it("TC-BE-029-02 ft_withdraw ke akun NEAR pemilik tanpa msg", () => {
+  it("TC-BE-029-02 ft_withdraw to the owner's NEAR account without msg", () => {
     const [withdraw] = buildDepositSteps({ job: job({ amount_out: "35000000" }), owner: acct("scraper"), circleContractId: circle });
     expect(withdraw).toEqual({
       contractId: "intents.near", methodName: "ft_withdraw", deposit: "1",
@@ -57,24 +57,24 @@ describe("BE-029 jalur masuk ADR-19", () => {
     expect(Object.keys(withdraw.args)).not.toContain("msg");
   });
 
-  it("TC-BE-029-03 ft_transfer_call stake, dengan dan tanpa member_id", () => {
+  it("TC-BE-029-03 ft_transfer_call stake, with and without member_id", () => {
     const [, own] = buildDepositSteps({ job: job(), owner: acct("scraper"), circleContractId: circle });
     expect(own).toMatchObject({ contractId: "usdt.tether-token.near", methodName: "ft_transfer_call", args: { receiver_id: circle, amount: "50000000", msg: '{"action":"stake"}' } });
     const [, agent] = buildDepositSteps({ job: job(), owner: "owner.near", circleContractId: circle });
     expect(JSON.parse(agent.args.msg as string)).toEqual({ action: "stake", member_id: acct("scraper") });
   });
 
-  it("TC-BE-029-04 ft_transfer_call settle epoch 42 sebesar due", () => {
+  it("TC-BE-029-04 ft_transfer_call settle epoch 42 for the due amount", () => {
     const [, settle] = buildDepositSteps({ job: job({ kind: "deposit_settle", epoch: 42, amount_out: "35000000" }), owner: "owner.near", circleContractId: circle });
     expect(settle.args).toEqual({ receiver_id: circle, amount: "35000000", msg: `{"action":"settle","epoch":42,"member_id":"${acct("scraper")}"}` });
   });
 
-  it("langkah hanya untuk job deposit yang ready_withdraw", () => {
+  it("steps only for deposit jobs that are ready_withdraw", () => {
     expect(() => buildDepositSteps({ job: job({ status: "waiting_deposit" }), owner: "a.near", circleContractId: circle })).toThrow(/ready_withdraw/);
     expect(() => buildDepositSteps({ job: job({ kind: "withdraw" }), owner: "a.near", circleContractId: circle })).toThrow(/withdraw/);
   });
 
-  it("TC-BE-029-05 worker tidak menerima kunci pemilik", () => {
+  it("TC-BE-029-05 the worker does not receive the owner's key", () => {
     const config = settlementConfigFromEnv({ X207_SETTLEMENT_MODE: "dry", OWNER_PRIVATE_KEY: "ed25519:x" } as never);
     expect(Object.keys(config).sort()).toEqual(["appFees", "baseUrl", "jwt", "mode"]);
     const walk = (dir: string): string[] =>

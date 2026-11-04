@@ -2,7 +2,7 @@ import type Database from "better-sqlite3";
 import { ApiError } from "../api/errors.js";
 import { row } from "../api/format.js";
 
-/** Kunci voucher anggota `active`; selain itu 403 `member_not_active` (404 `member_not_found` bila tidak terdaftar). */
+/** Voucher key of an `active` member; otherwise 403 `member_not_active` (404 `member_not_found` if not registered). */
 export function activeMemberKey(db: Database.Database, circleId: string, account: string): string {
   const member = row<{ pubkey_voucher: string; status: string }>(
     db,
@@ -15,7 +15,7 @@ export function activeMemberKey(db: Database.Database, circleId: string, account
   return member.pubkey_voucher;
 }
 
-/** Kunci voucher anggota apa pun statusnya (untuk memeriksa tanda tangan yang tidak membutuhkan anggota aktif). */
+/** Voucher key of a member in any status (to check signatures that do not need an active member). */
 export function memberKeys(db: Database.Database, circleId: string, accounts: readonly string[]): Record<string, string> {
   const keys: Record<string, string> = {};
   for (const account of accounts) {

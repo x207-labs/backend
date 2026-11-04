@@ -23,7 +23,7 @@
           "creditor": { "$ref": "common.json#/definitions/account" },
           "amount": { "$ref": "common.json#/definitions/amount" },
           "seq": { "type": "integer", "minimum": 0 },
-          "cleared": { "oneOf": [{ "$ref": "common.json#/definitions/amount" }, { "type": "null" }], "description": "null sampai commit_epoch" },
+          "cleared": { "oneOf": [{ "$ref": "common.json#/definitions/amount" }, { "type": "null" }], "description": "null until commit_epoch" },
           "remaining": { "oneOf": [{ "$ref": "common.json#/definitions/amount" }, { "type": "null" }] }
         }
       }

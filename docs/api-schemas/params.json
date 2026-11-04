@@ -2,7 +2,7 @@
   "$id": "params.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "GET /x207/circles/{circle}/params",
-  "description": "Nama field D7 snake_case, sama dengan get_params. nextEpoch/nextEpochEffective null tanpa perubahan tertunda (K-37).",
+  "description": "D7 field names in snake_case, same as get_params. nextEpoch/nextEpochEffective are null when no change is pending (K-37).",
   "type": "object",
   "required": ["circle", "currentEpoch", "active", "nextEpoch", "nextEpochEffective"],
   "properties": {

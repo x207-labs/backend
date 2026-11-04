@@ -15,7 +15,7 @@ export function eventLog(event: string, data: unknown, version = "0.0.1"): strin
 }
 
 let receiptSeq = 0;
-/** Receipt id berurutan secara leksikografis agar urutan fixture sama dengan urutan replay. */
+/** Receipt ids are lexicographically ordered so the fixture order matches the replay order. */
 export const receiptId = (): string => `r${String(++receiptSeq).padStart(6, "0")}`;
 
 export function block(height: number, ...receipts: { id?: string; logs: string[]; txHash?: string | null }[]): SourceBlock {
@@ -38,7 +38,7 @@ const EDGES = [
 ] as const;
 export { EDGES };
 
-/** Utang berjalan payer setelah registrasi tiap edge (urutan L13..L19). */
+/** Running debt of the payer after each edge registration (order L13..L19). */
 const DEBT_AFTER = [30_000_000, 30_000_000, 30_000_000, 50_000_000, 20_000_000, 15_000_000, 30_000_000];
 
 export const joinLog = (name: string): string =>
@@ -106,7 +106,7 @@ export const submittedLog = (solver: string, total: string, edges: number, repla
     epoch: 42, solver, cleared_total: total, edge_count: edges, replaced_solver: replaced?.[0] ?? null, replaced_cleared_total: replaced?.[1] ?? null,
   });
 
-/** Blok 1000..1010 untuk skenario `FX-LOG42` (L01..L30), tiap blok mengikuti pengelompokan receipt kontrak. */
+/** Blocks 1000..1010 for scenario `FX-LOG42` (L01..L30); each block follows the contract's receipt grouping. */
 export function fxLog42(first = 1000): SourceBlock[] {
   let h = first;
   return [

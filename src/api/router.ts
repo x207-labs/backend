@@ -10,13 +10,13 @@ export interface RouteContext {
   db: Database.Database;
   params: Record<string, string>;
   query: URLSearchParams;
-  /** Waktu sekarang dalam ms (bisa diganti di test). */
+  /** Current time in ms (can be replaced in tests). */
   now: () => number;
-  /** Terisi untuk route `circleScoped`. */
+  /** Set for `circleScoped` routes. */
   circle: CircleRow;
-  /** Body JSON permintaan `POST`; `undefined` untuk `GET`. */
+  /** JSON body of a `POST` request; `undefined` for `GET`. */
   body: unknown;
-  /** Header permintaan (nama huruf kecil), untuk route yang memeriksa `authorization` (`GET /metrics`). */
+  /** Request headers (lowercase names), for routes that check `authorization` (`GET /metrics`). */
   headers: Record<string, string | string[] | undefined>;
 }
 
@@ -24,15 +24,15 @@ export interface RouteResult {
   status: number;
   body: unknown;
   headers?: Record<string, string>;
-  /** Jawaban teks apa adanya (`GET /metrics`), bukan JSON. */
+  /** Plain-text answer as is (`GET /metrics`), not JSON. */
   raw?: { contentType: string; text: string };
 }
 
 export interface Route {
   method: "GET" | "POST";
-  /** Segmen `{nama}` menjadi parameter, mis. `/x207/circles/{circle}/members/{account}`. */
+  /** A `{name}` segment becomes a parameter, e.g. `/x207/circles/{circle}/members/{account}`. */
   pattern: string;
-  /** Route di bawah `/x207/circles/{circle}`: lingkaran dan kesiapan D9 diperiksa sebelum handler. */
+  /** Route under `/x207/circles/{circle}`: the circle and D9 readiness are checked before the handler. */
   circleScoped: boolean;
   handler: (ctx: RouteContext) => RouteResult | Promise<RouteResult>;
 }

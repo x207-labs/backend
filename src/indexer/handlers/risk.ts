@@ -2,7 +2,7 @@ import type { HandlerMap } from "./context.js";
 import { advancePhase, memberLimit, recordLimit, requireChange } from "./context.js";
 import { ns, units } from "../units.js";
 
-/** BE-011: default debtor, pembaruan limit, finalisasi epoch. */
+/** BE-011: default debtor, limit update, epoch finalization. */
 export const riskHandlers: HandlerMap = {
   member_defaulted(ctx, e) {
     const defaulted = ctx.db

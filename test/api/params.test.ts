@@ -4,7 +4,7 @@ import { fxServer } from "../helpers/fx-api.js";
 
 const BASE = "/x207/circles/agents-main";
 
-describe("BE-017 parameter aktif dan riwayat", () => {
+describe("BE-017 active parameters and history", () => {
   let close: (() => Promise<void>) | undefined;
   afterEach(async () => close?.());
 
@@ -15,7 +15,7 @@ describe("BE-017 parameter aktif dan riwayat", () => {
     return { res, body: await res.json() };
   }
 
-  it("TC-BE-017-01 parameter aktif dengan perubahan tertunda", async () => {
+  it("TC-BE-017-01 active parameters with a pending change", async () => {
     const { res, body } = await get("/params", 4);
     expect(res.status).toBe(200);
     expect(body).toEqual({
@@ -27,7 +27,7 @@ describe("BE-017 parameter aktif dan riwayat", () => {
     });
   });
 
-  it("TC-BE-017-02 perubahan sudah berlaku", async () => {
+  it("TC-BE-017-02 change already in effect", async () => {
     const { body } = await get("/params", 5);
     expect(body.currentEpoch).toBe(43);
     expect(body.active.payment_window).toBe(2700);
@@ -35,12 +35,12 @@ describe("BE-017 parameter aktif dan riwayat", () => {
     expect(body.nextEpochEffective).toBeNull();
   });
 
-  it("TC-BE-017-03 nama field D7 snake_case", async () => {
+  it("TC-BE-017-03 D7 field names are snake_case", async () => {
     const { body } = await get("/params", 5);
     expect(Object.keys(body.active).sort()).toEqual(Object.keys(DEFAULT_PARAMS).sort());
   });
 
-  it("TC-BE-017-04 riwayat terbaru dulu, lalu baris awal", async () => {
+  it("TC-BE-017-04 history newest first, then the initial row", async () => {
     const { body } = await get("/params/history", 5);
     expect(body.items[0]).toMatchObject({ field: "payment_window", oldValue: 1800, newValue: 2700, effectiveEpoch: 43 });
     const initial = body.items.at(-1);
@@ -48,7 +48,7 @@ describe("BE-017 parameter aktif dan riwayat", () => {
     expect(body.items).toHaveLength(10);
   });
 
-  it("TC-BE-017-05 paginasi riwayat tanpa item ganda", async () => {
+  it("TC-BE-017-05 history pagination without duplicate items", async () => {
     const s = await fxServer(4);
     close = s.close;
     const ids: number[] = [];
@@ -65,7 +65,7 @@ describe("BE-017 parameter aktif dan riwayat", () => {
     expect([...ids].sort((a, b) => b - a)).toEqual(ids);
   });
 
-  it("TC-BE-017-06 lingkaran tidak ada", async () => {
+  it("TC-BE-017-06 circle does not exist", async () => {
     const s = await fxServer(4);
     close = s.close;
     for (const path of ["/x207/circles/nope/params", "/x207/circles/nope/params/history"]) {
@@ -75,7 +75,7 @@ describe("BE-017 parameter aktif dan riwayat", () => {
     }
   });
 
-  it("usulan kedua di epoch yang sama: nilai tertunda terbaru menang", async () => {
+  it("second proposal in the same epoch: the latest pending value wins", async () => {
     const second = block(1011, { logs: [eventLog("params_updated", { old: DEFAULT_PARAMS, new: { ...DEFAULT_PARAMS, payment_window: 2400 }, changed: ["payment_window"], effective_epoch: 43 })] });
     const { body } = await get("/params", 4, [second]);
     expect(body.nextEpoch).toEqual({ payment_window: 2400 });

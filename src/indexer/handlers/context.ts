@@ -22,7 +22,7 @@ export function ensureEpoch(ctx: HandlerContext, epoch: number): void {
   ctx.db.prepare("INSERT OR IGNORE INTO epochs (circle_id, epoch, phase) VALUES (?, ?, 'open')").run(ctx.circleId, epoch);
 }
 
-/** Fase hanya maju (Spec Skema D9 5.2); mengembalikan true bila fase berubah. */
+/** Phase only moves forward (Spec Skema D9 5.2); returns true if the phase changed. */
 export function advancePhase(ctx: HandlerContext, epoch: number, to: Phase): boolean {
   const result = ctx.db
     .prepare(`UPDATE epochs SET phase = ? WHERE circle_id = ? AND epoch = ? AND ${PHASE_RANK} < ?`)

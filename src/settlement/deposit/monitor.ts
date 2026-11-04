@@ -3,8 +3,8 @@ import type { OneClickClient } from "../one-click.js";
 import { FINAL_STATUSES, getJob, listPollableJobs, updateJobStatus, type JobKind, type JobRow, type JobStatus } from "../jobs.js";
 
 /**
- * Pemetaan status 1Click ke status job (Spec API Backend 6.5). `null` = tidak ada perubahan
- * (status deposit tidak berlaku untuk job withdraw).
+ * Mapping of 1Click status to job status (Spec API Backend 6.5). `null` = no change
+ * (deposit statuses do not apply to withdraw jobs).
  */
 export function mapOneClickStatus(oneClickStatus: string, kind: JobKind): JobStatus | null {
   const deposit = kind !== "withdraw";
@@ -39,9 +39,9 @@ function isPollable(job: JobRow): boolean {
 }
 
 /**
- * Perbarui satu job dari status 1Click. Job yang sudah akhir, belum punya deposit address, atau
- * `dry` dikembalikan apa adanya tanpa memanggil 1Click. Error 1Click dilempar (`one_click_error`)
- * dan job di D9 tidak berubah.
+ * Update one job from the 1Click status. A job that is final, has no deposit address yet, or is
+ * `dry` is returned as is without calling 1Click. A 1Click error is thrown (`one_click_error`)
+ * and the job in D9 does not change.
  */
 export async function refreshJob(deps: MonitorDeps, job: JobRow): Promise<JobRow> {
   if (!isPollable(job)) return job;
@@ -56,7 +56,7 @@ export async function refreshJob(deps: MonitorDeps, job: JobRow): Promise<JobRow
   return getJob(deps.db, job.job_id) as JobRow;
 }
 
-/** Satu putaran pemantauan untuk semua job yang masih aktif; kegagalan satu job tidak menghentikan yang lain. */
+/** One monitoring pass over all jobs that are still active; the failure of one job does not stop the others. */
 export async function pollActiveJobs(deps: MonitorDeps): Promise<{ polled: number; failed: number }> {
   let failed = 0;
   const jobs = listPollableJobs(deps.db);
@@ -70,7 +70,7 @@ export async function pollActiveJobs(deps: MonitorDeps): Promise<{ polled: numbe
   return { polled: jobs.length, failed };
 }
 
-/** Jalankan pemantauan berkala; panggil fungsi yang dikembalikan untuk berhenti. */
+/** Run periodic monitoring; call the returned function to stop. */
 export function startJobMonitor(deps: MonitorDeps, intervalMs: number): () => void {
   let running = false;
   const timer = setInterval(() => {

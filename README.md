@@ -29,7 +29,7 @@ Node ≥22.22.2. Configuration goes through `.env` (variable names listed in `.e
 workspace: `.github/workflows/ci-node-workspace.yml` in `x207-labs/x207` checks out the umbrella with its submodules,
 puts the commit under test into `backend/`, and runs install, build and test at the root, where npm workspaces resolve
 `@x207/core` from `sdk/packages/core`. It needs the repository secret `X207_CHECKOUT_TOKEN` (read access to every
-private repository of the organization). `intents-sdk` asks for `typescript@^5` as a peer; the root lockfile resolves
+repository of the organization). `intents-sdk` asks for `typescript@^5` as a peer; the root lockfile resolves
 it with `typescript@7.0.2` and `npm ci` at the root passes. The old `package-lock.json` of this folder is only for
 local use outside the workspace.
 
@@ -41,6 +41,16 @@ npm run build && npm start
 ```
 
 `src/main.ts` runs the RPC indexer, the read API, the settlement endpoints (deposit, withdraw, job) and the job monitor in one process. The worker holds no keys.
+
+## Read model against the testnet circle (BE-079)
+`scripts/testnet-v013.mjs` runs the real indexer from the first transaction of the circle `x207-v013.testnet` (interface 0.0.13) into a SQLite file and compares the read model with the views of the contract: members, epochs, obligations, cleared edges (`proposal_hash`, `edge_count`), positions, and the fee charged on stake (`members.stale`, `fee_mismatches`). It reads blocks and views only; it sends no transaction and uses no key. Prints a JSON report.
+
+```bash
+npm run build
+READMODEL_DB=/tmp/x207-testnet-v013.sqlite node scripts/testnet-v013.mjs x207-v013.testnet > report.json
+```
+
+A second run with the same `READMODEL_DB` reads only new blocks; `REBUILD=1` replays the stored events with the current handlers (no network). The free neardata endpoint is slow (500 blocks take 8 to 10 minutes). Details and a recorded run: [`docs/testnet-v013.md`](docs/testnet-v013.md). Demo data for this read model: [`docs/demo-seed.md`](docs/demo-seed.md) (demo only).
 
 ## Limits against abuse (BE-066)
 All limits live in the memory of one process. **With two instances behind a balancer each one counts for itself**, so the real ceiling is the number of instances times the value; a shared store (Redis) is not part of this version. Set them in `.env`; a value of 0 turns a rate limit off.

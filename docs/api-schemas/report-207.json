@@ -2,7 +2,7 @@
   "$id": "report-207.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "GET /x207/circles/{circle}/epochs/{n} (laporan 207 Multi-Status)",
-  "description": "HTTP 207 bila epoch sudah commit_epoch; 200 dengan committed=false dan members=[] bila belum.",
+  "description": "HTTP 207 when the epoch has been through commit_epoch; 200 with committed=false and members=[] when it has not.",
   "type": "object",
   "required": ["circle", "network", "epoch", "phase", "committed", "finalized", "unit", "decimals", "totalObligation", "cleared", "clearedRatio", "members"],
   "properties": {

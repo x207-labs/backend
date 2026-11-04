@@ -4,7 +4,7 @@ import { acct, bid, NOW_S, openEpoch, referral, signedListing, signedReferral, s
 
 const C = (n: number) => String(n * 1_000_000);
 
-describe("BE-044 kotak masuk ajakan pencari", () => {
+describe("BE-044 seeker referral inbox", () => {
   let market: Market | undefined;
   afterEach(async () => {
     await market?.srv.close();
@@ -21,7 +21,7 @@ describe("BE-044 kotak masuk ajakan pencari", () => {
     return { m, body, l: body.listing, hash };
   }
 
-  it("ajakan masuk ke kotak masuk tujuan, tujuan menawar dengan merujuknya, pemasang menerima dan jatah pencari melekat", async () => {
+  it("a referral lands in the target's inbox, the target bids referencing it, the lister accepts and the seeker share attaches", async () => {
     const { m, l, hash } = await setup();
     const sent = signedReferral(m, "citra", "budi", l);
     const created = await m.post("/referrals", sent);
@@ -31,7 +31,7 @@ describe("BE-044 kotak masuk ajakan pencari", () => {
     expect((await m.get(`/referrals?account=${acct("citra")}&box=sent`)).json.items).toHaveLength(1);
     expect((await m.get(`/referrals?account=${acct("dewi")}`)).json.items).toEqual([]);
 
-    // budi menawar sendiri (ditandatangani budi), merujuk ajakan; isi harus sama dengan ajakan
+    // budi bids on their own (signed by budi), referencing the referral; the content must equal the referral
     const first = bid(m, "budi", l, { mode: "barter", value: C(100) });
     const offered = await m.post(`/listings/${hash}/offers`, { ...first, referralHash: created.json.referralHash });
     expect(offered.status).toBe(201);
@@ -39,12 +39,12 @@ describe("BE-044 kotak masuk ajakan pencari", () => {
     expect(taken).toMatchObject({ status: "taken", offerHash: offered.json.offerHash });
     expect((await m.get(`/referrals?account=${acct("budi")}`)).json.items).toEqual([]);
 
-    // pemasang menerima tanpa menyebut pencari: pratinjau dan penerimaan memakai pencari dan jatah dari ajakan
+    // the lister accepts without naming a seeker: the preview and the acceptance use the seeker and share from the referral
     const preview = await m.post(`/listings/${hash}/offers/${offered.json.offerHash}/preview`, { account: acct("andi") });
     expect(preview.json).toMatchObject({ kind: "bundle", searcher: acct("citra"), searcherValue: C(3), discountValue: C(10) });
     expect(preview.json.breakdown).toMatchObject({ mode: "barter", cashback: C(7), sellerBears: C(10) });
     const mine = acceptOffer({ listing: l, offer: first.offer, epoch: 42, searcher: acct("citra"), searcherShareBps: 300, account: acct("andi") }, m.keys.andi!.secretKey);
-    if (mine.kind !== "bundle") throw new Error("harus bundle");
+    if (mine.kind !== "bundle") throw new Error("must be a bundle");
     expect(preview.json.bundle.termsHash).toBe(mine.terms_hash);
     const accepted = await m.post(`/listings/${hash}/offers/${offered.json.offerHash}/accept`, { account: acct("andi"), signature: mine.signature.signature });
     expect(accepted.status).toBe(201);
@@ -52,7 +52,7 @@ describe("BE-044 kotak masuk ajakan pencari", () => {
     expect(accepted.json.result.proposal.participants.sort()).toEqual([acct("andi"), acct("budi"), acct("citra")]);
   });
 
-  it("penolakan saat membuat ajakan", async () => {
+  it("rejections when creating a referral", async () => {
     const { m, l, body } = await setup();
     const post = (b: unknown) => m.post("/referrals", b);
     const code = async (b: unknown) => (await post(b)).json.error?.code;
@@ -61,12 +61,12 @@ describe("BE-044 kotak masuk ajakan pencari", () => {
     expect(await code({ ...signedReferral(m, "citra", "zed", l) })).toBe("member_not_found");
     expect((await post({ referral: { ...referral("citra", "budi", l), circle: "other.near" }, signature: "ed25519:x" })).status).toBe(400);
     expect(await code(signedReferral(m, "citra", "budi", l, { expires_at: NOW_S - 1 }))).toBe("invalid_request");
-    expect(await code(signedReferral(m, "citra", "budi", l, { searcher_share_bps: 1001 }))).toBe("invalid_request"); // di atas diskon 10%
-    expect(await code(signedReferral(m, "citra", "andi", l))).toBe("invalid_request"); // ke pemasang listing
-    expect(await code(signedReferral(m, "andi", "budi", l))).toBe("invalid_request"); // pencari adalah pemasang
+    expect(await code(signedReferral(m, "citra", "budi", l, { searcher_share_bps: 1001 }))).toBe("invalid_request"); // above the 10% discount
+    expect(await code(signedReferral(m, "citra", "andi", l))).toBe("invalid_request"); // to the lister of the listing
+    expect(await code(signedReferral(m, "andi", "budi", l))).toBe("invalid_request"); // the seeker is the lister
     expect(await code(signedReferral(m, "citra", "budi", { ...l, nonce: "other" }))).toBe("listing_not_found");
     expect((await post({})).status).toBe(400);
-    // listing tidak discoverable, tidak menerima bayar, atau sudah tidak terbuka
+    // the listing is not discoverable, does not accept payment, or is no longer open
     const closed = signedListing(m, "andi", { nonce: "closed", discoverable: false });
     await m.post("/listings", closed);
     expect(await code(signedReferral(m, "citra", "budi", closed.listing))).toBe("invalid_request");
@@ -77,7 +77,7 @@ describe("BE-044 kotak masuk ajakan pencari", () => {
     expect(await code(signedReferral(m, "citra", "budi", l))).toBe("listing_not_open");
   });
 
-  it("pagar spam: satu ajakan pending per pasangan, batas kotak masuk, kedaluwarsa menghilang", async () => {
+  it("spam guard: one pending referral per pair, inbox limit, expired referrals disappear", async () => {
     const { m, l } = await setup({ maxReferrals: 2 });
     const one = await m.post("/referrals", signedReferral(m, "citra", "budi", l));
     expect(one.status).toBe(201);
@@ -90,13 +90,13 @@ describe("BE-044 kotak masuk ajakan pencari", () => {
     expect((await m.post("/referrals", signedReferral(m, "citra", "budi", l2.listing))).status).toBe(201);
     const full = await m.post("/referrals", signedReferral(m, "dewi", "budi", l3.listing));
     expect([full.status, full.json.error.code]).toEqual([429, "rate_limited"]);
-    // kedaluwarsa: hilang dari kotak masuk dan tidak dihitung penuh
+    // expired: disappears from the inbox and does not count towards the limit
     m.clock.now += 3601 * 1000;
     expect((await m.get(`/referrals?account=${acct("budi")}`)).json.items).toEqual([]);
     expect((await m.get(`/referrals?account=${acct("budi")}&status=expired`)).json.items).toHaveLength(2);
   });
 
-  it("agent tujuan menolak dengan tanda tangan; pasangan itu tidak diajak lagi", async () => {
+  it("the target agent refuses with a signature; that pair is not invited again", async () => {
     const { m, l } = await setup();
     const sent = signedReferral(m, "citra", "budi", l);
     const hash = (await m.post("/referrals", sent)).json.referralHash;
@@ -108,11 +108,11 @@ describe("BE-044 kotak masuk ajakan pencari", () => {
     const again = await m.post("/referrals", signedReferral(m, "citra", "budi", l, { nonce: "r9" }));
     expect([again.status, again.json.error.code]).toEqual([409, "referral_refused"]);
     expect((await m.post(`/referrals/${"0".repeat(64)}/refuse`, { signature: "x" })).json.error.code).toBe("referral_not_found");
-    // pencari lain tetap boleh mengajak pasangan itu
+    // another seeker may still invite that pair
     expect((await m.post("/referrals", signedReferral(m, "dewi", "budi", l))).status).toBe(201);
   });
 
-  it("penawaran yang merujuk ajakan harus cocok: agent lain, isi berbeda, ronde 2, sudah diambil, kedaluwarsa", async () => {
+  it("an offer that references a referral must match: another agent, different content, round 2, already taken, expired", async () => {
     const { m, l, hash } = await setup();
     const a = (await m.post("/referrals", signedReferral(m, "citra", "budi", l))).json.referralHash;
     const offerTo = (name: string, over = {}) => bid(m, name, l, { mode: "barter", value: C(100), ...over });
@@ -121,17 +121,17 @@ describe("BE-044 kotak masuk ajakan pencari", () => {
     expect((await m.post(`/listings/${hash}/offers`, { ...offerTo("budi"), referralHash: "z" })).status).toBe(400);
     expect((await m.post(`/listings/${hash}/offers`, { ...offerTo("budi"), referralHash: "f".repeat(64) })).json.error.code).toBe("referral_not_found");
     expect((await m.post(`/listings/${hash}/offers`, { ...offerTo("budi"), referralHash: a })).status).toBe(201);
-    // sudah diambil
+    // already taken
     const l2 = signedListing(m, "andi", { nonce: "l2" });
     await m.post("/listings", l2);
     const r2 = (await m.post("/referrals", signedReferral(m, "citra", "dewi", l2.listing))).json.referralHash;
     m.clock.now += 3601 * 1000;
     const late = bid(m, "dewi", l2.listing, { mode: "barter", value: C(100) });
-    // jam server maju: listing masih terbuka (24 jam) tetapi ajakan sudah lewat
+    // server clock moves ahead: the listing is still open (24 hours) but the referral has passed
     expect((await m.post(`/listings/${listingHash(l2.listing)}/offers`, { ...late, referralHash: r2 })).json.error.code).toBe("referral_not_open");
   });
 
-  it("migrasi 1105 menambah kolom tanpa mengubah penawaran lama", async () => {
+  it("migration 1105 adds a column without changing old offers", async () => {
     const { default: Database } = await import("better-sqlite3");
     const { migrate } = await import("../../src/db/migrate.js");
     const { MARKETPLACE_MIGRATIONS } = await import("../../src/marketplace/migrations.js");

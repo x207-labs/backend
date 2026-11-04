@@ -1,9 +1,9 @@
 import { IndexerHaltError } from "./errors.js";
 
-/** Batas aman jumlah u128 dari event (Spec Skema D9 1): 2^63 − 1. */
+/** Safe limit for a u128 amount from an event (Spec Skema D9 1): 2^63 − 1. */
 export const MAX_UNITS = (1n << 63n) - 1n;
 
-/** Field `data` yang berisi jumlah satuan terkecil; dicek di ingest sebelum handler berjalan. */
+/** `data` fields that hold an amount in the smallest unit; checked at ingest before the handler runs. */
 const AMOUNT_FIELDS = new Set([
   "amount", "stake", "limit", "cumulative_amount", "delta", "obligation", "outstanding_debt", "cleared",
   "cleared_total", "total_obligation", "total_due", "total_claimable", "due", "from_stake", "from_reserve",
@@ -14,7 +14,7 @@ const AMOUNT_FIELDS = new Set([
 const DIGITS = /^\d+$/;
 const SIGNED = /^-?\d+$/;
 
-/** String bilangan bulat tak negatif dari event menjadi bigint; lebih besar dari 2^63 − 1 menghentikan indexer. */
+/** Non-negative integer string from an event becomes a bigint; larger than 2^63 − 1 halts the indexer. */
 export function units(value: string, field: string): bigint {
   if (!DIGITS.test(value)) throw new IndexerHaltError(`field ${field} is not an integer: ${value}`);
   const parsed = BigInt(value);
@@ -29,12 +29,12 @@ export function signedUnits(value: string, field: string): bigint {
   return parsed;
 }
 
-/** Timestamp nanodetik dari event (string). */
+/** Nanosecond timestamp from an event (string). */
 export function ns(value: string, field: string): bigint {
   return units(value, field);
 }
 
-/** Telusuri `data` mentah dan periksa semua field jumlah. */
+/** Walk the raw `data` and check all amount fields. */
 export function assertAmountsInRange(value: unknown, path = "data"): void {
   if (Array.isArray(value)) {
     value.forEach((item, i) => assertAmountsInRange(item, `${path}[${i}]`));

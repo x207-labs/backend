@@ -6,13 +6,13 @@ import { migrate } from "../../src/db/migrate.js";
 
 export const CIRCLE = "agents-main";
 export const CONTRACT = "x207-circle.near";
-/** Nama akun fixture FX-AG6: `<nama>.x207-circle.near`. */
+/** Account names of fixture FX-AG6: `<name>.x207-circle.near`. */
 export const AGENTS = ["cleaner", "gpu", "image", "scraper", "summarizer", "translator"] as const;
 export const acct = (name: string): string => `${name}.x207-circle.near`;
 
 export const ISO_NS = (iso: string): bigint => BigInt(Date.parse(iso)) * 1_000_000n;
 
-/** D9 kosong yang sudah dimigrasi, dengan lingkaran `agents-main` dan cursor indexer. */
+/** Empty, migrated D9 with the `agents-main` circle and the indexer cursor. */
 export function seedCircle(db: Database.Database, lastBlock = 171234567): void {
   migrate(db);
   db.prepare("INSERT INTO circles (circle_id, contract_id, network) VALUES (?, ?, ?)").run(
@@ -58,7 +58,7 @@ export function seedMember(db: Database.Database, m: MemberSeed): void {
   );
 }
 
-/** Enam agent FX-AG6 dengan `outstanding_debt` FX-E42 sebelum commit (D9 s.d. L19). */
+/** Six FX-AG6 agents with FX-E42 `outstanding_debt` before commit (D9 up to L19). */
 export function seedAg6(db: Database.Database, upTo: "L19" | "L29" = "L19"): void {
   const debt: Record<string, number> = {
     translator: 30_000_000,

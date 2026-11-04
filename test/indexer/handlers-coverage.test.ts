@@ -2,15 +2,15 @@ import { describe, expect, it } from "vitest";
 import { fxServer } from "../helpers/fx-api.js";
 import { acct, block, claimFailedLog, eventLog } from "../helpers/fx-log42.js";
 
-// Event yang dipancarkan kontrak 0.0.1 (spec bagian 6 dan 14); event 0.0.2 ada di TC-BE-013-03. Satu fixture log untuk tiap event.
+// Events emitted by contract 0.0.1 (spec sections 6 and 14); the 0.0.2 events are in TC-BE-013-03. One log fixture per event.
 const CONTRACT_EVENTS = [
   "member_joined", "stake_added", "voucher_registered", "epoch_cutoff", "clearing_submitted", "clearing_applied",
   "epoch_committed", "residual_paid", "member_defaulted", "limits_updated", "epoch_finalized", "residual_claimed",
   "residual_claim_failed", "params_updated", "exit_requested", "stake_withdrawn", "stake_withdraw_failed",
 ] as const;
 
-describe("BE-013 setiap handler indexer dengan fixture log", () => {
-  it("TC-BE-013-01 FX-LOG42 dan blok keluar menyentuh setiap event kontrak, semuanya handled", async () => {
+describe("BE-013 every indexer handler with a log fixture", () => {
+  it("TC-BE-013-01 FX-LOG42 and the exit block touch every contract event, all handled", async () => {
     const extra = [
       block(1011, { logs: [eventLog("exit_requested", { account_id: acct("translator"), epoch: 43 })] }),
       block(1012, { logs: [eventLog("stake_withdraw_failed", { account_id: acct("translator"), amount: "100000000" })] }),
@@ -26,14 +26,14 @@ describe("BE-013 setiap handler indexer dengan fixture log", () => {
       const seen = new Map<string, Set<number>>();
       for (const r of rows) seen.set(r.event, (seen.get(r.event) ?? new Set()).add(r.handled));
       for (const name of CONTRACT_EVENTS) {
-        expect(seen.get(name), `${name} tidak pernah diproses`).toEqual(new Set([1]));
+        expect(seen.get(name), `${name} was never processed`).toEqual(new Set([1]));
       }
     } finally {
       await close();
     }
   });
 
-  it("TC-BE-013-02 event tak dikenal diabaikan tanpa mengubah read model dan lag tetap tercatat", async () => {
+  it("TC-BE-013-02 an unknown event is ignored without changing the read model and the lag is still recorded", async () => {
     const before = await fxServer(11);
     const members = before.db.prepare("SELECT account_id, stake, status FROM members ORDER BY account_id").all();
     await before.close();
@@ -51,7 +51,7 @@ describe("BE-013 setiap handler indexer dengan fixture log", () => {
     }
   });
 
-  it("TC-BE-013-03 event antarmuka 0.0.2 sampai ke handler atau events_raw, semuanya handled", async () => {
+  it("TC-BE-013-03 interface 0.0.2 events reach a handler or events_raw, all handled", async () => {
     const extra = [
       block(1011, { logs: [eventLog("member_admitted", { account_id: acct("scraper"), status: "pending" })] }),
       block(1012, { logs: [eventLog("member_reactivated", { account_id: acct("scraper"), stake: "100000000", limit: "80000000", effective_epoch: 44 })] }),

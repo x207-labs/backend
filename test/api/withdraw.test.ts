@@ -13,7 +13,7 @@ describe("BE-030 POST /x207/settlement/withdraw/*", () => {
   }
 
 describe("BE-030 / BE-031 POST /x207/settlement/withdraw/*", () => {
-  it("TC-BE-030-01 quote ke USDC Base menampilkan withdrawFee", async () => {
+  it("TC-BE-030-01 quote to USDC on Base shows withdrawFee", async () => {
     const { post, db } = await server();
     const { res, json } = await post("quote", quoteBody());
     expect(res.status).toBe(201);
@@ -27,7 +27,7 @@ describe("BE-030 / BE-031 POST /x207/settlement/withdraw/*", () => {
     ]);
   });
 
-  it("TC-BE-030-02 intent menolak job yang belum quoted; withdrawFee hanya di respons quote", async () => {
+  it("TC-BE-030-02 intent rejects a job that is not quoted yet; withdrawFee only in the quote response", async () => {
     const { post } = await server();
     const quoted = await post("quote", quoteBody());
     const intent = await post("intent", { jobId: JOB });
@@ -56,7 +56,7 @@ describe("BE-030 / BE-031 POST /x207/settlement/withdraw/*", () => {
     expect(db.prepare("SELECT status, intent_hash FROM settlement_jobs").get()).toEqual({ status: "processing", intent_hash: "mock-intent-hash" });
   });
 
-  it("TC-BE-030-05 submit sebelum intent", async () => {
+  it("TC-BE-030-05 submit before intent", async () => {
     const { post } = await server();
     await post("quote", quoteBody());
     const { res, json } = await post("submit", { jobId: JOB, signedIntent: { a: 1 } });
@@ -64,7 +64,7 @@ describe("BE-030 / BE-031 POST /x207/settlement/withdraw/*", () => {
     expect(json.error.code).toBe("job_state_conflict");
   });
 
-  it("TC-BE-030-06 intent untuk job deposit", async () => {
+  it("TC-BE-030-06 intent for a deposit job", async () => {
     const { post, db } = await server();
     await post("quote", quoteBody());
     db.prepare("UPDATE settlement_jobs SET kind = 'deposit_settle'").run();
@@ -73,7 +73,7 @@ describe("BE-030 / BE-031 POST /x207/settlement/withdraw/*", () => {
     expect(json.error.code).toBe("job_state_conflict");
   });
 
-  it("TC-BE-030-07 intent dua kali", async () => {
+  it("TC-BE-030-07 intent twice", async () => {
     const { post } = await server();
     await post("quote", quoteBody());
     expect((await post("intent", { jobId: JOB })).res.status).toBe(200);
@@ -82,7 +82,7 @@ describe("BE-030 / BE-031 POST /x207/settlement/withdraw/*", () => {
     expect(second.json.error.code).toBe("job_state_conflict");
   });
 
-  it("TC-BE-030-08 jobId tidak dikenal", async () => {
+  it("TC-BE-030-08 unknown jobId", async () => {
     const { post } = await server();
     for (const path of ["intent", "submit"]) {
       const { res, json } = await post(path, { jobId: "9b0f2d3a-0000-4000-8000-000000000000", signedIntent: { a: 1 } });
@@ -91,7 +91,7 @@ describe("BE-030 / BE-031 POST /x207/settlement/withdraw/*", () => {
     }
   });
 
-  it("TC-BE-030-09 signedIntent hilang", async () => {
+  it("TC-BE-030-09 signedIntent missing", async () => {
     const { post } = await server();
     await post("quote", quoteBody());
     await post("intent", { jobId: JOB });
@@ -100,7 +100,7 @@ describe("BE-030 / BE-031 POST /x207/settlement/withdraw/*", () => {
     expect(json.error.code).toBe("invalid_request");
   });
 
-  it("TC-BE-030-10 1Click error di tiap langkah, status job tidak maju", async () => {
+  it("TC-BE-030-10 1Click error at each step, job status does not advance", async () => {
     const t = new Recording();
     const { post, db } = await server({ transport: t });
     t.failAt = "quote";
@@ -121,7 +121,7 @@ describe("BE-030 / BE-031 POST /x207/settlement/withdraw/*", () => {
     expect(db.prepare("SELECT status FROM settlement_jobs").get()).toEqual({ status: "awaiting_signature" });
   });
 
-  it("mode dry tidak pernah mengirim intent bertanda tangan", async () => {
+  it("dry mode never sends a signed intent", async () => {
     const t = new Recording();
     const { post, db } = await server({ transport: t, mode: "dry" });
     await post("quote", quoteBody());
@@ -131,7 +131,7 @@ describe("BE-030 / BE-031 POST /x207/settlement/withdraw/*", () => {
     expect(db.prepare("SELECT status FROM settlement_jobs").get()).toEqual({ status: "awaiting_signature" });
   });
 
-  it("anggota dan lingkaran harus ada; body harus valid", async () => {
+  it("member and circle must exist; body must be valid", async () => {
     const { post } = await server();
     expect((await post("quote", quoteBody({ circle: "nope" }))).json.error.code).toBe("circle_not_found");
     expect((await post("quote", quoteBody({ account: "ghost.near" }))).json.error.code).toBe("member_not_found");
@@ -139,7 +139,7 @@ describe("BE-030 / BE-031 POST /x207/settlement/withdraw/*", () => {
   });
 });
 
-  it("TC-BE-030-12 refundTo tidak ada", async () => {
+  it("TC-BE-030-12 refundTo missing", async () => {
     const t = new Recording();
     const { post, db } = await server({ transport: t, accountExists: async () => false });
     const { res, json } = await post("quote", quoteBody({ refundTo: "ghost.near" }));

@@ -17,7 +17,7 @@ export const memberHandlers: HandlerMap = {
   stake_added(ctx, e) {
     const oldLimit = memberLimit(ctx, e.account_id);
     const newLimit = units(e.limit, "limit");
-    // Nilai event ditimpa langsung, termasuk status (anggota suspended tetap suspended).
+    // The event values are overwritten directly, including status (a suspended member stays suspended).
     ctx.db
       .prepare("UPDATE members SET stake = ?, credit_limit = ?, status = ?, updated_block = ? WHERE circle_id = ? AND account_id = ?")
       .run(units(e.stake, "stake"), newLimit, e.status, ctx.block.height, ctx.circleId, e.account_id);

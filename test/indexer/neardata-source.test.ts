@@ -29,7 +29,7 @@ function source(routes: Record<string, () => Response>): { src: NeardataBlockSou
 }
 
 describe("ADR-34 NeardataBlockSource", () => {
-  it("TC-BE-006-01 hanya outcome receipt milik kontrak, log_index = posisi di daftar log outcome", async () => {
+  it("TC-BE-006-01 only outcome receipts owned by the contract, log_index = position in the outcome's log list", async () => {
     const { src } = source({ "/v0/block/1001": () => Response.json(BLOCK) });
     const block = await src.getBlock(1001);
     expect(block).toEqual({
@@ -42,25 +42,25 @@ describe("ADR-34 NeardataBlockSource", () => {
     });
   });
 
-  it("blok yang dilewati chain (null) dikembalikan sebagai null", async () => {
+  it("a block skipped by the chain (null) is returned as null", async () => {
     const { src } = source({ "/v0/block/1002": () => Response.json(null) });
     await expect(src.getBlock(1002)).resolves.toBeNull();
   });
 
-  it("finalHeight dari last_block/final", async () => {
+  it("finalHeight from last_block/final", async () => {
     const { src, seen } = source({ "/v0/last_block/final": () => Response.json(BLOCK) });
     await expect(src.finalHeight()).resolves.toBe(1001);
     expect(seen).toEqual(["/v0/last_block/final"]);
   });
 
-  it("blok di masa depan atau HTTP error dilempar sebagai NeardataError", async () => {
+  it("a future block or an HTTP error is thrown as NeardataError", async () => {
     const future = () => Response.json({ error: "The block is too far in the future", type: "BLOCK_DOES_NOT_EXIST" }, { status: 404 });
     const { src } = source({ "/v0/block/9": future, "/v0/block/8": () => Response.json({ type: "BLOCK_DOES_NOT_EXIST" }) });
     await expect(src.getBlock(9)).rejects.toBeInstanceOf(NeardataError);
     await expect(src.getBlock(8)).rejects.toThrow(/BLOCK_DOES_NOT_EXIST/);
   });
 
-  it("endpoint tanpa garis miring penutup", () => {
+  it("endpoint without a trailing slash", () => {
     expect(source({}).src.endpoint).toBe("https://neardata.test");
   });
 });

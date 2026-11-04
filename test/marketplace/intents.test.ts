@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { intentHash, intentHashBase58, signIntent, type BarterIntent } from "@x207/core";
 import { acct, CONTRACT, NOW_S, startMarket, type Market } from "./helpers.js";
 
-describe("BE-035 buku intent barter (D8)", () => {
+describe("BE-035 barter intent book (D8)", () => {
   let market: Market | undefined;
   afterEach(async () => {
     await market?.srv.close();
@@ -23,7 +23,7 @@ describe("BE-035 buku intent barter (D8)", () => {
     return { intent: i, signature: signIntent(i, m.keys[name]!.secretKey) };
   };
 
-  it("tiga intent A/B/C tersimpan, terbaca kembali dan hash-nya cocok", async () => {
+  it("three intents A/B/C are stored, read back and their hashes match", async () => {
     market = await startMarket();
     const m = market;
     const posted = [];
@@ -50,7 +50,7 @@ describe("BE-035 buku intent barter (D8)", () => {
     expect(list.json.nextCursor).toBeNull();
   });
 
-  it("status on-chain terbaca dari event intent_posted di events_raw", async () => {
+  it("on-chain status is read from the intent_posted event in events_raw", async () => {
     market = await startMarket();
     const m = market;
     const body = signed(m, "andi");
@@ -65,7 +65,7 @@ describe("BE-035 buku intent barter (D8)", () => {
     expect(list.json.items[0].onchain).toMatchObject({ posted: true, blockHeight: 777 });
   });
 
-  it("menolak tanda tangan akun lain, anggota tidak aktif, dan intent duplikat", async () => {
+  it("rejects another account's signature, an inactive member, and a duplicate intent", async () => {
     market = await startMarket(["andi", "budi"], ["gita"]);
     const m = market;
     const forged = { intent: intent("andi"), signature: signIntent(intent("andi"), m.keys.budi!.secretKey) };
@@ -88,7 +88,7 @@ describe("BE-035 buku intent barter (D8)", () => {
     expect(dup.json.error.code).toBe("already_exists");
   });
 
-  it("menolak isi yang cacat: lingkaran salah, kedaluwarsa, format, body bukan intent", async () => {
+  it("rejects malformed content: wrong circle, expired, format, body is not an intent", async () => {
     market = await startMarket();
     const m = market;
     expect((await m.post("/intents", signed(m, "andi", { circle: "other.near" }))).status).toBe(400);
@@ -100,7 +100,7 @@ describe("BE-035 buku intent barter (D8)", () => {
     expect((await m.post("/intents", [])).status).toBe(400);
   });
 
-  it("intent kedaluwarsa hilang dari status=open dan muncul di status=expired", async () => {
+  it("an expired intent disappears from status=open and appears in status=expired", async () => {
     market = await startMarket();
     const m = market;
     await m.post("/intents", signed(m, "andi", { expiresAt: NOW_S + 60 }));
@@ -115,7 +115,7 @@ describe("BE-035 buku intent barter (D8)", () => {
     expect((await m.get("/intents?status=bogus")).status).toBe(400);
   });
 
-  it("paginasi dengan limit dan cursor", async () => {
+  it("pagination with limit and cursor", async () => {
     market = await startMarket();
     const m = market;
     for (const name of ["andi", "budi", "citra"]) await m.post("/intents", signed(m, name));

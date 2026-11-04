@@ -37,7 +37,7 @@ function job(over: Partial<NewJob> = {}): NewJob {
   };
 }
 
-describe("BE-028 pemantauan status job deposit", () => {
+describe("BE-028 monitoring the status of deposit jobs", () => {
   let db: Database.Database;
   let oneClickStatus: string;
   let statusCalls: string[];
@@ -54,14 +54,14 @@ describe("BE-028 pemantauan status job deposit", () => {
     now = T0;
     const transport: OneClickTransport = {
       getTokens: async () => MOCK_TOKENS,
-      getQuote: async () => { throw new Error("tidak dipakai"); },
+      getQuote: async () => { throw new Error("not used"); },
       getExecutionStatus: async (address) => {
         statusCalls.push(address);
         if (fail) throw new Error("HTTP 500");
         return { status: oneClickStatus } as never;
       },
-      generateIntent: async () => { throw new Error("tidak dipakai"); },
-      submitIntent: async () => { throw new Error("tidak dipakai"); },
+      generateIntent: async () => { throw new Error("not used"); },
+      submitIntent: async () => { throw new Error("not used"); },
     };
     client = new OneClickClient({ config: { mode: "dry", baseUrl: "x", jwt: undefined, appFees: [] }, transport });
   });
@@ -75,7 +75,7 @@ describe("BE-028 pemantauan status job deposit", () => {
     return refreshJob(deps(), kind ? { ...row, kind } : row);
   };
 
-  it("TC-BE-028-01 menunggu setoran menyimpan status mentah", async () => {
+  it("TC-BE-028-01 waiting for a deposit stores the raw status", async () => {
     insertJob(db, job());
     for (const raw of ["PENDING_DEPOSIT", "INCOMPLETE_DEPOSIT"]) {
       const j = await refresh(raw);
@@ -84,14 +84,14 @@ describe("BE-028 pemantauan status job deposit", () => {
     }
   });
 
-  it("TC-BE-028-02 diproses", async () => {
+  it("TC-BE-028-02 processing", async () => {
     insertJob(db, job());
     for (const raw of ["KNOWN_DEPOSIT_TX", "PROCESSING"]) {
       expect((await refresh(raw)).status).toBe("processing");
     }
   });
 
-  it("TC-BE-028-03 SUCCESS pada deposit_settle → ready_withdraw dan updated_at berubah", async () => {
+  it("TC-BE-028-03 SUCCESS on deposit_settle → ready_withdraw and updated_at changes", async () => {
     insertJob(db, job());
     now = T0 + 5000;
     const j = await refresh("SUCCESS");
@@ -100,7 +100,7 @@ describe("BE-028 pemantauan status job deposit", () => {
     expect(j.updated_at).toBe(T0 + 5000);
   });
 
-  it("TC-BE-028-03b SUCCESS pada deposit_stake juga ready_withdraw; withdraw → completed", async () => {
+  it("TC-BE-028-03b SUCCESS on deposit_stake is also ready_withdraw; withdraw → completed", async () => {
     insertJob(db, job({ kind: "deposit_stake", epoch: null }));
     expect((await refresh("SUCCESS")).status).toBe("ready_withdraw");
     expect(mapOneClickStatus("SUCCESS", "withdraw")).toBe("completed");
@@ -117,7 +117,7 @@ describe("BE-028 pemantauan status job deposit", () => {
     expect((await refresh("FAILED")).status).toBe("failed");
   });
 
-  it("TC-BE-028-06 lewat quote_deadline tanpa setoran → expired; setoran sebelum tenggat tetap diproses", async () => {
+  it("TC-BE-028-06 past quote_deadline without a deposit → expired; a deposit before the deadline is still processed", async () => {
     insertJob(db, job());
     now = DEADLINE - 1;
     expect((await refresh("PENDING_DEPOSIT")).status).toBe("waiting_deposit");
@@ -130,7 +130,7 @@ describe("BE-028 pemantauan status job deposit", () => {
     expect((await refresh("PROCESSING")).status).toBe("processing");
   });
 
-  it("TC-BE-028-07 status akhir tidak dipantau lagi", async () => {
+  it("TC-BE-028-07 a final status is no longer monitored", async () => {
     for (const status of ["failed", "refunded", "expired"] as const) {
       db.exec("DELETE FROM settlement_jobs");
       insertJob(db, job({ status }));
@@ -141,13 +141,13 @@ describe("BE-028 pemantauan status job deposit", () => {
     expect(await pollActiveJobs(deps())).toEqual({ polled: 0, failed: 0 });
   });
 
-  it("job dry atau tanpa deposit address tidak dipantau", async () => {
+  it("a dry job or one without a deposit address is not monitored", async () => {
     insertJob(db, job({ dry: 1, deposit_address: null, status: "quoted" }));
     await refresh("SUCCESS");
     expect(statusCalls).toHaveLength(0);
   });
 
-  it("pollActiveJobs memperbarui semua job aktif dan terus berjalan bila satu gagal", async () => {
+  it("pollActiveJobs updates all active jobs and keeps going if one fails", async () => {
     insertJob(db, job());
     insertJob(db, job({ job_id: "11111111-1111-1111-1111-111111111111", deposit_address: "0xother", created_at: T0 }));
     oneClickStatus = "SUCCESS";
@@ -161,7 +161,7 @@ describe("BE-028 pemantauan status job deposit", () => {
     expect((getJob(db, JOB_ID) as JobRow).status).toBe("waiting_deposit");
   });
 
-  it("startJobMonitor memanggil pemantauan berkala dan bisa dihentikan", async () => {
+  it("startJobMonitor calls the monitor periodically and can be stopped", async () => {
     vi.useFakeTimers();
     try {
       insertJob(db, job());
@@ -184,7 +184,7 @@ describe("BE-028 pemantauan status job deposit", () => {
       await srv.close();
     });
 
-    it("TC-BE-028-08 job TC-BE-028-03: bentuk respons Spec 6.5", async () => {
+    it("TC-BE-028-08 job TC-BE-028-03: response shape of Spec 6.5", async () => {
       insertJob(db, job());
       oneClickStatus = "SUCCESS";
       now = Date.parse("2026-11-09T11:41:20Z");
@@ -205,14 +205,14 @@ describe("BE-028 pemantauan status job deposit", () => {
       });
     });
 
-    it("TC-BE-028-09 job tidak ada → 404 job_not_found", async () => {
+    it("TC-BE-028-09 job does not exist → 404 job_not_found", async () => {
       srv = await listen({ db, extraRoutes: jobRoutes(client) });
       const res = await fetch(`${srv.url}/x207/settlement/jobs/00000000-0000-0000-0000-000000000000`);
       expect(res.status).toBe(404);
       expect((await res.json()).error.code).toBe("job_not_found");
     });
 
-    it("TC-BE-028-10 1Click error saat baca status → 502 one_click_error, job tidak berubah", async () => {
+    it("TC-BE-028-10 1Click error while reading the status → 502 one_click_error, job unchanged", async () => {
       insertJob(db, job());
       fail = true;
       srv = await listen({ db, now: () => now, extraRoutes: jobRoutes(client) });
@@ -224,7 +224,7 @@ describe("BE-028 pemantauan status job deposit", () => {
       expect(row.updated_at).toBe(T0 - 60_000);
     });
 
-    it("status akhir dijawab tanpa memanggil 1Click", async () => {
+    it("a final status is answered without calling 1Click", async () => {
       insertJob(db, job({ status: "refunded", one_click_status: "REFUNDED" }));
       srv = await listen({ db, extraRoutes: jobRoutes(client) });
       const body = await (await fetch(`${srv.url}/x207/settlement/jobs/${JOB_ID}`)).json();

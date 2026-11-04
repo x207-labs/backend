@@ -7,23 +7,23 @@ import { depositQuoteRoutes } from "../../src/settlement/deposit/quote.js";
 import { fxServer } from "../helpers/fx-api.js";
 import { acct } from "../helpers/fx-log42.js";
 
-// Opt-in: jaringan nyata, selalu dry:true, tanpa dana. Jalankan: X207_INTEGRATION=1 npx vitest run test/settlement/one-click.integration.test.ts
+// Opt-in: real network, always dry:true, no funds. Run: X207_INTEGRATION=1 npx vitest run test/settlement/one-click.integration.test.ts
 const run = process.env.X207_INTEGRATION === "1";
 if (run) process.loadEnvFile(new URL("../../.env", import.meta.url));
 
-// Alamat EVM uji seperti spike Ronde 3 (refund quote dry; tidak ada transaksi).
+// EVM test address as in the Round 3 spike (dry refund quote; no transaction).
 const EVM_REFUND = process.env.X207_TEST_EVM_ADDRESS ?? "0x1111111111111111111111111111111111111111";
 
 describe.skipIf(!run)("BE-025 smoke 1Click dry (integration)", () => {
   const client = () => new OneClickClient({ config: { ...settlementConfigFromEnv(process.env), mode: "dry" } });
 
-  it("TC-BE-025-11 /v0/tokens memuat USDT NEAR dan USDC Base", async () => {
+  it("TC-BE-025-11 /v0/tokens lists USDT NEAR and USDC Base", async () => {
     const ids = (await client().listTokens()).map((t) => t.assetId);
     expect(ids).toContain(USDT_NEAR);
     expect(ids).toContain(USDC_BASE);
   });
 
-  it("TC-BE-025-11 quote dry 201 tanpa depositAddress dan tanpa dana", async () => {
+  it("TC-BE-025-11 dry quote 201 without depositAddress and without funds", async () => {
     const q = await client().quote({
       swapType: "EXACT_OUTPUT",
       originAsset: USDC_BASE,
@@ -41,7 +41,7 @@ describe.skipIf(!run)("BE-025 smoke 1Click dry (integration)", () => {
     expect(BigInt(q.quote.amountIn)).toBeGreaterThan(0n);
   });
 
-  it("TC-BE-027-12 stake 50 USD dari USDC Base lewat endpoint, dry nyata", async () => {
+  it("TC-BE-027-12 stake 50 USD from USDC Base through the endpoint, real dry run", async () => {
     const s = await fxServer(8, [], undefined, depositQuoteRoutes({ client: client(), accountExists: async () => true }));
     try {
       const res = await fetch(`${s.srv.url}/x207/settlement/deposit/quote`, {
@@ -52,14 +52,14 @@ describe.skipIf(!run)("BE-025 smoke 1Click dry (integration)", () => {
       const json = (await res.json()) as Record<string, unknown>;
       expect(res.status).toBe(201);
       expect(json).toMatchObject({ status: "waiting_deposit", dry: true, amountOut: "50000000", recipientType: "INTENTS" });
-      // quote dry tidak membawa depositAddress (lihat TC-BE-025-11); alamat hanya ada di mode live
+      // a dry quote carries no depositAddress (see TC-BE-025-11); the address only exists in live mode
       expect(json.depositAddress).toBeNull();
     } finally {
       await s.close();
     }
   });
 
-  it("TC-BE-030-13 quote withdraw dry nyata, 1 USDT ke USDC Base", async () => {
+  it("TC-BE-030-13 real dry withdraw quote, 1 USDT to USDC Base", async () => {
     const s = await fxServer(8, [], undefined, withdrawRoutes({ client: client(), accountExists: async () => true }));
     try {
       const res = await fetch(`${s.srv.url}/x207/settlement/withdraw/quote`, {

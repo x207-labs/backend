@@ -14,7 +14,7 @@ export function parseLimit(query: URLSearchParams): number {
   return limit;
 }
 
-/** Cursor opak: base64url dari objek JSON kecil, mis. `{"a":"scraper.near"}`. */
+/** Opaque cursor: base64url of a small JSON object, e.g. `{"a":"scraper.near"}`. */
 export function encodeCursor(value: Record<string, string | number>): string {
   return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
 }
@@ -28,7 +28,7 @@ export function decodeCursor(query: URLSearchParams): Record<string, unknown> | 
       return parsed as Record<string, unknown>;
     }
   } catch {
-    // jatuh ke error di bawah
+    // falls through to the error below
   }
   throw invalidRequest("invalid cursor", { cursor: raw });
 }

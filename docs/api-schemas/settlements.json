@@ -2,7 +2,7 @@
   "$id": "settlements.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "GET …/members/{account}/settlements dan …/epochs/{n}/settlements",
-  "description": "Endpoint per epoch menambah field account di tiap item. due/paidAmount/stakeSlashed/haircut muncul untuk debtor.",
+  "description": "The per-epoch endpoint adds an account field to each item. due/paidAmount/stakeSlashed/haircut appear for debtors.",
   "type": "object",
   "required": ["unit", "decimals", "items", "nextCursor"],
   "properties": {

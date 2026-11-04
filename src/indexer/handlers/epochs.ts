@@ -150,7 +150,7 @@ function epochPhase(ctx: HandlerContext, epoch: number): string | undefined {
 export const epochHandlers: HandlerMap = {
   epoch_cutoff(ctx, e) {
     ensureEpoch(ctx, e.epoch);
-    // Fase hanya maju: event berulang untuk epoch yang sudah lewat `open` tidak mengubah apa pun.
+    // Phase only moves forward: a repeated event for an epoch already past `open` changes nothing.
     if (epochPhase(ctx, e.epoch) !== "open") return;
 
     const total = units(e.total_obligation, "total_obligation");
@@ -177,7 +177,7 @@ export const epochHandlers: HandlerMap = {
     ctx.db
       .prepare("UPDATE epochs SET cutoff_at_ns = ? WHERE circle_id = ? AND epoch = ?")
       .run(ns(e.next_cutoff_at, "next_cutoff_at"), ctx.circleId, e.next_epoch);
-    // K-36: anggota yang diaktifkan ulang mulai berlaku saat epoch efektifnya dibuka.
+    // K-36: a reactivated member takes effect when its effective epoch opens.
     ctx.db
       .prepare(
         `UPDATE members SET status = 'active', reactivate_epoch = NULL, updated_block = ?
@@ -191,7 +191,7 @@ export const epochHandlers: HandlerMap = {
     // interface 0.0.12: the edges come in the event, in chunks
     ensureEpoch(ctx, e.epoch);
     if (e.chunk === 0) {
-      // Potongan pertama: semua edge epoch ini dianggap 0, lalu edge yang disebut diisi (ADR-31).
+      // First chunk: all edges of this epoch count as 0, then the edges that are named are filled in (ADR-31).
       ctx.db.prepare("UPDATE obligations SET cleared = 0 WHERE circle_id = ? AND epoch = ?").run(ctx.circleId, e.epoch);
       ctx.db
         .prepare(

@@ -25,7 +25,7 @@ interface SettlementRow {
 const COLUMNS = `s.epoch, s.account_id, s.role, s.net, s.amount, s.status, s.due_at_ns, s.paid_amount, s.stake_slashed,
   s.haircut, s.destination, s.tx_hash, e.phase`;
 
-/** Posisi bersih bertanda: `+45000000`, `-35000000`, `0` (Spec API Backend 3.4). */
+/** Signed net position: `+45000000`, `-35000000`, `0` (Spec API Backend 3.4). */
 const signed = (net: bigint): string => (net > 0n ? `+${net}` : net.toString());
 
 function item(r: SettlementRow, withAccount: boolean) {
@@ -37,7 +37,7 @@ function item(r: SettlementRow, withAccount: boolean) {
     net: signed(r.net),
     amount: amount(r.amount),
     status: r.status,
-    // `claim` hanya boleh setelah `finalize_epoch` (ADR-24).
+    // `claim` is allowed only after `finalize_epoch` (ADR-24).
     claimableNow: r.status === "claimable" && r.phase === "finalized",
     destination: r.destination,
     txHash: r.tx_hash,
@@ -60,7 +60,7 @@ function statusFilter(query: URLSearchParams): string | null {
   return status;
 }
 
-/** BE-016: tagihan dan klaim per anggota (epoch turun) dan per epoch (akun naik). */
+/** BE-016: bills and claims per member (epoch descending) and per epoch (account ascending). */
 export const settlementRoutes: Route[] = [
   {
     method: "GET",

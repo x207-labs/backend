@@ -1,6 +1,6 @@
-// Statistik marketplace (BE-043, F9): `GET /x207/circles/{circle}/marketplace/stats`.
-// Semua angka dihitung dari baris listings/offers/matches/intents saat diminta; tidak ada nilai contoh.
-// `searcherRevenue` = jatah pencari dari kecocokan yang disepakati (leg bundle); klaim on-chain `solver_fee` diurus M10 terpisah.
+// Marketplace statistics (BE-043, F9): `GET /x207/circles/{circle}/marketplace/stats`.
+// All numbers are computed from the listings/offers/matches/intents rows when requested; there are no sample values.
+// `searcherRevenue` = searcher share from agreed matches (bundle legs); the on-chain `solver_fee` claim is handled separately by M10.
 import { row, rows } from "../api/format.js";
 import type { Route } from "../api/router.js";
 import { nowSeconds } from "./common.js";

@@ -13,7 +13,7 @@ interface LimitRow {
   block_height: bigint;
 }
 
-/** `GET …/members/{account}/limits` (Spec API Backend 2.1, BE-011): riwayat limit, terbaru dulu. */
+/** `GET …/members/{account}/limits` (Spec API Backend 2.1, BE-011): limit history, newest first. */
 export const limitRoutes: Route[] = [
   {
     method: "GET",

@@ -7,7 +7,7 @@ import { derivedPhase } from "./epochs.js";
 const STAGES = ["cutoff", "live", "cleared"] as const;
 type Stage = (typeof STAGES)[number];
 
-/** Fase D9 yang boleh dibaca per `stage` (Spec Skema D9 6.3). */
+/** D9 phases that may be read per `stage` (Spec Skema D9 6.3). */
 const STAGE_PHASES: Record<Stage, readonly string[] | null> = {
   live: null,
   cutoff: ["clearing", "payment_window", "finalized"],
@@ -23,7 +23,7 @@ interface EdgeRow {
   remaining: bigint;
 }
 
-/** `GET …/epochs/{n}/obligations` (Spec API Backend 3.3, BE-015): edge kewajiban untuk solver dan dashboard. */
+/** `GET …/epochs/{n}/obligations` (Spec API Backend 3.3, BE-015): obligation edges for the solver and the dashboard. */
 export const obligationRoutes: Route[] = [
   {
     method: "GET",

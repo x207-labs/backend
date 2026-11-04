@@ -17,7 +17,7 @@
         "pubkeyVoucher": { "type": "string" },
         "settledHistory": { "$ref": "common.json#/definitions/amount" },
         "joinedAt": { "$ref": "common.json#/definitions/isoTime" },
-        "exitRequestedEpoch": { "type": ["integer", "null"], "description": "ADR-29; null bila tidak sedang keluar" }
+        "exitRequestedEpoch": { "type": ["integer", "null"], "description": "ADR-29; null when not exiting" }
       }
     }
   },

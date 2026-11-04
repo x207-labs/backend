@@ -41,18 +41,18 @@ describe("BE-011 member_defaulted, limits_updated, epoch_finalized", () => {
       });
     });
 
-    it("TC-BE-010-02 bayar dari status bukan due", async () => {
+    it("TC-BE-010-02 payment from a status that is not due", async () => {
       await ingest([...upTo(8), block(1008, { logs: [defaultedLog()] }), block(1009, { logs: [paidLog().replaceAll(acct("cleaner"), acct("scraper"))] })]);
       expect(one("SELECT status FROM settlements WHERE account_id = ?", acct("scraper"))).toEqual({ status: "defaulted" });
     });
 
-    it("TC-BE-011-02 default dari status bukan due", async () => {
+    it("TC-BE-011-02 default from a status that is not due", async () => {
       await ingest([...upTo(9), block(1009, { logs: [defaultedLog("cleaner")] })]);
       expect(one("SELECT status FROM settlements WHERE account_id = ?", acct("cleaner"))).toEqual({ status: "paid" });
       expect(one("SELECT status, credit_limit FROM members WHERE account_id = ?", acct("cleaner"))).toEqual({ status: "active", credit_limit: 80_000_000n });
     });
 
-    it("TC-BE-011-03 limit diperbarui", async () => {
+    it("TC-BE-011-03 limit updated", async () => {
       await ingest(upTo(10));
       expect(one("SELECT credit_limit FROM members WHERE account_id = ?", acct("cleaner"))).toEqual({ credit_limit: 81_000_000n });
       expect(one("SELECT reason, epoch, old_limit, new_limit FROM member_limits WHERE account_id = ? AND reason = 'finalize'", acct("cleaner"))).toEqual({
@@ -60,7 +60,7 @@ describe("BE-011 member_defaulted, limits_updated, epoch_finalized", () => {
       });
     });
 
-    it("TC-BE-011-04 limits_updated berpotongan: 60 baris riwayat", async () => {
+    it("TC-BE-011-04 limits_updated in chunks: 60 history rows", async () => {
       const accounts = Array.from({ length: 60 }, (_, i) => `m${i}.x207-circle.near`);
       const joins = block(1000, ...accounts.map((a) => ({ logs: [eventLog("member_joined", { account_id: a, pubkey_voucher: "k", terms_hash: "t", status: "pending", joined_at: "1" })] })));
       const change = (a: string) => ({ account_id: a, old_limit: "1", new_limit: "2", status: "active" });
@@ -72,12 +72,12 @@ describe("BE-011 member_defaulted, limits_updated, epoch_finalized", () => {
       expect(one("SELECT COUNT(*) AS n FROM member_limits")).toEqual({ n: 60n });
     });
 
-    it("TC-BE-007-05 stake untuk anggota suspended: status tetap suspended", async () => {
+    it("TC-BE-007-05 stake for a suspended member: status stays suspended", async () => {
       await ingest([...fxLog42(), block(1011, { logs: [stakeLog("scraper", "10000000", "75000000", "0", "suspended")] })]);
       expect(one("SELECT stake, status FROM members WHERE account_id = ?", acct("scraper"))).toEqual({ stake: 75_000_000n, status: "suspended" });
     });
 
-    it("TC-BE-011-05 finalisasi", async () => {
+    it("TC-BE-011-05 finalization", async () => {
       await ingest(upTo(10));
       expect(one("SELECT phase, finalized_at_ns FROM epochs WHERE epoch = 42")).toEqual({ phase: "finalized", finalized_at_ns: BigInt(nsOf("2026-11-09T12:00:30Z")) });
     });

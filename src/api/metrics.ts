@@ -18,7 +18,7 @@ export interface EpochMetrics {
   graph: { participants: number; edges: number; density: number | null };
 }
 
-/** a ÷ b dengan 4 angka di belakang koma (pembulatan setengah ke atas); `null` bila pembagi nol (K-38). */
+/** a ÷ b with 4 digits after the decimal point (round half up); `null` when the divisor is zero (K-38). */
 export function ratio4(a: bigint, b: bigint): number | null {
   if (b === 0n) return null;
   return Number((a * 20_000n + b) / (2n * b)) / 10_000;
@@ -27,8 +27,8 @@ export function ratio4(a: bigint, b: bigint): number | null {
 const round4 = (value: number): number => Math.round(value * 10_000) / 10_000;
 
 /**
- * Metrik epoch (Spec API Backend 5, BE-018). Sebelum `commit_epoch`, hanya `totalVoucherValue`, `voucherCount`,
- * `debtBefore`, dan `graph` yang terisi (dihitung dari kewajiban terdaftar sejauh ini); sisanya `null`.
+ * Epoch metrics (Spec API Backend 5, BE-018). Before `commit_epoch`, only `totalVoucherValue`, `voucherCount`,
+ * `debtBefore`, and `graph` are filled (computed from the obligations registered so far); the rest are `null`.
  */
 export function computeEpochMetrics(db: Database.Database, circleId: string, epoch: EpochRow): EpochMetrics {
   const o = row<{ total: bigint; vouchers: bigint; edges: bigint; after: bigint }>(
@@ -82,7 +82,7 @@ export function computeEpochMetrics(db: Database.Database, circleId: string, epo
     debtAfter: amount(o.after),
     debtReduction: reduction === null ? null : round4(1 - reduction),
     netDebt: amount(s.residual),
-    // Nilai default ÷ total residual; baru bermakna setelah `finalize_epoch` (BE-019).
+    // Default value ÷ total residual; only meaningful after `finalize_epoch` (BE-019).
     defaultRate: epoch.phase === "finalized" ? ratio4(s.defaulted, s.residual) : null,
     clearingTimeSeconds: seconds,
   };

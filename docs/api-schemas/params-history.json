@@ -2,7 +2,7 @@
   "$id": "params-history.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "GET /x207/circles/{circle}/params/history",
-  "description": "Spec API Backend tidak memberi contoh; item = kolom query Spec Skema D9 6.7 dalam camelCase. oldValue/newValue = JSON nilai field.",
+  "description": "Spec API Backend gives no example; item = query columns of Spec Skema D9 6.7 in camelCase. oldValue/newValue = JSON of the field value.",
   "type": "object",
   "required": ["circle", "items", "nextCursor"],
   "properties": {

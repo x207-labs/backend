@@ -18,7 +18,7 @@ const highest = (versions: readonly number[], pick: (v: number) => boolean): num
   return some.length === 0 ? null : Math.max(...some);
 };
 
-/** Terapkan migrasi yang belum tercatat di `schema_migrations`; aman dipanggil berulang. */
+/** Apply migrations not yet recorded in `schema_migrations`; safe to call repeatedly. */
 export function migrate(db: Database.Database, migrations: readonly Migration[] = MIGRATIONS): number[] {
   db.exec("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at INTEGER NOT NULL)");
   const applied = new Set(
@@ -47,7 +47,7 @@ export function migrate(db: Database.Database, migrations: readonly Migration[] 
   return done;
 }
 
-/** Buka (atau buat) basis data D9: WAL, kunci asing aktif, lalu migrasi. */
+/** Open (or create) the D9 database: WAL, foreign keys on, then migrations. */
 export function openDatabase(path: string): Database.Database {
   const db = new Database(path);
   db.pragma("journal_mode = WAL");

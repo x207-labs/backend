@@ -4,7 +4,7 @@ import { fxServer } from "../helpers/fx-api.js";
 
 const BASE = "/x207/circles/agents-main";
 
-describe("BE-016 settlement per anggota dan per epoch", () => {
+describe("BE-016 settlement per member and per epoch", () => {
   let close: (() => Promise<void>) | undefined;
   afterEach(async () => close?.());
 
@@ -16,7 +16,7 @@ describe("BE-016 settlement per anggota dan per epoch", () => {
   }
   const gpu = `/members/${acct("gpu")}/settlements`;
 
-  it("TC-BE-016-01 kreditor selama payment_window", async () => {
+  it("TC-BE-016-01 creditor during payment_window", async () => {
     const { res, body } = await get(gpu, 9);
     expect(res.status).toBe(200);
     expect(body.items[0]).toEqual({
@@ -25,12 +25,12 @@ describe("BE-016 settlement per anggota dan per epoch", () => {
     });
   });
 
-  it("TC-BE-016-02 kreditor setelah finalisasi", async () => {
+  it("TC-BE-016-02 creditor after finalization", async () => {
     const { body } = await get(gpu, 10);
     expect(body.items[0]).toMatchObject({ status: "claimable", claimableNow: true, phase: "finalized" });
   });
 
-  it("TC-BE-016-03 kreditor setelah klaim", async () => {
+  it("TC-BE-016-03 creditor after claim", async () => {
     const { body } = await get(gpu, 11);
     expect(body.items[0]).toMatchObject({ status: "claimed", destination: "intents", claimableNow: false });
     expect(body.items[0].txHash).toEqual(expect.any(String));
@@ -49,7 +49,7 @@ describe("BE-016 settlement per anggota dan per epoch", () => {
     expect(body.items[0]).toMatchObject({ status: "defaulted", stakeSlashed: "35000000" });
   });
 
-  it("TC-BE-016-06 filter status", async () => {
+  it("TC-BE-016-06 status filter", async () => {
     const { body } = await get(`/members/${acct("cleaner")}/settlements?status=paid`, 9);
     expect(body.items).toHaveLength(1);
     expect(body.items[0]).toMatchObject({ epoch: 42, status: "paid", paidAmount: "10000000" });
@@ -57,7 +57,7 @@ describe("BE-016 settlement per anggota dan per epoch", () => {
     expect(none.status).toBe(400);
   });
 
-  it("TC-BE-016-07 urutan epoch turun dan paginasi", async () => {
+  it("TC-BE-016-07 descending epoch order and pagination", async () => {
     const s = await fxServer(8);
     close = s.close;
     const ins = s.db.prepare(
@@ -74,7 +74,7 @@ describe("BE-016 settlement per anggota dan per epoch", () => {
     expect(second.nextCursor).toBeNull();
   });
 
-  it("TC-BE-016-08 anggota tidak ada", async () => {
+  it("TC-BE-016-08 member does not exist", async () => {
     const { res, body } = await get("/members/nobody.near/settlements", 8);
     expect(res.status).toBe(404);
     expect(body.error.code).toBe("member_not_found");
@@ -91,7 +91,7 @@ describe("BE-016 settlement per anggota dan per epoch", () => {
     expect(translator).toMatchObject({ role: "none", net: "0", status: null, amount: "0" });
   });
 
-  it("TC-BE-016-10 paginasi per epoch 4/2", async () => {
+  it("TC-BE-016-10 per-epoch pagination 4/2", async () => {
     const s = await fxServer(8);
     close = s.close;
     const first = await (await fetch(`${s.srv.url}${BASE}/epochs/42/settlements?limit=4`)).json();
@@ -101,13 +101,13 @@ describe("BE-016 settlement per anggota dan per epoch", () => {
     expect(second.nextCursor).toBeNull();
   });
 
-  it("TC-BE-016-11 epoch tidak ada", async () => {
+  it("TC-BE-016-11 epoch does not exist", async () => {
     const { res, body } = await get("/epochs/99/settlements", 8);
     expect(res.status).toBe(404);
     expect(body.error.code).toBe("epoch_not_found");
   });
 
-  it("filter status per epoch", async () => {
+  it("status filter per epoch", async () => {
     const { body } = await get("/epochs/42/settlements?status=due", 8);
     expect(body.items.map((i: { account: string }) => i.account)).toEqual([acct("cleaner"), acct("scraper")]);
   });

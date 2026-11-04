@@ -1,6 +1,6 @@
-// Penerimaan penawaran dan usulan bundle (BE-041, F9): terima -> `terms_hash` dihitung ulang dari listing + penawaran (SDK `planOffer`),
-// ditandatangani tiap peserta dengan kunci voucher (NEP-413, nonce = terms_hash). Bundle `ready` bila semua peserta sudah menandatangani;
-// pengiriman `commit_bundle` dilakukan solver/keeper, bukan backend. Dipisah dari `GET …/bundles` (BE-036) yang membaca bundle on-chain.
+// Acceptance of offers and bundle proposals (BE-041, F9): accept -> `terms_hash` is recomputed from listing + offer (SDK `planOffer`),
+// signed by each participant with the voucher key (NEP-413, nonce = terms_hash). The bundle is `ready` once all participants have signed;
+// the `commit_bundle` submission is done by the solver/keeper, not the backend. Separate from `GET …/bundles` (BE-036), which reads on-chain bundles.
 import type Database from "better-sqlite3";
 import {
   BarterFormatError, bundleFullySigned, bundleParticipants, planOffer, termsHash, validateBundleTerms, quickBarter, quickPay, serializeBundleTerms, verifyBundleSignature, type BundleSignature, type BundleTerms, type Listing,
@@ -46,7 +46,7 @@ interface MatchRow {
   matched_at_ms: bigint;
 }
 
-/** Listing dalam bentuk SDK dari baris D12, dipakai untuk menghitung ulang syarat. */
+/** Listing in SDK shape from the D12 row, used to recompute the terms. */
 export function listingFromRow(contractId: string, r: ListingRow): Listing {
   return {
     circle: contractId,
@@ -142,7 +142,7 @@ interface AcceptInput {
   searcherShareBps?: unknown;
 }
 
-/** Rencana penerimaan: epoch `open` saat ini, pencari tervalidasi, dan hasil `planOffer` (leg, `terms_hash`, diskon, jatah pencari). */
+/** Acceptance plan: current `open` epoch, validated searcher, and the `planOffer` result (legs, `terms_hash`, discount, searcher share). */
 async function planAccept(
   db: Database.Database, circle: { circle_id: string; contract_id: string }, listingRow: ListingRow, offerRow: OfferRow, input: AcceptInput,
   openEpoch: OpenEpochResolver,
@@ -152,7 +152,7 @@ async function planAccept(
   if (input.epoch !== undefined && input.epoch !== open) throw new ApiError(409, "epoch_not_open", "Bundle must be for the current open epoch", { expected: open, got: input.epoch as number });
   if (input.searcher !== undefined && typeof input.searcher !== "string") throw invalidRequest("searcher must be a string");
   if (input.searcherShareBps !== undefined && !Number.isSafeInteger(input.searcherShareBps)) throw invalidRequest("searcherShareBps must be an integer");
-  // Tanpa pencari di body, ajakan yang melekat pada utas (BE-044) menentukan pencari dan jatahnya
+  // Without a searcher in the body, the referral attached to the thread (BE-044) determines the searcher and its share
   const referral = input.searcher === undefined ? threadReferral(db, circle.circle_id, offerRow) : undefined;
   const searcher = (input.searcher as string | undefined) ?? referral?.seeker;
   const shareBps = referral ? (input.searcherShareBps as number | undefined) ?? Number(referral.searcher_share_bps) : (input.searcherShareBps as number | undefined);
@@ -254,7 +254,7 @@ export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver(),
     },
   },
   {
-    // Pratinjau penerimaan tanpa menyimpan apa pun: angka akhir dan pesan yang akan ditandatangani (FE-020).
+    // Acceptance preview without storing anything: the final numbers and the message to be signed (FE-020).
     method: "POST",
     pattern: "/x207/circles/{circle}/listings/{hash}/offers/{offerHash}/preview",
     circleScoped: true,
@@ -291,8 +291,8 @@ export function bundleRoutes(openEpoch: OpenEpochResolver = openEpochResolver(),
     },
   },
   {
-    // Usulan dari solver (SV-011): syarat cincin atau pasangan listing tanpa kecocokan di buku. Server menghitung ulang `terms_hash`,
-    // memeriksa epoch open dan bahwa semua peserta anggota aktif; peserta lalu menandatangani lewat `…/signatures` seperti biasa.
+    // Proposal from a solver (SV-011): ring terms or a listing pair with no match in the book. The server recomputes `terms_hash`,
+    // checks the epoch is open and that all participants are active members; participants then sign through `…/signatures` as usual.
     method: "POST",
     pattern: "/x207/circles/{circle}/bundle-proposals",
     circleScoped: true,

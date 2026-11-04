@@ -19,8 +19,8 @@ export interface EpochRow {
 }
 
 /**
- * D9 menyimpan empat fase. `cutoff` (open lewat `cutoff_at`) dan `commit` (clearing lewat
- * `proposal_deadline`) diturunkan dari waktu saat dibaca (Spec Skema D9 3.4, K-41).
+ * D9 stores four phases. `cutoff` (open past `cutoff_at`) and `commit` (clearing past
+ * `proposal_deadline`) are derived from the time at read (Spec Skema D9 3.4, K-41).
  */
 export function derivedPhase(e: EpochRow, nowNs: bigint): string {
   if (e.phase === "open" && e.cutoff_at_ns !== null && nowNs >= e.cutoff_at_ns) return "cutoff";

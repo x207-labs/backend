@@ -1,6 +1,6 @@
-// Buku intent barter off-chain (BE-035, D8): `POST/GET /x207/circles/{circle}/intents`.
-// Hash intent dihitung ulang dari isi (SD-047); backend tidak mengirim transaksi, jadi `post_intent` dikembalikan sebagai
-// argumen panggilan untuk anggota, dan status on-chain dibaca dari event `intent_posted` di `events_raw`.
+// Off-chain barter intent book (BE-035, D8): `POST/GET /x207/circles/{circle}/intents`.
+// The intent hash is recomputed from the content (SD-047); the backend does not send transactions, so `post_intent` is returned as
+// call arguments for the member, and the on-chain status is read from the `intent_posted` event in `events_raw`.
 import type Database from "better-sqlite3";
 import { BarterFormatError, intentHash, intentHashBase58, validateIntent, verifyIntentSignature, type BarterIntent } from "@x207/core";
 import { ApiError, invalidRequest } from "../api/errors.js";
