@@ -140,6 +140,30 @@ describe("BE-057 P2 provider access: one interface, mock provider, revoke_pendin
     expect(await manager.settleDay(g3, midday)).toEqual({ amount: 1_500_000n, overCap: false });
   });
 
+  it("TC-BE-057-X2 two grants for the same thing paid at the same moment: the second is refused before it reaches the provider, and the key is free again if the first fails (X-2)", async () => {
+    const adapter = new MockProviderAdapter({ now: () => clock.now });
+    adapter.sharedKey = ({ granteeRef, resource }) => `${granteeRef}|${resource ?? ""}`;
+    let fail = true;
+    const open = adapter.grant.bind(adapter);
+    const calls: number[] = [];
+    adapter.grant = async (request) => {
+      calls.push(request.grantId);
+      await new Promise((resolve) => setTimeout(resolve, 20)); // the provider takes its time; no row exists yet
+      if (fail && request.grantId === 1) throw new Error("provider down");
+      return open(request);
+    };
+    const { manager } = setup({ adapter });
+    const [a, b] = await Promise.allSettled([manager.grantAccess(input({}, 1)), manager.grantAccess(input({}, 2))]);
+    expect(a.status).toBe("rejected");
+    expect(b).toMatchObject({ status: "rejected", reason: { code: "access_conflict" } });
+    expect(calls).toEqual([1]); // the second never reached the provider
+    fail = false; // the reservation was given back: the second can be opened now
+    expect((await manager.grantAccess(input({}, 2))).access.status).toBe("active");
+    const [c, d] = await Promise.allSettled([manager.grantAccess(input({}, 3)), manager.grantAccess(input({}, 4))]);
+    expect([c.status, d.status]).toEqual(["rejected", "rejected"]); // grant 2 holds the key now
+    expect(adapter.entries.size).toBe(1);
+  });
+
   it("TC-BE-078-P2 two paid first requests at once open ONE access at the provider: the second waits and renews the handle of the first (B7-P2)", async () => {
     const adapter = new MockProviderAdapter({ now: () => clock.now });
     const calls: Array<string | null> = [];

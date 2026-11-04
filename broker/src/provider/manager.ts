@@ -90,6 +90,8 @@ export class ProviderAccessManager {
   /** B7-P2: the call of `grantAccess` that is running for each grant, so that the next one waits for it. */
   readonly #granting = new Map<number, Promise<void>>();
   readonly #proving = new Set<number>();
+  /** X-2: shared keys that a grant is opening right now (the row is written only after the provider answered). */
+  readonly #opening = new Map<string, number>();
 
   constructor(options: ManagerOptions) {
     this.#store = options.store;
@@ -271,18 +273,28 @@ export class ProviderAccessManager {
         `SELECT k.grant_id FROM provider_shared_keys k JOIN provider_access a ON a.grant_id = k.grant_id WHERE k.key = ? AND k.grant_id <> ? AND a.status IN ('active','revoke_pending') LIMIT 1`,
       ).get(key, grant.grant_id) as { grant_id: number } | undefined;
       if (other) throw new ProviderAccessError("access_conflict", `grant ${other.grant_id} already opened the same access (${scope.provider}, ${scope.grantee_ref}); wait until it ends`);
+      // X-2: the check above read the rows, and the row of a grant is written only after the provider answered, so two grants with the same key paid at the same moment both passed. The key is
+      // reserved here, in the same step as the check (no await between them), and given back when the grant ends, whether it worked or not.
+      const opening = this.#opening.get(key);
+      if (opening !== undefined && opening !== grant.grant_id) throw new ProviderAccessError("access_conflict", `grant ${opening} is opening the same access (${scope.provider}, ${scope.grantee_ref}); wait until it ends`);
+      this.#opening.set(key, grant.grant_id);
     }
+    const release = (): void => {
+      if (key !== null && this.#opening.get(key) === grant.grant_id) this.#opening.delete(key);
+    };
     let result: ProviderGrantResult;
     try {
       result = await adapter.grant({ grantId: grant.grant_id, granteeRef: scope.grantee_ref, resource: scope.resource, permission: scope.permission, expiresAtMs: paidUntil, existingHandle: (stale ? undefined : existing?.handle) ?? null });
     } catch (error) {
       // a refusal that the adapter names itself (a vote kind that is not for rent) keeps its code
+      release();
       if (error instanceof ProviderAccessError) throw error;
       throw new ProviderAccessError("provider_grant_failed", redactString((error as Error).message));
     }
     if (adapter.nativeExpiry && (result.nativeExpiresAtMs === null || result.nativeExpiresAtMs > paidUntil)) {
       // do not leave an access that outlives the rent
       await adapter.revoke(result.handle).catch(() => undefined);
+      release();
       throw new ProviderAccessError("native_expiry_required", `provider ${scope.provider} has a native expiry but does not set it up to ${new Date(paidUntil).toISOString()}`);
     }
     const access: ProviderAccess = {
@@ -296,6 +308,7 @@ export class ProviderAccessManager {
     // a secret that the provider shows once is pending until `confirmDelivery`: the answer that carries it has to go out
     if (adapter.oneTimeKey === true && result.delivery.key !== null && result.delivery.key !== undefined) this.#store.db.prepare("INSERT OR IGNORE INTO provider_delivery_pending (grant_id) VALUES (?)").run(grant.grant_id);
     if (key !== null) this.#store.db.prepare("INSERT INTO provider_shared_keys (grant_id, key) VALUES (?, ?) ON CONFLICT (grant_id) DO UPDATE SET key = excluded.key").run(grant.grant_id, key);
+    release();
     this.#log?.(`provider access grant=${grant.grant_id} provider=${scope.provider} ref=${scope.grantee_ref} until=${new Date(paidUntil).toISOString()}`);
     return { access, delivery: result.delivery, warnings };
   }
