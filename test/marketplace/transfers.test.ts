@@ -281,6 +281,9 @@ describe("BE-074 the transfer ledger", () => {
     const after = await rep();
     expect(after.completed.counterparties).toBe(2); // budi (ticket) and citra (file)
     expect(after.disputes).toEqual({ transactions: 0, counterparties: 0 }); // budi has paid nobody (his voucher is held): his dispute does not count
+    const sales = (await rep()).completed.transactions;
+    insert("budi", "refuted", 4); // the proof of cheating of the buyer was false: the seller is paid and it counts for him (budi is already a counterparty)
+    expect((await rep()).completed).toEqual({ transactions: sales + 1, counterparties: 2 });
     insert("citra", "disputed", 3);
     expect((await rep()).disputes).toEqual({ transactions: 1, counterparties: 1 }); // citra paid budi: hers does
   });

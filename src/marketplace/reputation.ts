@@ -180,11 +180,11 @@ export function reputationOf(db: Database.Database, circleId: string, account: s
   const inv = invoiceRecordOf(db, circleId, account);
   // BE-069: a one-time code that the buyer confirmed (or that was confirmed by silence) is a completed sale; a complaint of a buyer about a code (`other`, `contains_pii`, "used" without a proof of cheating)
   // is counted against the seller, one per purchase and once per buyer, and only from a buyer that has paid somebody itself
-  // BE-078: every confirmed sale counts as completed, whatever it sold: a file license (BE-056), a code (BE-069) or a transfer through a platform (BE-074). A purchase that ended `disputed` (a proof
+  // BE-078: every confirmed sale counts as completed (`refuted` too: the complaint of the buyer was proved false and the seller is paid), whatever it sold: a file license (BE-056), a code (BE-069) or a transfer through a platform (BE-074). A purchase that ended `disputed` (a proof
   // of cheating, or a code that was not delivered) is a dispute of that buyer, and a transfer that was cancelled because the window passed without the transfer is a failure of the seller
   // (`abandoned`). The same rule as for the other disputes: one count per counterparty, and only from a buyer that has paid somebody itself.
   const codeSales = [
-    ...rows<{ buyer: string }>(db, "SELECT buyer FROM purchases WHERE circle_id = ? AND seller = ? AND status = 'confirmed'", circleId, account),
+    ...rows<{ buyer: string }>(db, "SELECT buyer FROM purchases WHERE circle_id = ? AND seller = ? AND status IN ('confirmed','refuted')", circleId, account),
     ...rows<{ buyer: string }>(db, "SELECT buyer FROM transfers WHERE circle_id = ? AND seller = ? AND status = 'confirmed'", circleId, account),
   ].map((r) => r.buyer);
   const purchaseDisputes = rows<{ buyer: string }>(db, "SELECT buyer FROM purchases WHERE circle_id = ? AND seller = ? AND status = 'disputed'", circleId, account).map((r) => r.buyer).filter((b) => hasPaidSomebody(db, circleId, b));
