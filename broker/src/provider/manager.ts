@@ -86,6 +86,8 @@ export class ProviderAccessManager {
   readonly #circle: string;
   readonly #voucherKeyOf: ((account: string) => Promise<string | null>) | undefined;
   /** Grants whose proof is being checked right now. */
+  /** B7-P2: the call of `grantAccess` that is running for each grant, so that the next one waits for it. */
+  readonly #granting = new Map<number, Promise<void>>();
   readonly #proving = new Set<number>();
 
   constructor(options: ManagerOptions) {
@@ -171,6 +173,25 @@ export class ProviderAccessManager {
    * and the call fails (`native_expiry_required`), because an access that the provider would keep open past the rent is not safe.
    */
   async grantAccess(grant: ProviderGrantInput, days = 1, proof: string | null = null): Promise<{ access: ProviderAccess; delivery: Record<string, unknown>; warnings: string[] }> {
+    // B7-P2: one call per grant at a time. Two paid first requests at once both saw no access and both opened one at the provider (two OpenRouter keys, one remembered, the other alive after the rent);
+    // now the second waits and finds the access of the first, so it is a renewal of the same handle
+    const before = this.#granting.get(grant.grant_id) ?? Promise.resolve();
+    let open!: () => void;
+    const turn = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const mine = before.then(() => turn);
+    this.#granting.set(grant.grant_id, mine);
+    await before;
+    try {
+      return await this.#grantAccessNow(grant, days, proof);
+    } finally {
+      open();
+      if (this.#granting.get(grant.grant_id) === mine) this.#granting.delete(grant.grant_id);
+    }
+  }
+
+  async #grantAccessNow(grant: ProviderGrantInput, days: number, proof: string | null): Promise<{ access: ProviderAccess; delivery: Record<string, unknown>; warnings: string[] }> {
     const scope: ProviderScope = parseProviderScope(grant.limits.scope);
     const adapter = this.#adapter(scope.provider);
     const check = await adapter.verifyGranteeRef(scope.grantee_ref);

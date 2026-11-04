@@ -116,6 +116,22 @@ describe("BE-057 P2 provider access: one interface, mock provider, revoke_pendin
     await expect(manager.settleDay(input({}, 77), NOW)).rejects.toMatchObject({ code: "access_not_found" });
   });
 
+  it("TC-BE-078-P2 two paid first requests at once open ONE access at the provider: the second waits and renews the handle of the first (B7-P2)", async () => {
+    const adapter = new MockProviderAdapter({ now: () => clock.now });
+    const calls: Array<string | null> = [];
+    const open = adapter.grant.bind(adapter);
+    adapter.grant = async (request) => {
+      calls.push(request.existingHandle ?? null);
+      await new Promise((resolve) => setTimeout(resolve, 20)); // the provider takes its time: without the wait both calls are inside it
+      return open(request);
+    };
+    const { manager } = setup({ adapter });
+    const [a, b] = await Promise.all([manager.grantAccess(input()), manager.grantAccess(input())]);
+    expect(calls).toEqual([null, "mock-1"]);
+    expect(a.access.handle).toBe(b.access.handle);
+    expect(adapter.entries.size).toBe(1);
+  });
+
   it("TC-BE-057-07 revokeAccess closes at once, is safe twice, and a revoked access cannot be granted again", async () => {
     const { manager, adapter } = setup();
     await manager.grantAccess(input());

@@ -94,12 +94,13 @@ describe("BE-057 fix B4-F5, B4-F6, B4-F7", () => {
       t.store.close();
     });
 
-    it("two proofs for one grant at the same time: the second is told to wait, not checked twice", async () => {
+    it("two proofs for one grant at the same time: the second waits for the first and is a renewal of the same access, not a second proof and not a second access (B7-P2)", async () => {
       const t = setup();
       t.challenge();
       t.step.answer = "ok";
       const [a, b] = await Promise.allSettled([t.m.grantAccess(t.g, 1, t.proof), t.m.grantAccess(t.g, 1, t.proof)]);
-      expect([a.status, b.status].sort()).toEqual(["fulfilled", "rejected"]);
+      expect([a.status, b.status]).toEqual(["fulfilled", "fulfilled"]);
+      expect((a as PromiseFulfilledResult<{ access: { handle: string } }>).value.access.handle).toBe((b as PromiseFulfilledResult<{ access: { handle: string } }>).value.access.handle);
       t.store.close();
     });
   });
