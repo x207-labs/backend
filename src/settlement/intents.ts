@@ -15,12 +15,12 @@ export function rpcViewFunction(rpcUrl: string): ViewFunction {
 export type SimulationResult = { ok: true; result: unknown } | { ok: false; code: "simulation_failed"; message: string };
 
 /**
- * `simulate_intents` view on `intents.near`: no funds, no transaction. A successful result is returned as
+ * `simulate_intents` view on `intents.near` (or the Verifier named by `verifier`, for near-sandbox): no funds, no transaction. A successful result is returned as
  * is; a view error is mapped to `simulation_failed` (internal code, not HTTP).
  */
-export async function simulateIntents(view: ViewFunction, signed: unknown[]): Promise<SimulationResult> {
+export async function simulateIntents(view: ViewFunction, signed: unknown[], verifier: string = INTENTS_CONTRACT): Promise<SimulationResult> {
   try {
-    return { ok: true, result: await view(INTENTS_CONTRACT, "simulate_intents", { signed }) };
+    return { ok: true, result: await view(verifier, "simulate_intents", { signed }) };
   } catch (error) {
     return { ok: false, code: "simulation_failed", message: error instanceof Error ? error.message : String(error) };
   }

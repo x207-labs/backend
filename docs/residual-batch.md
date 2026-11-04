@@ -18,6 +18,21 @@ The intent tag is `"intent":"transfer"`; `Transfer` has `receiver_id`, `tokens`,
 payload has `signer_id`, `verifying_contract`, `deadline`, base64 `nonce`; a nonce of 32 bytes is `magic 5628f6c6 || version || salt || deadline
 || 15 random bytes`; `execute_intents` panics on any error, so the Intents balances move all or nothing.
 
+## Run against the real Intents contract in near-sandbox (BE-034, CT-103)
+`tests/residual-batch.sandbox.test.ts` of the umbrella runs the wasm of `intents.near` from mainnet (`contracts/scripts/fetch-intents-wasm.sh`, sha256 checked) as the `intents_id` of a circle. Three net debtors (12, 9 and 7 credit) owe one creditor, and the test follows the balances at each step:
+1. Each debtor deposits its residual to Intents (`ft_transfer_call` with its own account as `msg`: a multi-token balance) and registers the ed25519 key that will sign (`add_public_key`, 1 yocto).
+2. `planResidualBatches` makes one `transfer` per debtor (receiver = the circle, token `nep141:<usdt>`, `msg` = `{"action":"settle","epoch":N}`); each debtor signs its own transfer.
+3. `runResidualBatch` in `live` mode checks every payload, `simulate_intents` passes on the real Verifier (a payload whose signed text was changed is refused there: nothing moves), then the relayer sends ONE `execute_intents`.
+4. Result: the three balances of the debtors at Intents are 0, the circle holds 28 credit at Intents, `intents_balance` of the circle says 28, the NEP-141 balance of the circle did not change, and the three positions are `paid` (each `mt_on_transfer` is its own receipt; the worker reconciles from `list_positions`).
+5. After `finalize_epoch`, `withdraw_intents_balance` brings the 28 credit to the NEP-141 account of the circle (`intents_balance` 0, balance at Intents 0) and the creditor claims them.
+
+**The signature flow of N debtors.** Every debtor signs its own payload; there is no joint signature. The worker collects N `MultiPayload` and sends them in one `execute_intents(signed)`; it holds no key. A payload (verified against the real Verifier):
+- `{"standard": "nep413", "payload": {"message": <JSON text>, "nonce": <base64, 32 bytes>, "recipient": <the Verifier account>}, "public_key": "ed25519:…", "signature": "ed25519:…"}`;
+- the signature is ed25519 over the NEP-413 hash of `message`, `nonce` and `recipient` (`nep413SigningHash` of the SDK, `callback_url` none), by a key that the debtor registered at Intents with `add_public_key`;
+- `message` = `{"signer_id": <debtor>, "verifying_contract": <Verifier>, "deadline": <ISO time>, "nonce": <the same base64>, "intents": [<the transfer>]}`;
+- the nonce is a versioned one (near/intents `nonce/versioned.rs`): `5628f6c6 ‖ 00 ‖ salt (4 bytes, view `current_salt`) ‖ deadline (8 bytes, a borsh i64 of nanoseconds, little endian) ‖ 15 random bytes`. The deadline inside the nonce must not be before the `deadline` of the message (`deadline is greater than nonce` otherwise).
+`simulateIntents` takes the Verifier from the run (`verifier`), not only `intents.near`, so the same code runs on the sandbox account.
+
 ## Not verified or not built, so BE-034 stays partial
 1. The circle has `mt_on_transfer` since interface 0.0.9 (spec 18, contracts `35dfca5`, sandbox test `tests/be034_mt_on_transfer.rs` against a
    mock multi-token). The USDT of such a payment stays a multi-token balance at Intents until someone calls `withdraw_intents_balance`
@@ -27,8 +42,7 @@ payload has `signer_id`, `verifying_contract`, `deadline`, base64 `nonce`; a non
    with the amount of the batch, `mock` calls the injected `withdraw` after the deliveries for what the circle kept (transfers minus refunds of the
    debtors that were paid). A run on a real circle is still to be done; the sandbox test uses a mock Intents that holds balances.
 2. The status `paid` is not atomic across debtors even then: each `mt_on_transfer` is its own receipt (CT-058).
-3. The NEP-413 wrapper of `MultiPayload` (`standard`, `payload`, `public_key`, `signature`) and the encoding of the nonce `deadline` were not
-   checked against a live Verifier. The module reads only the signed `message`; the signer (agent or SDK) builds the nonce and signs.
+3. The NEP-413 wrapper of `MultiPayload` and the nonce are now checked against the real Verifier in near-sandbox (see above); not on mainnet. The module reads only the signed `message`; the signer (agent or SDK) builds the nonce and signs.
 4. How many debtors fit in one 300 Tgas call is not measured; 5 is a guess.
 5. A run on mainnet needs the owner; `intents.testnet` has no code. Nothing here sends a transaction in `dry` or `mock`.
 

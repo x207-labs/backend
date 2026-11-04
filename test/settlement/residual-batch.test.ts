@@ -195,3 +195,15 @@ describe("BE-034 run", () => {
     expect((failing as { outcomes: unknown[] }).outcomes).toHaveLength(3);
   });
 });
+
+// BE-034: the Verifier of the simulation is the one of the run (near-sandbox has its own account, not `intents.near`)
+describe("BE-034 simulate_intents on the named Verifier", () => {
+  it("TC-BE-034-21 simulateIntents asks the Verifier it is given, and intents.near when it is given none", async () => {
+    const { simulateIntents } = await import("../../src/settlement/intents.js");
+    const asked: string[] = [];
+    const view = async (contract: string) => { asked.push(contract); return {}; };
+    await simulateIntents(view, []);
+    await simulateIntents(view, [], "intents.test.near");
+    expect(asked).toEqual(["intents.near", "intents.test.near"]);
+  });
+});

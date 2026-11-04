@@ -168,7 +168,7 @@ export async function runResidualBatch(batch: readonly ResidualTransfer[], optio
   }
   if (problems.length > 0) return { status: "rejected", problems };
 
-  const simulation = await simulateIntents(options.view, signed);
+  const simulation = await simulateIntents(options.view, signed, options.verifier);
   if (!simulation.ok) return { status: "simulation_failed", message: simulation.message };
   const violation = (simulation.result as { invariant_violated?: unknown } | null)?.invariant_violated;
   if (violation !== null && violation !== undefined) return { status: "invariant_violated", violation };
