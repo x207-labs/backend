@@ -66,9 +66,13 @@ describe("BE-056 license handover: fair exchange with encryption", () => {
   }
 
   let seq = 0;
+  /** Purchases of each buyer so far: the vouchers of a pair add up (B7-C3), so every voucher carries the cumulative of all of them. */
+  const bought = new Map<string, number>();
   /** The voucher of the buyer for the price of the listing, signed by `who`. */
   function buy(m: Market, s: Awaited<ReturnType<typeof sell>>, who = "budi") {
-    const v: UnsignedVoucher = { circle: CONTRACT, payer: acct(who), payee: acct("andi"), epoch: 42, seq: ++seq, cumulativeAmount: C(50), unit: "credit", resource: licenseResource(s.docHash) };
+    const count = (bought.get(`${who}:${m.keys.andi!.publicKey}`) ?? 0) + 1;
+    bought.set(`${who}:${m.keys.andi!.publicKey}`, count);
+    const v: UnsignedVoucher = { circle: CONTRACT, payer: acct(who), payee: acct("andi"), epoch: 42, seq: ++seq, cumulativeAmount: C(50 * count), unit: "credit", resource: licenseResource(s.docHash) };
     return m.post(`/listings/${s.hash}/purchases`, { voucher: v, signature: signVoucher(v, m.keys[who]!.secretKey).signature });
   }
   const at = (m: Market) => Math.floor(m.clock.now / 1000);
@@ -105,6 +109,24 @@ describe("BE-056 license handover: fair exchange with encryption", () => {
     expect((await buy(m, listings[2]!, "citra")).status).toBe(201); // another buyer
     expect((await buyerNotice(m, first.json.purchase_id, "cancelled", "andi")).status).toBe(201); // the seller cancels
     expect((await buy(m, listings[2]!)).status).toBe(201); // a place is free again
+  });
+
+  it("TC-BE-078-C3 two purchases from one seller cannot be paid with one voucher: the held vouchers of the pair are part of the state (B7-C3)", async () => {
+    files.clear();
+    const m = (market = await startMarket(["andi", "budi"], [], undefined, { sourceFetch: { resolver, transport } }));
+    openEpoch(m, 42);
+    const a = await sell(m, { plain: "file c3a", nonce: "c3a" });
+    const b = await sell(m, { plain: "file c3b", nonce: "c3b" });
+    const pay = (s: typeof a, seqNo: number, cumulative: string) => {
+      const v: UnsignedVoucher = { circle: CONTRACT, payer: acct("budi"), payee: acct("andi"), epoch: 42, seq: seqNo, cumulativeAmount: cumulative, unit: "credit", resource: licenseResource(s.docHash) };
+      return m.post(`/listings/${s.hash}/purchases`, { voucher: v, signature: signVoucher(v, m.keys.budi!.secretKey).signature });
+    };
+    expect((await pay(a, 1, C(50))).status).toBe(201);
+    const same = await pay(b, 2, C(50)); // the contract would take a delta of 0 for it
+    expect([same.status, same.json.error.code]).toEqual([400, "invalid_request"]);
+    const older = await pay(b, 1, C(100)); // the seq does not rise
+    expect(older.status).toBe(400);
+    expect((await pay(b, 2, C(100))).status).toBe(201);
   });
 
   it("TC-BE-056-01 a listing needs a license_id from the list; a preview with an email, a NIK or a card number is refused; a clean preview and a hash that does not match are checked", async () => {

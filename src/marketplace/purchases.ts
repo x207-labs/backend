@@ -484,8 +484,18 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
         if (open === null || v.epoch !== open) throw new ApiError(409, "epoch_not_open", "Voucher must be for the current open epoch", { expected: open, got: v.epoch });
         const state = row<{ seq: bigint; cumulative_amount: bigint }>(db, "SELECT seq, cumulative_amount FROM obligations WHERE circle_id = ? AND epoch = ? AND debtor = ? AND creditor = ?", circle.circle_id, v.epoch, v.payer, v.payee);
         const price = BigInt(listing.offer_value);
-        if (BigInt(v.seq) <= (state?.seq ?? 0n) || BigInt(v.cumulativeAmount) - (state?.cumulative_amount ?? 0n) < price) {
-          throw invalidRequest("voucher must continue the pair state (seq increases) and add at least the listing price", { price: price.toString() });
+        // B7-C3: the vouchers of this pair that other purchases hold and the seller has not registered yet are part of the state: the contract takes only the delta over the highest
+        // cumulative, so a second voucher with the same cumulative would pay nothing
+        let baseSeq = state?.seq ?? 0n;
+        let baseCumulative = state?.cumulative_amount ?? 0n;
+        for (const held of rows<{ voucher_json: string }>(db, "SELECT voucher_json FROM purchases WHERE circle_id = ? AND buyer = ? AND seller = ? AND status <> 'cancelled'", circle.circle_id, v.payer, v.payee)) {
+          const h = JSON.parse(held.voucher_json) as UnsignedVoucher;
+          if (h.epoch !== v.epoch) continue;
+          if (BigInt(h.seq) > baseSeq) baseSeq = BigInt(h.seq);
+          if (BigInt(h.cumulativeAmount) > baseCumulative) baseCumulative = BigInt(h.cumulativeAmount);
+        }
+        if (BigInt(v.seq) <= baseSeq || BigInt(v.cumulativeAmount) - baseCumulative < price) {
+          throw invalidRequest("voucher must continue the pair state (seq increases, counting the vouchers that purchases still hold) and add at least the listing price", { price: price.toString() });
         }
         // exclusivity per content hash: an exclusive license excludes every other, and nothing is sold exclusively while another license of that content is alive
         const clash = row<{ n: bigint }>(
