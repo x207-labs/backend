@@ -3,7 +3,7 @@ import { appendFileSync } from "node:fs";
 /** One line of the audit log. It names what happened and to which grant; it never holds a secret, a header or a body. */
 export interface AuditEntry {
   at: string;
-  kind: "proxy_call" | "proxy_refused" | "secret_rotated" | "lease_closed";
+  kind: "proxy_call" | "unbilled_call" | "proxy_refused" | "secret_rotated" | "lease_closed";
   grantId?: number;
   assetType?: string;
   method?: string;

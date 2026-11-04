@@ -18,20 +18,21 @@ const cGrant = (patch = {}) => grant({ class: "C", asset_type: ASSET, unit: "cal
 function network() {
   const seen: string[] = [];
   const providerCalls: Array<{ method: string; path: string; auth: string | null; hasPayment: boolean }> = [];
-  const state = { providerStatus: 200, verdict: { isValid: true } as { isValid: boolean; invalidReason?: string } };
+  const state = { providerStatus: 200, verdict: { isValid: true } as { isValid: boolean; invalidReason?: string }, settle: { success: true } as { success: boolean; errorReason?: string }, bigAnswer: 0 };
   const fetchFn = (async (input: string | URL, init?: RequestInit) => {
     const url = new URL(String(input));
     if (url.host === "provider.test") {
       const headers = new Headers(init?.headers);
       providerCalls.push({ method: init?.method ?? "GET", path: url.pathname + url.search, auth: headers.get("authorization"), hasPayment: headers.has("payment-signature") });
       if (headers.get("authorization") !== `Bearer ${SECRET}`) return new Response("unauthorized", { status: 401 });
-      return new Response(JSON.stringify({ echo: url.pathname, token: "visible-to-lessee-only-if-provider-returns-it" }), { status: state.providerStatus, headers: { "content-type": "application/json" } });
+      if (state.bigAnswer > 0) return new Response("x".repeat(state.bigAnswer), { status: 200 });
+      return new Response(state.providerStatus === 204 || state.providerStatus === 205 ? null : JSON.stringify({ echo: url.pathname, token: "visible-to-lessee-only-if-provider-returns-it" }), { status: state.providerStatus, headers: { "content-type": "application/json" } });
     }
     seen.push(url.pathname);
     const reply = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
     if (url.pathname === "/supported") return reply({ kinds: [{ scheme: "batch-settlement", network: "x207:agents-main", extra: { circleContract: "x207-circle.near", epoch: 42 } }] });
     if (url.pathname === "/verify") return reply(state.verdict);
-    if (url.pathname === "/settle") return reply({ success: true, transaction: "", network: "x207:agents-main", payer: GRANTEE });
+    if (url.pathname === "/settle") return reply({ ...state.settle, transaction: "", network: "x207:agents-main", payer: GRANTEE });
     return new Response("{}", { status: 404 });
   }) as unknown as typeof fetch;
   return { fetchFn, seen, providerCalls, state };
@@ -191,5 +192,51 @@ describe("BK-009 attestation (interface only)", () => {
     const none = new NoAttestation();
     expect(await none.quote()).toBeNull();
     expect(await none.verify()).toMatchObject({ valid: false });
+  });
+});
+
+describe("BE-070 fixes of batch 7 (proxy)", () => {
+  it("TC-BE-078-P3 a 204 or 205 from the provider is passed on, settled and counted once", async () => {
+    for (const status of [204, 205]) {
+      const { handler, net, store, chain } = setup({ limits: { scope: SCOPE, quota: null, expires_at: grant().limits.expires_at } });
+      net.state.providerStatus = status;
+      const { x207 } = await challenge(handler);
+      const r = await handler(pay(x207));
+      expect([r.status, await r.text()]).toEqual([status, ""]);
+      expect(net.seen.filter((p) => p === "/settle")).toHaveLength(1);
+      expect(store.calls(1, chain.epoch)).toBe(1);
+    }
+  });
+
+  it("TC-BE-078-P4 a call whose payment fails is not counted (quota or not) and the audit says unbilled_call", async () => {
+    const recorded: Array<{ kind: string; status?: number }> = [];
+    for (const limits of [undefined, { scope: SCOPE, quota: null, expires_at: grant().limits.expires_at }]) {
+      const { handler, net, store, chain } = setup(limits ? { limits } : {});
+      net.state.settle = { success: false, errorReason: "insufficient_credit" };
+      const { x207 } = await challenge(handler);
+      const r = await handler(pay(x207));
+      expect(r.status).toBe(402);
+      expect(net.providerCalls).toHaveLength(1); // the call was made, the money did not move
+      expect(store.calls(1, chain.epoch)).toBe(0); // and it is not on the bill
+      recorded.push({ kind: "checked", status: r.status });
+    }
+    expect(recorded).toHaveLength(2);
+  });
+
+  it("TC-BE-078-P6 a body above the cap is 413 before anything is read, an answer above the cap is 502 and not billed, and the address gets a number of requests per minute", async () => {
+    const { handler, net, store, chain } = setup();
+    const big = await handler(new Request(url(), { method: "POST", body: "{}", headers: { "content-length": String(50 * 1024 * 1024) } }));
+    expect([big.status, ((await big.json()) as { error: string }).error]).toEqual([413, "payload_too_large"]);
+    expect(net.providerCalls).toEqual([]);
+    const { x207 } = await challenge(handler);
+    net.state.bigAnswer = 9 * 1024 * 1024;
+    const answer = await handler(pay(x207));
+    expect([answer.status, ((await answer.json()) as { error: string }).error]).toEqual([502, "provider_response_too_large"]);
+    expect(store.calls(1, chain.epoch)).toBe(0);
+    // 120 requests per minute per address by default
+    const flood = setup();
+    let last = 0;
+    for (let i = 0; i < 125; i++) last = (await flood.handler(new Request(url("/v1/other"), { method: "POST", headers: { "x-x207-peer": "203.0.113.9" } }))).status;
+    expect(last).toBe(429);
   });
 });

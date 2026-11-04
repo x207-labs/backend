@@ -53,7 +53,7 @@ export function createBrokerHandler(options: BrokerServerOptions): (request: Req
         brokerAccount: options.brokerAccount, extra, creditPrice, ...(options.fetch ? { fetch: options.fetch } : {}),
       })
     : undefined;
-  const usage = options.proxy ? createUsageHandler({ dispatcher: options.dispatcher, classC: options.proxy.classC, store: options.proxy.store }) : undefined;
+  const usage = options.proxy ? createUsageHandler({ dispatcher: options.dispatcher, classC: options.proxy.classC, store: options.proxy.store, ...(options.proxy.limits ? { limits: options.proxy.limits } : {}) }) : undefined;
   const providerRoutes = options.provider
     ? createProviderRoutes({
         ...options.provider, dispatcher: options.dispatcher, facilitatorUrl: options.facilitatorUrl, circleId: options.circleId, brokerAccount: options.brokerAccount, extra, creditPrice,
@@ -136,17 +136,29 @@ export function serve(handler: (request: Request) => Promise<Response>, port = 0
     for (const [name, value] of Object.entries(req.headers)) if (value !== undefined) headers.set(name, Array.isArray(value) ? value.join(", ") : value);
     // the address of the peer for the rate limit; a header with this name sent by the caller is overwritten
     headers.set("x-x207-peer", req.socket.remoteAddress ?? "unknown");
-    const request = new Request(`http://${req.headers.host ?? "localhost"}${req.url ?? "/"}`, {
-      method: req.method ?? "GET", headers, ...(req.method === "GET" || req.method === "HEAD" ? {} : { body: Readable.toWeb(req) as never, duplex: "half" } as object),
-    });
+    // B7-P5: nothing a caller sends may throw outside the `try`: a method that fetch refuses (TRACE, CONNECT), a Host that is not a host, a target that is not a path. The URL is fixed
+    // (`http://localhost`) and only the path and the query of the request line are taken from the caller
     let response: Response;
     try {
-      response = await handler(request);
+      const method = req.method ?? "GET";
+      const target = req.url ?? "/";
+      if (["TRACE", "TRACK", "CONNECT"].includes(method.toUpperCase())) response = json(405, { error: "method_not_allowed", message: `${method} is not supported` });
+      else if (!target.startsWith("/") || target.startsWith("//")) response = json(400, { error: "bad_request", message: "the request target must be a path" });
+      else {
+        const request = new Request(`http://localhost${target}`, {
+          method, headers, ...(method === "GET" || method === "HEAD" ? {} : { body: Readable.toWeb(req) as never, duplex: "half" } as object),
+        });
+        response = await handler(request);
+      }
     } catch (error) {
-      response = json(500, { error: "internal", message: (error as Error).message });
+      response = json(error instanceof TypeError ? 400 : 500, { error: error instanceof TypeError ? "bad_request" : "internal", message: (error as Error).message });
     }
-    res.writeHead(response.status, Object.fromEntries(response.headers));
-    res.end(Buffer.from(await response.arrayBuffer()));
+    try {
+      res.writeHead(response.status, Object.fromEntries(response.headers));
+      res.end(Buffer.from(await response.arrayBuffer()));
+    } catch {
+      res.destroy();
+    }
   });
   return new Promise((resolve) =>
     server.listen(port, "127.0.0.1", () => resolve({ server, url: `http://127.0.0.1:${(server.address() as { port: number }).port}` })),

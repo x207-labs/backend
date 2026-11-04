@@ -5,6 +5,7 @@ import type { BrokerChain } from "../chain.js";
 import { guardVoucher } from "../in-flight.js";
 import { DispatchError, type Dispatcher } from "../dispatcher.js";
 import type { BrokerStore } from "../store.js";
+import { DEFAULT_ACCESS_LIMITS, WindowCounter, type AccessLimits } from "../provider/limits.js";
 import type { ClassCAdapter } from "./class-c.js";
 import { inScope, parseProxyScope, SecretNotConfiguredError, type ProviderRegistry } from "./providers.js";
 
@@ -26,6 +27,11 @@ export interface ProxyOptions {
   timeoutMs?: number;
   /** B7-P1: the account whose secrets the broker holds; a real (not `mock`) provider is served only for a grant of this grantor. Default `brokerAccount`. */
   owner?: string;
+  /** B7-P6: largest body of a proxied call and largest answer of the provider, in bytes (defaults 4 MiB and 8 MiB). */
+  maxBodyBytes?: number;
+  maxResponseBytes?: number;
+  /** B7-P6: requests per minute per address and per grant on the proxy and usage routes (defaults of the access routes). */
+  limits?: Partial<Pick<AccessLimits, "ipPerMinute" | "grantPerMinute">>;
   /** `hosted` serves only providers marked `mock` (BE-070, ADR-48); default `self-hosted`. */
   mode?: "self-hosted" | "hosted";
 }
@@ -42,11 +48,17 @@ const STRIP = new Set([
 const stripped = (name: string): boolean => STRIP.has(name) || name.startsWith("x-forwarded-");
 
 /** `GET /grants/{id}/usage` (BE-070): the calls that were billed, per epoch, and what they cost. A buyer compares it with the count it keeps. */
-export function createUsageHandler(options: Pick<ProxyOptions, "dispatcher" | "classC" | "store">): (request: Request) => Promise<Response> {
+export function createUsageHandler(options: Pick<ProxyOptions, "dispatcher" | "classC" | "store" | "limits">): (request: Request) => Promise<Response> {
+  const limits = { ...DEFAULT_ACCESS_LIMITS, ...options.limits };
+  const ipHits = new WindowCounter();
+  const grantHits = new WindowCounter();
   return async (request) => {
     const m = USAGE_PATH.exec(new URL(request.url).pathname);
     if (m === null || request.method !== "GET") return json(404, { error: "not_found" });
     const grantId = Number(m[1]);
+    // B7-P6: the route answers anyone, so it has the same window counters as the proxy
+    const limited = tooMany(request, grantId, limits, ipHits, grantHits);
+    if (limited) return limited;
     let grant: AccessGrant;
     try {
       grant = await options.dispatcher.open(grantId);
@@ -74,7 +86,18 @@ export function matchProxy(url: URL): { grantId: number; path: string } | null {
  * settles only when the provider answered with success. A refused or failed call leaves no voucher pending and does not use quota.
  */
 export function createProxyHandler(options: ProxyOptions): (request: Request, target: { grantId: number; path: string }) => Promise<Response> {
+  const maxBody = options.maxBodyBytes ?? 4 * 1024 * 1024;
+  const maxResponse = options.maxResponseBytes ?? 8 * 1024 * 1024;
+  const limits = { ...DEFAULT_ACCESS_LIMITS, ...options.limits };
+  const ipHits = new WindowCounter();
+  const grantHits = new WindowCounter();
   return async (request, { grantId, path }) => {
+    // B7-P6: an address and a grant get a number of requests per minute, before the chain is asked anything
+    const limited = tooMany(request, grantId, limits, ipHits, grantHits);
+    if (limited) return limited;
+    // B7-P6: a body larger than the cap is refused on its declared length, before the grant is even read; the body itself is read only after the payment passed
+    const declared = Number(request.headers.get("content-length"));
+    if (Number.isFinite(declared) && declared > maxBody) return json(413, { error: "payload_too_large", message: `body is larger than ${maxBody} bytes` });
     let grant: AccessGrant;
     try {
       grant = await options.dispatcher.open(grantId);
@@ -127,8 +150,10 @@ export function createProxyHandler(options: ProxyOptions): (request: Request, ta
       facilitatorUrl: options.facilitatorUrl, circleId: options.circleId, payTo: options.brokerAccount, extra: options.extra,
       ...(options.fetch ? { fetch: options.fetch } : {}),
     });
-    const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.clone().arrayBuffer();
-    return guardVoucher(request, () => middleware(request, async (paid) => {
+    // the body is read from a clone only inside the paid callback, so an unpaid call costs no memory
+    const unread = request.method === "GET" || request.method === "HEAD" ? undefined : request.clone();
+    let counted = false;
+    const answer = await guardVoucher(request, () => middleware(request, async (paid) => {
       const payer = payerOf(paid.headers.get("PAYMENT-SIGNATURE"));
       if (payer !== grant.grantee) options.audit?.record({ kind: "proxy_refused", grantId, assetType: grant.asset_type, method: request.method, path, status: 403, code: "payer_not_grantee" });
       if (payer !== grant.grantee) return json(403, { error: "payer_not_grantee", message: `grant ${grantId} is leased to ${grant.grantee}` });
@@ -138,6 +163,12 @@ export function createProxyHandler(options: ProxyOptions): (request: Request, ta
       } catch (error) {
         if (error instanceof SecretNotConfiguredError) return json(502, { error: "secret_not_configured", message: (error as Error).message });
         return json(502, { error: "delivery_failed", message: (error as Error).message });
+      }
+      let body: ArrayBuffer | undefined;
+      if (unread !== undefined) {
+        const bytes = await readCappedBytes(unread, maxBody);
+        if (bytes === null) return json(413, { error: "payload_too_large", message: `body is larger than ${maxBody} bytes` });
+        body = bytes;
       }
       const headers = new Headers();
       for (const [name, value] of paid.headers) if (!stripped(name.toLowerCase())) headers.set(name, value);
@@ -157,7 +188,12 @@ export function createProxyHandler(options: ProxyOptions): (request: Request, ta
         upstream = await (options.fetch ?? fetch)(`${provider.baseUrl.replace(/\/+$/, "")}${path}${url.search}`, {
           method: request.method, headers, redirect: "manual", ...(body === undefined ? {} : { body }), signal: AbortSignal.timeout(options.timeoutMs ?? 15_000),
         });
-        text = options.providers.redact(provider, await upstream.arrayBuffer());
+        const raw = await readCappedBytes(upstream, maxResponse);
+        if (raw === null) {
+          release();
+          return json(502, { error: "provider_response_too_large", message: `the provider answered more than ${maxResponse} bytes; the call is not billed` });
+        }
+        text = options.providers.redact(provider, raw);
       } catch (error) {
         release();
         return json(502, { error: "provider_unreachable", message: (error as Error).name });
@@ -176,10 +212,59 @@ export function createProxyHandler(options: ProxyOptions): (request: Request, ta
         release();
         return new Response(text, { status: upstream.status, headers: { "content-type": upstream.headers.get("content-type") ?? "application/octet-stream" } });
       }
+      // B7-P3: 204, 205 and the answer to a HEAD have no body, and the Response constructor throws on a body for them
+      const bodyless = upstream.status === 204 || upstream.status === 205 || request.method === "HEAD";
+      let out: Response;
+      try {
+        out = new Response(bodyless ? null : text, { status: upstream.status, headers: { "content-type": upstream.headers.get("content-type") ?? "application/octet-stream" } });
+      } catch (error) {
+        release();
+        return json(502, { error: "provider_response_invalid", message: (error as Error).message });
+      }
+      // the call is counted only now, when the answer exists
       if (quota === undefined) options.store.countCall(grantId, epoch);
-      return new Response(text, { status: upstream.status, headers: { "content-type": upstream.headers.get("content-type") ?? "application/octet-stream" } });
+      counted = true;
+      return out;
     }));
+    // B7-P4: the call was made and counted, but the payment did not go through (settle failed, the 402 replaced our answer): nothing was billed, so it is not counted either, and the audit says so
+    if (counted && answer.status >= 400) {
+      options.store.releaseCall(grantId, epoch);
+      options.audit?.record({ kind: "unbilled_call", grantId, assetType: grant.asset_type, method: request.method, path, status: answer.status, secretVersion: options.providers.version(grant.asset_type) });
+    }
+    return answer;
   };
+}
+
+/** The bytes of a body, or `null` when it is larger than `max` (checked on the declared length and again while it is read). */
+async function readCappedBytes(source: Request | Response, max: number): Promise<ArrayBuffer | null> {
+  const declared = Number(source.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > max) return null;
+  const reader = source.body?.getReader();
+  if (!reader) return new ArrayBuffer(0);
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.length;
+    if (size > max) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(value);
+  }
+  const all = Buffer.concat(chunks);
+  return all.buffer.slice(all.byteOffset, all.byteOffset + all.byteLength) as ArrayBuffer;
+}
+
+/** `429 rate_limited` when the address of the peer or the grant is over its requests per minute; `undefined` otherwise. */
+function tooMany(request: Request, grantId: number, limits: AccessLimits, ipHits: WindowCounter, grantHits: WindowCounter): Response | undefined {
+  const t = Date.now();
+  const waitIp = ipHits.hit(request.headers.get("x-x207-peer") ?? "unknown", limits.ipPerMinute, t);
+  const waitGrant = grantHits.hit(`grant:${grantId}`, limits.grantPerMinute, t);
+  const wait = Math.max(waitIp, waitGrant);
+  if (wait === 0) return undefined;
+  return new Response(JSON.stringify({ error: "rate_limited", message: `too many requests (${waitIp > 0 ? "address" : "grant"})` }), { status: 429, headers: { "content-type": "application/json", "retry-after": String(wait) } });
 }
 
 function payerOf(header: string | null): string | undefined {

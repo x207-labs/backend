@@ -31,6 +31,8 @@ never to the facilitator, and a scan of responses and facilitator traffic in `te
 
 **Whose secret (B7-P1).** The secret of a provider is the secret of the owner of this broker (`BROKER_SECRET_OWNER`, default `BROKER_ACCOUNT_ID`). A class C grant whose `grantor` is another account is refused `403 grant_not_owned` before any payment is asked, for every provider that is not marked `mock`; otherwise any member could list a grant for the same asset type and be served, and paid for, with the key of the owner. Mock providers (the demo) are served for any grantor.
 
+**Limits and the bill (B7-P3, P4, P6).** The provider is called after `/verify` and before `/settle` (that is the order of the scheme), so a call can be made and then not paid when the settle fails: the lessee gets `402`, the call is **not** counted (`usage` and the quota give it back) and the audit log writes `unbilled_call`. An answer of `204`, `205` or to a `HEAD` is passed on without a body. A body of a proxied call is capped at 4 MiB (`413 payload_too_large`, checked on the declared length before the chain is asked and read only after the payment passed), an answer of the provider at 8 MiB (`502 provider_response_too_large`, not billed), and the proxy and `usage` routes count 120 requests per minute per address and 60 per grant (`429 rate_limited`, `Retry-After`). `GET /grants/{id}/usage` still answers anyone; it shows the calls per epoch of a grant and nothing else.
+
 `limits.scope` of a class C grant is `{"path_prefixes": ["/v1/echo"], "methods": ["GET", "POST"]}`, `limits.quota` is the number of calls
 per epoch, `unit` is `call`.
 
