@@ -102,7 +102,10 @@ export class NewsletterReaderAdapter implements ProviderAccessAdapter {
     // the rent of the next day: move the end of the same membership
     if (request.existingHandle) {
       const old = parseHandle(request.existingHandle);
-      if ((await this.#put(old.id, tier, expiresAt)) === 200) return { handle: request.existingHandle, nativeExpiresAtMs: request.expiresAtMs, delivery };
+      const state = await this.#state(old.id);
+      // a reader that bought its own subscription in between (a paid tier with no end date, or the free tier changed to something else) is not shortened or changed (cross review UM-112, F7)
+      if (state === "foreign") throw new Error("the subscription of the reader was changed outside x207; it was not touched");
+      if (state === "ours" && (await this.#put(old.id, tier, expiresAt)) === 200) return { handle: request.existingHandle, nativeExpiresAtMs: request.expiresAtMs, delivery };
     }
     const found = await call(this.#fetch, "", this.#headers(), { method: "GET", path: `${this.#base}/members?email=${encodeURIComponent(request.granteeRef)}` }, [200]);
     const existing = ((JSON.parse(found.text) as { members?: Member[] }).members ?? []).find((m) => typeof m.email === "string" && m.email.toLowerCase() === request.granteeRef.toLowerCase());
@@ -122,11 +125,21 @@ export class NewsletterReaderAdapter implements ProviderAccessAdapter {
   /** Back to the free tier without an end date; with `onRevoke: "delete"` a member this adapter made is removed instead. A member that is gone is a success. */
   async revoke(handle: string): Promise<void> {
     const h = parseHandle(handle);
+    // only what this adapter set is undone: a member that is gone is a success, and one that now has a subscription of its own (no end date) is left as it is (cross review UM-112, F7)
+    if ((await this.#state(h.id)) !== "ours") return;
     if (this.#o.onRevoke === "delete" && h.made) {
       await call(this.#fetch, "", this.#headers(), { method: "DELETE", path: `${this.#base}/members/${h.id}` }, [200, 204, 404]);
       return;
     }
     await this.#put(h.id, this.#free, null);
+  }
+
+  /** `ours`: a paid tier of this broker with an end date (we always set one); `gone`: no such member; `foreign`: anything else (the free tier is also `foreign` here: nothing to undo). */
+  async #state(id: string): Promise<"ours" | "gone" | "foreign"> {
+    const r = await call(this.#fetch, "", this.#headers(), { method: "GET", path: `${this.#base}/members/${id}` }, [200, 404]);
+    if (r.status === 404) return "gone";
+    const m = JSON.parse(r.text) as Member;
+    return typeof m.tier === "string" && this.#paid.has(m.tier) && typeof m.expires_at === "string" ? "ours" : "foreign";
   }
 
   /** The subscription: `active` on a paid tier whose end has not passed, `expired` on a paid tier past its end, `absent` on the free tier or when the member is gone. */

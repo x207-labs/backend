@@ -14,6 +14,8 @@ export interface Call {
   path: string;
   body?: string;
   headers?: Record<string, string>;
+  /** Secrets that travel in the BODY of the request (an OAuth token to revoke): cut out of the message of an error like the ones in the headers (cross review UM-112, F5). */
+  secrets?: readonly string[];
 }
 
 /** The most of an answer that the helper reads (security review batch 8): a provider that is hostile or broken cannot make the broker hold a huge body in memory. */
@@ -33,11 +35,20 @@ function secretsOf(headers: Record<string, string>): string[] {
         found.add(decoded);
         for (const part of decoded.split(":")) found.add(part);
         for (const part of decoded.split(":")) found.add(encodeURIComponent(part));
+        for (const part of decoded.split(":")) found.add(safeDecode(part)); // the raw form of a secret that was URL-encoded before it was put in the header
       }
     }
   }
   return [...found].filter((x) => x.length >= 6); // a short value would eat ordinary words of the message
 }
+
+const safeDecode = (text: string): string => {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return text;
+  }
+};
 
 const scrub = (text: string, secrets: readonly string[]): string => secrets.reduce((out, secret) => out.split(secret).join("[redacted]"), text);
 
@@ -69,5 +80,5 @@ export async function call(fetchImpl: FetchLike, baseUrl: string, headers: Recor
   const text = await readLimited(response);
   if (accept.includes(response.status)) return { status: response.status, text };
   const retry = Number(response.headers.get("retry-after"));
-  throw new ProviderHttpError(response.status, `${c.method} ${c.path.split("?")[0]} -> HTTP ${response.status}: ${scrub(text, secretsOf(sent)).replace(/\s+/g, " ").slice(0, 160)}`, Number.isFinite(retry) && retry > 0 ? retry : null);
+  throw new ProviderHttpError(response.status, `${c.method} ${c.path.split("?")[0]} -> HTTP ${response.status}: ${scrub(text, [...secretsOf(sent), ...(c.secrets ?? []).filter((x) => x.length >= 6)]).replace(/\s+/g, " ").slice(0, 160)}`, Number.isFinite(retry) && retry > 0 ? retry : null);
 }

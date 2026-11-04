@@ -12,7 +12,7 @@ import { Revoker } from "./revoker.js";
 import { createBrokerHandler, serve } from "./server.js";
 import { BrokerStore } from "./store.js";
 import { activeGrantIdsOf } from "./grants-api.js";
-import { ProviderAccessManager, type ProviderAccessAdapter } from "./provider/index.js";
+import { ProviderAccessError, ProviderAccessManager, type ProviderAccessAdapter } from "./provider/index.js";
 import { GrantWatcher, type WatchedEvent } from "./watcher/index.js";
 
 export interface RunningBroker {
@@ -97,8 +97,12 @@ export async function startBroker(options: StartOptions): Promise<RunningBroker>
   const closeProviderAccess = async (event: WatchedEvent): Promise<void> => {
     const ids = event.event === "member_defaulted" ? await activeIds(String(event.data.account_id)) : event.event === "grant_revoked" ? [Number(event.data.grant_id)] : [];
     for (const id of ids) {
-      const a = provider.access(id);
-      if (a !== undefined && a.status === "active") await provider.revokeAccess(id, event.event === "member_defaulted" ? "defaulted" : String(event.data.reason ?? "revoked"));
+      // not guarded by a read here: a first paid rent that is still being made has no row yet, and the read inside `revokeAccess` waits for its turn in the queue of the grant (cross review UM-112, F9)
+      try {
+        await provider.revokeAccess(id, event.event === "member_defaulted" ? "defaulted" : String(event.data.reason ?? "revoked"));
+      } catch (error) {
+        if (!(error instanceof ProviderAccessError && error.code === "access_not_found")) throw error;
+      }
     }
   };
   const tick = async (): Promise<void> => {

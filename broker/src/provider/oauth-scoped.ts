@@ -101,8 +101,8 @@ export class OAuthScopedAdapter implements ProviderAccessAdapter {
     const given = typeof body.scope === "string" ? body.scope.split(/\s+/).filter((s) => s !== "") : scopes;
     const wider = given.filter((s) => !scopes.includes(s));
     if (wider.length > 0) {
-      await this.#revokeToken(token).catch(() => undefined);
-      throw new Error(`the provider issued scope ${wider.join(", ")} that was not asked for; the token was revoked`);
+      const revoked = await this.#revokeToken(token).then(() => true, () => false);
+      throw new Error(`the provider issued scope ${wider.join(", ")} that was not asked for; ${revoked ? "the token was revoked" : "the token could NOT be revoked: ask the provider to revoke it"}`);
     }
     const lifetime = Number(body.expires_in);
     const providerEnd = Number.isFinite(lifetime) && lifetime > 0 ? now + lifetime * 1000 : null;
@@ -110,7 +110,19 @@ export class OAuthScopedAdapter implements ProviderAccessAdapter {
     const nativeExpiresAtMs = providerEnd !== null && providerEnd <= request.expiresAtMs + 2_000 ? providerEnd : null;
     const endMs = Math.min(request.expiresAtMs, providerEnd ?? request.expiresAtMs);
     // OAuth cannot extend a token: the rent of the next day makes a new one and ends the old one
-    if (request.existingHandle) await this.revoke(request.existingHandle).catch(() => undefined);
+    if (request.existingHandle) {
+      const old = parseHandle(request.existingHandle).token;
+      // a provider that caches client-credentials tokens answers the same token twice: ending "the old one" would end the one just made (cross review UM-112, F3)
+      if (old !== token) {
+        try {
+          await this.#revokeToken(old);
+        } catch {
+          // the old token is in the hands of the lessee and the record would forget it: end the new one and fail, so that the record keeps the old handle and the manager tries again (F4)
+          await this.#revokeToken(token).catch(() => undefined);
+          throw new Error("the previous token could not be revoked; the new token was revoked and the record keeps the previous handle");
+        }
+      }
+    }
     return {
       handle: handleOf(request.grantId, endMs, token), nativeExpiresAtMs,
       delivery: { provider: "oauth-scoped", accessToken: token, tokenType: typeof body.token_type === "string" ? body.token_type : "Bearer", scope: given.join(" "), expiresAtMs: endMs },
@@ -118,7 +130,7 @@ export class OAuthScopedAdapter implements ProviderAccessAdapter {
   }
 
   async #revokeToken(token: string): Promise<void> {
-    await call(this.#fetch, "", this.#headers(), { method: "POST", path: this.#o.revocationUrl, body: new URLSearchParams({ token, token_type_hint: "access_token" }).toString() }, [200, 204]);
+    await call(this.#fetch, "", this.#headers(), { method: "POST", path: this.#o.revocationUrl, body: new URLSearchParams({ token, token_type_hint: "access_token" }).toString(), secrets: [token] }, [200, 204]);
   }
 
   /** RFC 7009 2.2: the provider answers 200 also for a token it does not know, so an access that is already gone is a success. */
@@ -129,7 +141,7 @@ export class OAuthScopedAdapter implements ProviderAccessAdapter {
   /** RFC 7662: `active: false` is `expired` when the paid day is over, otherwise `absent` (revoked at the provider). */
   async status(handle: string): Promise<AccessState> {
     const h = parseHandle(handle);
-    const r = await call(this.#fetch, "", this.#headers(), { method: "POST", path: this.#o.introspectionUrl, body: new URLSearchParams({ token: h.token, token_type_hint: "access_token" }).toString() }, [200]);
+    const r = await call(this.#fetch, "", this.#headers(), { method: "POST", path: this.#o.introspectionUrl, body: new URLSearchParams({ token: h.token, token_type_hint: "access_token" }).toString(), secrets: [h.token] }, [200]);
     const body = JSON.parse(r.text) as { active?: unknown };
     if (body.active === true) return "active";
     return h.expiresAtMs <= this.#now() ? "expired" : "absent";
