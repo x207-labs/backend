@@ -51,9 +51,9 @@ describe("BE-089 AccountIndexBlockSource", () => {
     const base = { NEAR_RPC_PRIMARY_URL: "http://127.0.0.1:1", X207_CONTRACT_ID: "c.testnet", X207_START_BLOCK: "1" };
     const cfg = (extra: Record<string, string>) => appConfigFromEnv({ ...base, ...extra });
     expect(blockSourceFromEnv({ ...base }, cfg({}), rpc).constructor.name).toBe("RpcBlockSource");
-    expect(blockSourceFromEnv({ ...base, X207_BLOCK_SOURCE: "neardata", NEARDATA_URL: "https://n.example" }, cfg({}), rpc).constructor.name).toBe("NeardataBlockSource");
-    expect(blockSourceFromEnv({ ...base, X207_BLOCK_SOURCE: "account-index", NEARDATA_URL: "https://n.example", FASTNEAR_TX_URL: "https://t.example" }, cfg({}), rpc).constructor.name).toBe("AccountIndexBlockSource");
-    expect(() => blockSourceFromEnv({ ...base, X207_BLOCK_SOURCE: "account-index", NEARDATA_URL: "https://n.example" }, cfg({}), rpc)).toThrow(/FASTNEAR_TX_URL is required/);
+    expect(blockSourceFromEnv({ ...base, X207_BLOCK_SOURCE: "neardata", X207_NEARDATA_URL: "https://n.example" }, cfg({}), rpc).constructor.name).toBe("NeardataBlockSource");
+    expect(blockSourceFromEnv({ ...base, X207_BLOCK_SOURCE: "account-index", X207_NEARDATA_URL: "https://n.example", X207_TX_INDEX_URL: "https://t.example" }, cfg({}), rpc).constructor.name).toBe("AccountIndexBlockSource");
+    expect(() => blockSourceFromEnv({ ...base, X207_BLOCK_SOURCE: "account-index", X207_NEARDATA_URL: "https://n.example" }, cfg({}), rpc)).toThrow(/X207_TX_INDEX_URL is required/);
     expect(() => blockSourceFromEnv({ ...base, X207_BLOCK_SOURCE: "nope" }, cfg({}), rpc)).toThrow(/must be rpc, neardata or account-index/);
   });
 });
