@@ -11,7 +11,7 @@ permissions:
 jobs:
   ci:
     # `@x207/core` is not published, so the job runs at the umbrella workspace (see the workflow file).
-    uses: x207-labs/x207/.github/workflows/ci-node-workspace.yml@82239191ebe15344375cc887bb8162e9e75d4cf7 # OP-001
+    uses: x207-labs/x207/.github/workflows/ci-node-workspace.yml@ce9eb3772f676392c6c168c995afdfa3a53456d3 # OP-001
     with:
       path: backend
       package: backend
