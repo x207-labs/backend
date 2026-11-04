@@ -42,7 +42,7 @@ describe("BE-073 fix: the start guard refuses a file written by a newer build", 
     expect(error).toBeInstanceOf(SchemaTooNewError);
     const message = (error as SchemaTooNewError).message;
     expect(message).toContain("1120, 9999");
-    expect(message).toMatch(/highest version in database: D9 14, marketplace 9999; in code: D9 14, marketplace 1119/);
+    expect(message).toMatch(/highest version in database: D9 15, marketplace 9999; in code: D9 15, marketplace 1119/);
     expect((error as SchemaTooNewError).unknown).toEqual([1120, 9999]);
     expect(recorded(file)).toBe(before);
     const db = new Database(file);

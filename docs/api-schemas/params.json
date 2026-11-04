@@ -2,7 +2,7 @@
   "$id": "params.json",
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "GET /x207/circles/{circle}/params",
-  "description": "D7 field names in snake_case, same as get_params. nextEpoch/nextEpochEffective are null when no change is pending (K-37).",
+  "description": "D7 field names in snake_case, same as get_params (BE-092: max_search_share_bps, bond_threshold, bond_bps and prune_delay_epochs of interface 0.0.5 and later are present when the contract has them). nextEpoch/nextEpochEffective are null when no change is pending (K-37).",
   "type": "object",
   "required": ["circle", "currentEpoch", "active", "nextEpoch", "nextEpochEffective"],
   "properties": {
@@ -24,7 +24,11 @@
           "required": ["clearing_fee_bps", "solver_fee_bps"],
           "properties": { "clearing_fee_bps": { "type": "integer" }, "solver_fee_bps": { "type": "integer" } }
         },
-        "admission": { "type": "string" }
+        "admission": { "type": "string" },
+        "max_search_share_bps": { "type": "integer" },
+        "bond_threshold": { "$ref": "common.json#/definitions/amount" },
+        "bond_bps": { "type": "integer" },
+        "prune_delay_epochs": { "type": "integer" }
       }
     },
     "nextEpoch": { "type": ["object", "null"] },

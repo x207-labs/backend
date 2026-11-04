@@ -57,6 +57,8 @@ interface EventRow {
 const PARAM_FIELDS = [
   "epoch_length", "payment_window", "proposal_window", "base_limit_ratio", "limit_growth", "limit_cap",
   "limit_decay", "fees", "admission",
+  // BE-092: the fields of interface 0.0.5 and later; absent from the view of an older contract, then not stored
+  "max_search_share_bps", "bond_threshold", "bond_bps", "prune_delay_epochs",
 ] as const;
 
 const INSERT_EVENT = `INSERT OR IGNORE INTO events_raw (receipt_id, log_index, block_height, block_hash, block_timestamp_ns,
@@ -101,8 +103,10 @@ export class Indexer {
     const db = this.#db;
     const exists = db.prepare("SELECT 1 FROM indexer_cursor WHERE name = ?").get(this.#contractId);
     const fetchParams = this.#fetchParams;
-    const hasParams = db.prepare("SELECT 1 FROM params WHERE circle_id = ? LIMIT 1").get(this.#circleId) !== undefined;
-    const params = fetchParams && !hasParams ? await fetchParams() : undefined;
+    // BE-092: a read model made before a field was listed lacks its row: the missing fields are read from the view and added (effective from epoch 0), the others stay as the events left them.
+    const known = new Set((db.prepare("SELECT DISTINCT field FROM params WHERE circle_id = ?").all(this.#circleId) as { field: string }[]).map((r) => r.field));
+    const missing = PARAM_FIELDS.filter((f) => !known.has(f));
+    const params = fetchParams && missing.length > 0 ? await fetchParams() : undefined;
 
     db.transaction(() => {
       db.prepare("INSERT OR IGNORE INTO circles (circle_id, contract_id, network) VALUES (?, ?, ?)").run(
@@ -120,7 +124,8 @@ export class Indexer {
           `INSERT OR IGNORE INTO params (circle_id, field, old_value, new_value, effective_epoch, block_height, receipt_id, log_index)
            VALUES (?, ?, NULL, ?, 0, ?, ?, 0)`,
         );
-        for (const field of PARAM_FIELDS) {
+        for (const field of missing) {
+          if (params[field] === undefined) continue;
           insert.run(this.#circleId, field, JSON.stringify(params[field]), this.#startBlock, `init:${this.#startBlock}`);
         }
       }
