@@ -3,6 +3,8 @@ import { startBroker } from "./broker.js";
 import { jsonLine } from "./log.js";
 
 // `npm start`: reads .env.example's variables from the environment and runs until the process is stopped.
+// B7-P5: one request that throws somewhere nobody awaits must not end the broker, which has revokes to run after the paid day: log it and go on
+process.on("unhandledRejection", (reason) => jsonLine()(`unhandled rejection, the broker goes on: ${reason instanceof Error ? reason.message : String(reason)}`));
 const broker = await startBroker({ config: readConfig(process.env), log: jsonLine() });
 jsonLine()(`x207 broker listening at ${broker.url}`);
 for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => void broker.stop().then(() => process.exit(0)));
