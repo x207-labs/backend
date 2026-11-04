@@ -9,6 +9,8 @@ X207_DEMO_SEED=<a secret string kept outside the repo> X207_CONTRACT_ID=<circle 
   X207_API_URL=https://<your backend> npm run demo:seed
 ```
 
+**For demo data only.** The salt of the demo code is derived from the public key of the seller, so it can be guessed, and the code is a fixed string in the source: this script must never be used for a real code, a real license or a real asset.
+
 ## What it posts
 | Pipeline | What |
 | --- | --- |
