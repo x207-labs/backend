@@ -508,6 +508,44 @@ CREATE TABLE purchase_complaints (
 CREATE INDEX idx_complaints_seller ON purchase_complaints (circle_id, seller);
 `;
 
+// BE-074 (P4, ADR-49): the purchases of a transfer through the official feature of a platform. Apart from `purchases` (a file or a code): there is no ciphertext, the proof is the platform's.
+// The voucher is held here until the proof is met (`confirmed`) or the window of the platform passes (`cancelled`, the voucher never moves).
+const V1117_TRANSFERS = `
+CREATE TABLE transfers (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  circle_id         TEXT    NOT NULL,
+  listing_hash      TEXT    NOT NULL,
+  buyer             TEXT    NOT NULL,
+  seller            TEXT    NOT NULL,
+  platform          TEXT    NOT NULL CHECK (platform IN ('domain','game_item','ticket')),
+  proof_method      TEXT    NOT NULL CHECK (proof_method IN ('dns_txt','trade_api','buyer_confirm')),
+  transfer_ref      TEXT    NOT NULL,
+  buyer_ref         TEXT,
+  tradeoffer_id     TEXT,
+  voucher_json      TEXT    NOT NULL,
+  voucher_signature TEXT    NOT NULL,
+  status            TEXT    NOT NULL DEFAULT 'paid_held' CHECK (status IN ('paid_held','confirmed','cancelled')),
+  window_until      INTEGER NOT NULL,
+  proof_json        TEXT,
+  confirm_notice    TEXT,
+  confirm_signature TEXT,
+  cancel_reason     TEXT,
+  created_at_ms     INTEGER NOT NULL,
+  closed_at_ms      INTEGER
+);
+CREATE INDEX idx_transfers_listing ON transfers (circle_id, listing_hash);
+CREATE INDEX idx_transfers_buyer ON transfers (circle_id, buyer, status);
+`;
+
+// B7-C9: the signed notice of a code check is taken once.
+const V1118_CODE_CHECK_NOTICES = `
+CREATE TABLE code_check_notices (
+  circle_id   TEXT NOT NULL,
+  notice_hash TEXT NOT NULL,
+  PRIMARY KEY (circle_id, notice_hash)
+);
+`;
+
 export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1101, name: "m11_intents", sql: V1101_INTENTS },
   { version: 1102, name: "m11_listings", sql: V1102_LISTINGS },
@@ -525,4 +563,6 @@ export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1114, name: "m11_codes", sql: V1114_CODES },
   { version: 1115, name: "m11_code_seen", sql: V1115_CODE_SEEN },
   { version: 1116, name: "m11_complaints", sql: V1116_COMPLAINTS },
+  { version: 1117, name: "m11_transfers", sql: V1117_TRANSFERS },
+  { version: 1118, name: "m11_code_check_notices", sql: V1118_CODE_CHECK_NOTICES },
 ];

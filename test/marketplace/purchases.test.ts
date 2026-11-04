@@ -334,6 +334,11 @@ describe("BE-056 license handover: fair exchange with encryption", () => {
   it("TC-BE-056-11 the ciphertext is streamed through a temporary file: a mismatch is refused without being read, the file is deleted, and the deadline follows the size allowed", async () => {
     const before = () => readdirSync(tmpdir()).filter((n) => n.startsWith("x207-cipher-"));
     const left = before().length;
+    // other test files run at the same time and make their own temporary files (a code is downloaded before its key is released, B7-C2): wait for those to go before counting
+    const gone = async (): Promise<number> => {
+      for (let i = 0; i < 30 && before().length > left; i++) await new Promise((r) => setTimeout(r, 100));
+      return before().length;
+    };
     files.clear();
     market = await startMarket(["andi", "budi", "citra", "dewi"], [], undefined, { sourceFetch: { resolver, transport }, maxCiphertextBytes: 4 * 1024 * 1024 });
     const m = market;
@@ -348,10 +353,10 @@ describe("BE-056 license handover: fair exchange with encryption", () => {
     files.set("store.example.com/d1.bin", utf8("a different file"));
     expect((await buyerNotice(m, id, "disputed", "budi", "content_mismatch", proof)).json.error.code).toBe("proof_invalid");
     expect(asked).toEqual([{ timeoutMs: 64_000, maxBytes: 4 * 1024 * 1024, sink: true }]); // 60 s + 1 s per MiB allowed
-    expect(before().length).toBe(left); // the temporary file is gone
+    expect(await gone()).toBe(left); // the temporary file is gone
     files.set("store.example.com/d1.bin", s.ciphertext);
     expect((await buyerNotice(m, id, "disputed", "budi", "content_mismatch", proof)).json.status).toBe("refuted");
-    expect(before().length).toBe(left);
+    expect(await gone()).toBe(left);
   });
 
   it("TC-BE-056-12 at most two ciphertexts are handled at once; the others wait their turn, and a failing one gives its place back", async () => {

@@ -31,7 +31,7 @@ const recorded = (file: string): number => {
 
 describe("BE-073 fix: the start guard refuses a file written by a newer build", () => {
   it("TC-BE-073-06 migrate and openDatabase refuse a file with a migration this build does not have; the message names the versions of the file and of the code; nothing is changed in the file", () => {
-    const file = newerFile("newer.db", [1117, 9999]);
+    const file = newerFile("newer.db", [1119, 9999]);
     const before = recorded(file);
     let error: unknown;
     try {
@@ -41,9 +41,9 @@ describe("BE-073 fix: the start guard refuses a file written by a newer build", 
     }
     expect(error).toBeInstanceOf(SchemaTooNewError);
     const message = (error as SchemaTooNewError).message;
-    expect(message).toContain("1117, 9999");
-    expect(message).toMatch(/highest version in database: D9 13, marketplace 9999; in code: D9 13, marketplace 1116/);
-    expect((error as SchemaTooNewError).unknown).toEqual([1117, 9999]);
+    expect(message).toContain("1119, 9999");
+    expect(message).toMatch(/highest version in database: D9 13, marketplace 9999; in code: D9 13, marketplace 1118/);
+    expect((error as SchemaTooNewError).unknown).toEqual([1119, 9999]);
     expect(recorded(file)).toBe(before);
     const db = new Database(file);
     expect(() => migrate(db)).toThrow(SchemaTooNewError);

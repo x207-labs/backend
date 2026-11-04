@@ -69,8 +69,9 @@ describe("BE-069 one-time codes: the code book on the fair exchange of BE-056", 
     const r = createCodeRelease({ doc: s.doc, code: s.code, salt: s.enc.salt, buyer: acct("budi"), buyerPublicKey: m.keys.budi!.publicKey, purchase_id: id, ciphertext: s.enc.ciphertext, contentKey: s.enc.key, at: at(m), sellerSecretKey: m.keys.andi!.secretKey });
     return { ...r, post: () => m.post(`/purchases/${id}`, { notice: r.release, signature: r.signature }) };
   };
+  let checkCount = 0;
   const check = (m: Market, s: Sold, over: { code?: string; salt?: string; who?: string; sigWho?: string; listing?: string } = {}) => {
-    const notice = { circle: CONTRACT, listing_hash: over.listing ?? s.hash, actor: acct(over.who ?? "andi"), action: "check", at: at(m) };
+    const notice = { circle: CONTRACT, listing_hash: over.listing ?? s.hash, actor: acct(over.who ?? "andi"), action: "check", at: at(m) + (++checkCount % 500) }; // a signed notice is taken once (B7-C9): every check signs a new one
     return m.post(`/listings/${s.hash}/code-check`, { notice, signature: signNoticeJson(JSON.stringify(notice), CONTRACT, m.keys[over.sigWho ?? over.who ?? "andi"]!.secretKey), code: over.code ?? s.code, salt: over.salt ?? hex(s.enc.salt) });
   };
   const buyerNotice = (m: Market, id: string, action: "confirmed" | "disputed" | "cancelled", who = "budi", reason: string | null = null, proof: unknown = null) => {
@@ -236,12 +237,12 @@ describe("BE-069 one-time codes: the code book on the fair exchange of BE-056", 
   });
 
   it("TC-BE-069-11 the same code in a second live listing is refused code_duplicate at the check (HMAC with the key of the operator); a closed first listing frees it; a sold one does not; no key, no detection; the table has no plain hash", async () => {
-    const m = await start({ codeSeenKey: "operator-secret" });
+    const m = await start({ codeSeenKey: "operator-secret-of-at-least-32-bytes!" });
     const a = await sell(m);
     const b = await sell(m); // the same code, another salt, so another commitment
     expect((await check(m, a)).json.verdict).toBe("valid");
     const dup = await check(m, b);
-    expect([dup.status, dup.json.error.code, dup.json.error.details.otherListing]).toEqual([409, "code_duplicate", a.hash]);
+    expect([dup.status, dup.json.error.code, dup.json.error.details.otherListing]).toEqual([409, "code_duplicate", undefined]); // B7-C6: the answer does not name the other listing
     expect(JSON.stringify(dup.json)).not.toContain(CODE);
     expect(issuer.calls).toBeGreaterThan(0);
     // what is stored is an HMAC: neither the code nor sha256 of it
@@ -401,6 +402,62 @@ describe("BE-069 one-time codes: the code book on the fair exchange of BE-056", 
     m.db.prepare("UPDATE purchases SET status = 'refuted' WHERE id = ?").run(id);
     const second = await buy(m, s, "citra");
     expect([second.status, second.json.error.code]).toEqual([409, "exclusive_taken"]);
+  });
+
+  it("TC-BE-078-C6-C9 the code check: a notice is taken once, a seller has checks per hour, two checks at once cannot both pass, a bad or slow issuer reserves nothing, the window is the server's", async () => {
+    // C9: the same signed notice is not taken twice, and the window starts at the server clock, not at the `at` of the seller
+    const m = await start({ codeSeenKey: "operator-secret-of-at-least-32-bytes!", codeChecksPerHour: 3 });
+    const s = await sell(m);
+    const notice = { circle: CONTRACT, listing_hash: s.hash, actor: acct("andi"), action: "check", at: at(m) };
+    const body = { notice, signature: signNoticeJson(JSON.stringify(notice), CONTRACT, m.keys.andi!.secretKey), code: s.code, salt: hex(s.enc.salt) };
+    expect((await m.post(`/listings/${s.hash}/code-check`, body)).status).toBe(200);
+    const replay = await m.post(`/listings/${s.hash}/code-check`, body);
+    expect([replay.status, replay.json.error.code]).toEqual([409, "already_exists"]);
+    const id = (await buy(m, s)).json.purchase_id as string;
+    await postCipher(m, id, s);
+    const early = createCodeRelease({ doc: s.doc, code: s.code, salt: s.enc.salt, buyer: acct("budi"), buyerPublicKey: m.keys.budi!.publicKey, purchase_id: id, ciphertext: s.enc.ciphertext, contentKey: s.enc.key, at: at(m) - 590, sellerSecretKey: m.keys.andi!.secretKey });
+    await check(m, s);
+    const released = await m.post(`/purchases/${id}`, { notice: early.release, signature: early.signature });
+    expect(released.status).toBe(201);
+    expect(released.json.disputeUntil - at(m)).toBe(CODE_DISPUTE_WINDOW_SECONDS); // not 3000 s
+    // C6: three checks per hour for this seller (two were used above and this one is the third)
+    expect((await check(m, s)).status).toBe(200);
+    const fourth = await check(m, s);
+    expect([fourth.status, fourth.json.error.code]).toEqual([429, "rate_limited"]);
+  });
+
+  it("TC-BE-078-C7-C8 two checks of one code at once cannot both pass; an issuer that answers nonsense, throws or never answers reserves nothing and is logged by name; a key under 32 bytes does not start", async () => {
+    const failures: string[] = [];
+    const slow = { async checkCode() { await new Promise((r) => setTimeout(r, 80)); return "valid" as const; } };
+    const m = await start({ codeSeenKey: "operator-secret-of-at-least-32-bytes!", codeIssuers: { acme: slow }, onIssuerError: (name: string, reason: string) => failures.push(`${name}:${reason}`), codeIssuerTimeoutMs: 300 });
+    const a = await sell(m);
+    const b = await sell(m);
+    const both = await Promise.all([check(m, a), check(m, b)]);
+    expect(both.map((r) => r.status).sort()).toEqual([200, 409]);
+    expect(both.find((r) => r.status === 409)!.json.error.code).toBe("code_duplicate");
+    expect((m.db.prepare("SELECT COUNT(*) AS n FROM code_seen").get() as { n: number }).n).toBe(1);
+    await market?.srv.close();
+    market?.db.close();
+    // nonsense, a throw and a hang: 503, nothing reserved, the name of the issuer in the log and never the message
+    for (const [issuerImpl, reason] of [
+      [{ async checkCode() { return "VALID"; } }, "bad_answer"],
+      [{ async checkCode(code: string) { throw new Error(`boom ${code}`); } }, "error"],
+      [{ checkCode: () => new Promise<never>(() => undefined) }, "timeout"],
+    ] as const) {
+      failures.length = 0;
+      const m2 = await start({ codeSeenKey: "operator-secret-of-at-least-32-bytes!", codeIssuers: { acme: issuerImpl as never }, onIssuerError: (name: string, why: string) => failures.push(`${name}:${why}`), codeIssuerTimeoutMs: 150 });
+      const s = await sell(m2);
+      const r = await check(m2, s);
+      expect([r.status, r.json.error.code]).toEqual([503, "code_issuer_unavailable"]);
+      expect(JSON.stringify(r.json)).not.toContain(CODE);
+      expect(failures).toEqual([`acme:${reason}`]);
+      expect((m2.db.prepare("SELECT COUNT(*) AS n FROM code_seen").get() as { n: number }).n).toBe(0);
+      expect((m2.db.prepare("SELECT COUNT(*) AS n FROM code_checks").get() as { n: number }).n).toBe(0);
+      await m2.srv.close();
+      m2.db.close();
+    }
+    market = undefined;
+    await expect(start({ codeSeenKey: "short" })).rejects.toThrow(/at least 32 bytes/);
   });
 
   it("TC-BE-069-10 a seller who encrypts another code than the commitment is caught by the proof of cheating of the fair exchange", async () => {

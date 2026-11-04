@@ -22,7 +22,7 @@ function snapshot(file: string): Record<string, unknown[]> {
   const db = new Database(file, { readonly: true });
   try {
     const names = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as Array<{ name: string }>).map((r) => r.name);
-    return Object.fromEntries(names.filter((n) => n !== "schema_migrations").map((n) => [n, db.prepare(`SELECT * FROM "${n}" ORDER BY 1, 2, 3`).safeIntegers(true).all().map((r) => JSON.parse(JSON.stringify(r, (k, v) => (k === "updated_at" ? undefined : typeof v === "bigint" ? v.toString() : v))))]));
+    return Object.fromEntries(names.filter((n) => n !== "schema_migrations").map((n) => [n, db.prepare(`SELECT * FROM "${n}" ORDER BY rowid`).safeIntegers(true).all().map((r) => JSON.parse(JSON.stringify(r, (k, v) => (k === "updated_at" ? undefined : typeof v === "bigint" ? v.toString() : v))))]));
   } finally {
     db.close();
   }
@@ -156,9 +156,9 @@ describe("BE-073 backup and restore of the SQLite file", () => {
   it("TC-BE-073-05 a file from an OLDER build is healthy and lists the migrations the next start would apply", async () => {
     const file = join(dir, "older.db");
     const { db } = await makeLive(file, LAST);
-    db.prepare("DELETE FROM schema_migrations WHERE version IN (13, 1116)").run(); // as if the file was written before them
+    db.prepare("DELETE FROM schema_migrations WHERE version IN (13, 1118)").run(); // as if the file was written before them
     db.close();
-    expect(checkDatabase(file)).toMatchObject({ ok: true, unknownVersions: [], pendingVersions: [13, 1116], migrations: { d9: 12, marketplace: 1115 } });
+    expect(checkDatabase(file)).toMatchObject({ ok: true, unknownVersions: [], pendingVersions: [13, 1118], migrations: { d9: 12, marketplace: 1117 } });
   });
 
   const dist = new URL("../../dist/db/backup.js", import.meta.url).pathname;

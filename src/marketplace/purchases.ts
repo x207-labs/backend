@@ -91,6 +91,12 @@ export interface PurchaseOptions {
   codeVerifiableLimit?: string;
   /** Secret of the operator for `code_seen` (env `X207_CODE_SEEN_KEY`): the backend keeps an HMAC of each code it checked, to refuse the same code in a second live listing. Empty: no detection. */
   codeSeenKey?: string;
+  /** B7-C8: the longest an issuer may take to answer, ms (default 10,000), the most checks in flight per issuer (default 8) and what the operator hears of a failure: the issuer name only. */
+  codeIssuerTimeoutMs?: number;
+  codeIssuerMaxInFlight?: number;
+  onIssuerError?: (issuer: string, reason: "timeout" | "error" | "bad_answer" | "busy") => void;
+  /** B7-C6: checks of one seller per hour (default 30). */
+  codeChecksPerHour?: number;
 }
 
 // ---- the license inside the detail of a listing -----------------------------------------------------------------------------------------------------------------------
@@ -275,6 +281,11 @@ function parseSource(raw: unknown): Source {
 }
 
 export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: PurchaseOptions = {}): Route[] {
+  // B7-C7: the key of the HMAC of `code_seen` is a secret of the operator; a short one is found from the own purchase of an attacker (he knows the code), so the start refuses it
+  if (options.codeSeenKey !== undefined && options.codeSeenKey !== "" && Buffer.byteLength(options.codeSeenKey) < 32) throw new Error("X207_CODE_SEEN_KEY must be at least 32 bytes");
+  const issuerTimeout = options.codeIssuerTimeoutMs ?? 10_000;
+  const issuerInFlight = new Map<string, number>();
+  const checksSeen = new Map<string, number[]>();
   const window = options.disputeWindowSeconds ?? DEFAULT_DISPUTE_WINDOW_SECONDS;
   const gateways = options.ipfsGateways ?? ["https://ipfs.io"];
   const maxBytes = options.maxCiphertextBytes ?? MAX_CIPHERTEXT_BYTES;
@@ -391,6 +402,15 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
         if (!verifyNoticeJson(JSON.stringify(notice), circle.contract_id, signature, activeMemberKey(db, circle.circle_id, listing.account_id))) {
           throw new ApiError(401, "invalid_signature", "Notice signature does not match the seller's key", { account: listing.account_id });
         }
+        // B7-C9: the same signed notice is not taken twice (it would refresh a verdict for anybody who has it)
+        const noticeHash = sha256Hex(`${JSON.stringify(notice)}\n${signature}`);
+        if (row(db, "SELECT 1 AS x FROM code_check_notices WHERE circle_id = ? AND notice_hash = ?", circle.circle_id, noticeHash)) throw new ApiError(409, "already_exists", "This check notice was already used; sign a new one", {});
+        // B7-C6: the route asks the issuer for the seller, so a seller has a number of checks per hour
+        const hourAgo = now() - 3_600_000;
+        const recent = (checksSeen.get(listing.account_id) ?? []).filter((t) => t > hourAgo);
+        if (recent.length >= (options.codeChecksPerHour ?? 30)) throw new ApiError(429, "rate_limited", `at most ${options.codeChecksPerHour ?? 30} code checks per hour`, {});
+        recent.push(now());
+        checksSeen.set(listing.account_id, recent);
         // from here on nothing that holds the code or the salt may reach a message, a detail, a log or a table
         if (typeof code !== "string" || typeof salt !== "string" || !HASH.test(salt)) throw invalidRequest("code (text) and salt (64 lowercase hex characters) are required");
         let commitment: string;
@@ -415,15 +435,48 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
               LIMIT 1`,
             circle.circle_id, mac, listing.listing_hash, nowS,
           );
-          if (other !== undefined) throw new ApiError(409, "code_duplicate", "The same code is already in another open or sold listing", { otherListing: other.listing_hash });
+          // B7-C6: the answer does not name the other listing (it would confirm a guessed code to whoever asks)
+          if (other !== undefined) throw new ApiError(409, "code_duplicate", "The same code is already in another open or sold listing", {});
         }
+        // B7-C7: the code is reserved BEFORE the issuer is asked, in the same step as the look for a duplicate (nothing awaits between them), so two checks at once cannot both pass;
+        // the reservation is taken back when the issuer fails or answers nonsense
+        const reserved = mac !== null && db.prepare("INSERT OR IGNORE INTO code_seen (circle_id, mac, listing_hash, seen_at_ms) VALUES (?, ?, ?, ?)").run(circle.circle_id, mac, listing.listing_hash, now()).changes > 0;
+        const giveBack = (): void => {
+          if (reserved && mac !== null) db.prepare("DELETE FROM code_seen WHERE circle_id = ? AND mac = ? AND listing_hash = ?").run(circle.circle_id, mac, listing.listing_hash);
+        };
+        const issuerName = String(cd.issuer);
+        const inFlight = issuerInFlight.get(issuerName) ?? 0;
+        if (inFlight >= (options.codeIssuerMaxInFlight ?? 8)) {
+          giveBack();
+          options.onIssuerError?.(issuerName, "busy");
+          throw new ApiError(503, "code_issuer_unavailable", "The issuer is busy; no decision yet, try again", { issuer: cd.issuer });
+        }
+        issuerInFlight.set(issuerName, inFlight + 1);
         let verdict: "valid" | "used" | "unknown";
         try {
-          verdict = await issuer.checkCode(code);
-        } catch {
+          // B7-C8: a timeout, and a log line with the name of the issuer only (never the message, which could hold the code)
+          let timer: NodeJS.Timeout | undefined;
+          const answer: unknown = await Promise.race([
+            issuer.checkCode(code),
+            new Promise<never>((_resolve, reject) => {
+              timer = setTimeout(() => reject(new Error("timeout")), issuerTimeout);
+            }),
+          ]).finally(() => clearTimeout(timer));
+          if (answer !== "valid" && answer !== "used" && answer !== "unknown") {
+            giveBack();
+            options.onIssuerError?.(issuerName, "bad_answer");
+            throw new ApiError(503, "code_issuer_unavailable", "The issuer gave an answer that is not valid, used or unknown; no decision", { issuer: cd.issuer });
+          }
+          verdict = answer;
+        } catch (error) {
+          if (error instanceof ApiError) throw error;
+          giveBack();
+          options.onIssuerError?.(issuerName, (error as Error).message === "timeout" ? "timeout" : "error");
           throw new ApiError(503, "code_issuer_unavailable", "The issuer did not respond; no decision yet, try again", { issuer: cd.issuer });
+        } finally {
+          issuerInFlight.set(issuerName, (issuerInFlight.get(issuerName) ?? 1) - 1);
         }
-        if (mac !== null) db.prepare("INSERT OR IGNORE INTO code_seen (circle_id, mac, listing_hash, seen_at_ms) VALUES (?, ?, ?, ?)").run(circle.circle_id, mac, listing.listing_hash, now());
+        db.prepare("INSERT OR IGNORE INTO code_check_notices (circle_id, notice_hash) VALUES (?, ?)").run(circle.circle_id, noticeHash);
         db.prepare("INSERT INTO code_checks (circle_id, listing_hash, verdict, checked_at_ms) VALUES (?, ?, ?, ?) ON CONFLICT (circle_id, listing_hash) DO UPDATE SET verdict = excluded.verdict, checked_at_ms = excluded.checked_at_ms").run(circle.circle_id, listing.listing_hash, verdict, now());
         if (verdict === "used") cancelCodeSale(db, circle.circle_id, listing.listing_hash, now());
         return { status: 200, body: { listingHash: listing.listing_hash, verdict, checkedAt: now(), validUntilMs: verdict === "valid" ? now() + checkTtlMs : null } };
@@ -573,7 +626,7 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
             record(db, circle.circle_id, p, p.seller, "key_released", at, signature, now(), JSON.stringify(r));
             // B7-C4: a verdict serves one release. The seller who cancels a released sale (or spends the code after it) must have the code checked again for the next buyer
             if (p.kind === "code") db.prepare("DELETE FROM code_checks WHERE circle_id = ? AND listing_hash = ?").run(circle.circle_id, p.listing_hash);
-            db.prepare("UPDATE purchases SET status = 'key_released', release_json = ?, release_signature = ?, released_at = ?, dispute_until = ? WHERE id = ?").run(JSON.stringify(r), signature, at, at + (p.kind === "code" ? codeWindow : window), p.id);
+            db.prepare("UPDATE purchases SET status = 'key_released', release_json = ?, release_signature = ?, released_at = ?, dispute_until = ? WHERE id = ?").run(JSON.stringify(r), signature, at, nowSeconds(now()) + (p.kind === "code" ? codeWindow : window), p.id);
           })();
           return { status: 201, body: purchaseView(findPurchase(db, circle.circle_id, params.id as string)) };
         }
