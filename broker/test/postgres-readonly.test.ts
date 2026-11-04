@@ -29,6 +29,8 @@ function database(opts: { failOn?: RegExp } = {}) {
       m = /^GRANT (CONNECT ON DATABASE "[\w.-]+"|USAGE ON SCHEMA "\w+"|SELECT ON ALL TABLES IN SCHEMA "\w+"|SELECT ON TABLE "\w+"\."\w+") TO "(\w+)"$/.exec(text);
       if (m) { const g = roles.get(m[2]!)!.grants; if (!g.includes(m[1]!)) g.push(m[1]!); return { rows: [] }; }
       if (/^SELECT pg_terminate_backend/.test(text) || /^REVOKE CONNECT ON DATABASE "[\w.-]+" FROM "\w+"$/.test(text)) return { rows: [] };
+      m = /^ALTER ROLE "(\w+)" NOLOGIN$/.exec(text);
+      if (m) { roles.get(m[1]!)!.canLogin = false; return { rows: [] }; }
       m = /^DROP OWNED BY "(\w+)"$/.exec(text);
       if (m) { roles.get(m[1]!)!.grants = []; return { rows: [] }; }
       m = /^DROP ROLE IF EXISTS "(\w+)"$/.exec(text);
@@ -137,6 +139,7 @@ describe("BE-082 postgres-readonly adapter (ADR-47 group B, #23), mock SQL clien
     await a.revoke(access.handle);
     expect(db.statements).toEqual([
       "SELECT 1 AS x FROM pg_roles WHERE rolname = $1",
+      'ALTER ROLE "x207_g1" NOLOGIN', // first, so a lessee that reconnects in a loop cannot get back in before the role is dropped
       "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = 'x207_g1'",
       'REVOKE CONNECT ON DATABASE "shop" FROM "x207_g1"',
       'DROP OWNED BY "x207_g1"',

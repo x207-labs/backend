@@ -2,7 +2,7 @@
 // The administrator credential of the grantor stays on the machine of the broker, inside the `SqlClient` it hands to this adapter; the lessee only gets the role and its password.
 //   grant   CREATE ROLE "x207_g<id>" LOGIN PASSWORD '…' VALID UNTIL '…' (no superuser, no create, not a replication role, few connections), `default_transaction_read_only = on`,
 //           GRANT CONNECT on the database, then GRANT USAGE on each schema and GRANT SELECT on the tables of the scope, nothing else
-//   revoke  end the sessions of the role, REVOKE CONNECT, DROP OWNED BY (this takes back every grant of the role), DROP ROLE
+//   revoke  NOLOGIN, end the sessions of the role, REVOKE CONNECT, DROP OWNED BY (this takes back every grant of the role), DROP ROLE
 //   status  pg_roles: no row = absent, VALID UNTIL in the past = expired, else active
 // Scope of the grant: `resource` is a comma separated list of `schema` or `schema.table` that the operator allowed (`allowedSchemas`); `permission` is empty or `read`. Anything else is refused before a
 // statement is sent. `grantee_ref` is only the name of the access (the lessee has no account on the database, so there is nothing to prove: the manager marks the access `not_applicable`).
@@ -143,7 +143,9 @@ export class PostgresReadonlyAdapter implements ProviderAccessAdapter {
   async revoke(handle: string): Promise<void> {
     const role = roleOfHandle(handle);
     if (!(await this.#exists(role))) return; // already gone: success
+    // NOLOGIN first: PUBLIC has CONNECT on a database by default, so ending the sessions alone lets a lessee that reconnects in a loop log in again before the role is dropped (BE-082 review)
     await this.#run([
+      `ALTER ROLE ${quote(role)} NOLOGIN`,
       `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = '${role}'`,
       `REVOKE CONNECT ON DATABASE ${quote(this.#o.database)} FROM ${quote(role)}`,
       `DROP OWNED BY ${quote(role)}`,
