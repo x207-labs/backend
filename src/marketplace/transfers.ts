@@ -3,6 +3,7 @@
 // with `x207-own=<purchase_id>` AFTER the transfer, and RDAP must show a settled domain), `trade_api` for a game item (the trade offer is `accepted` and its hold is over), `buyer_confirm`
 // for a ticket. The window per platform: domain 7 days, ticket 1 day, game item 1 hour; when it passes without the proof the purchase is `cancelled` and the voucher never moves.
 // A value at or above `bond_threshold` is a bundle of two legs with an arbiter (CT-094), not this ledger. A website or an online store (#67) is on the roadmap only.
+import { createHash } from "node:crypto";
 import type Database from "better-sqlite3";
 import {
   normalizeTransfer, TRANSFER_WINDOW_SECONDS, transferDocumentHash, TransferError, transferNeedsBond, transferResource, verifyVoucher,
@@ -30,6 +31,12 @@ export interface TransferOptions {
   /** At least this many seconds between two checks of the proof of one transfer (they ask the outside); default 15. */
   proofMinSeconds?: number;
 }
+
+/**
+ * The value of the `x207-own` TXT of a domain transfer: `<transfer id>-<token>`. Until the registrar moves the domain the SELLER controls its DNS, so a TXT that only carries the public id would let the
+ * seller "prove" the buyer's ownership and be paid for nothing (UM-096). The token is derived from the signature of the buyer's voucher, which only the buyer and this backend know until the proof is met.
+ */
+export const ownValue = (id: number | bigint, voucherSignature: string): string => `${id}-${createHash("sha256").update(`x207-own\0${id}\0${voucherSignature}`).digest("hex").slice(0, 32)}`;
 
 const refuse = (status: number, code: ApiError["code"], message: string, details: Record<string, unknown> = {}): never => {
   throw new ApiError(status, code, message, details);
@@ -185,7 +192,7 @@ export function transferRoutes(resolveOpen: OpenEpochResolver, options: Transfer
           .run(circle.circle_id, listing.listing_hash, v.payer, listing.account_id, platform, d.proof_method, d.transfer_ref, typeof buyerRef === "string" ? buyerRef : null, JSON.stringify(v), signature,
             nowSeconds(now()) + TRANSFER_WINDOW_SECONDS[platform], now()).lastInsertRowid;
         const created = findTransfer(db, circle.circle_id, String(id));
-        const instructions = platform === "domain" ? { setTxtAfterTransfer: `x207-own=${created.id}`, on: created.transfer_ref } : null;
+        const instructions = platform === "domain" ? { setTxtAfterTransfer: `x207-own=${ownValue(created.id, created.voucher_signature)}`, on: created.transfer_ref } : null;
         return { status: 201, body: { ...view(created), ...(instructions ? { instructions } : {}) } };
       },
     },
@@ -226,7 +233,7 @@ export function transferRoutes(resolveOpen: OpenEpochResolver, options: Transfer
           throw new ApiError(429, "rate_limited", `the proof of a transfer is checked once each ${options.proofMinSeconds ?? 30} seconds`, { retryAfterSeconds: Math.ceil((minGap - (now() - last.checkedAtMs)) / 1000) });
         }
         let verdict: ProofVerdict;
-        if (t.proof_method === "dns_txt") verdict = await (options.dnsTxt as DnsTxtProof).buyerControls(t.transfer_ref, Number(t.id));
+        if (t.proof_method === "dns_txt") verdict = await (options.dnsTxt as DnsTxtProof).buyerControls(t.transfer_ref, ownValue(t.id, t.voucher_signature));
         else verdict = await (options.tradeApi as TradeApiProof).check({ tradeOfferId: t.tradeoffer_id as string, itemRef: t.transfer_ref, buyerAccount: t.buyer_ref as string, nowS });
         const record = { ...verdict.detail, verdict: verdict.status, checkedAtMs: now() };
         if (verdict.status === "unavailable") {

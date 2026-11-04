@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { listingHash, signVoucher, TRANSFER_WINDOW_SECONDS, transferDocumentHash, transferResource, type Listing, type TransferDocument, type TransferPlatform, type UnsignedVoucher } from "@x207/core";
+import { ownValue } from "../../src/marketplace/transfers.js";
 import { signNoticeJson } from "../../src/marketplace/notice.js";
 import type { Transport } from "../../src/marketplace/ssrf.js";
 import { DnsTxtProof, TradeApiProof } from "../../src/marketplace/transfer-proofs.js";
@@ -9,6 +10,8 @@ import { acct, CONTRACT, NOW_S, openEpoch, signedListing, startMarket, type Mark
 // BE-074 (P4, ADR-49): transfer through the official feature of a platform. The DNS (DoH), the registry (RDAP) and Steam are a fake `Transport` behind the SSRF guard.
 const C = (n: number): string => (BigInt(n) * 1_000_000n).toString();
 const DOMAIN = "example-shop.com";
+
+const sigOf = (m: Market, id: number | string): string => (m.db.prepare("SELECT voucher_signature AS s FROM transfers WHERE id = ?").get(Number(id)) as { s: string }).s;
 
 describe("BE-074 the transfer ledger", () => {
   let market: Market | undefined;
@@ -100,16 +103,23 @@ describe("BE-074 the transfer ledger", () => {
     expect((await m.post("/listings", s.body)).status).toBe(201);
     const bought = await buy(m, s);
     expect([bought.status, bought.json.status, bought.json.platform, bought.json.proofMethod]).toEqual([201, "paid_held", "domain", "dns_txt"]);
-    expect(bought.json.instructions).toEqual({ setTxtAfterTransfer: `x207-own=${bought.json.transferId}`, on: DOMAIN });
+    expect(bought.json.instructions).toEqual({ setTxtAfterTransfer: `x207-own=${ownValue(bought.json.transferId, sigOf(m, bought.json.transferId))}`, on: DOMAIN });
+    expect(bought.json.instructions.setTxtAfterTransfer).toMatch(/^x207-own=\d+-[0-9a-f]{32}$/);
     expect("voucher" in bought.json).toBe(false);
     expect(bought.json.windowUntil - at(m)).toBe(7 * 86_400);
     const id = bought.json.transferId as number;
     // the buyer has not set the TXT: pending, the voucher is held
     const early = await m.post(`/transfers/${id}/proof`, {});
     expect([early.status, early.json.error.code]).toEqual([409, "transfer_proof_pending"]);
-    expect(early.json.error.details.want).toBe(`x207-own=${id}`);
+    expect(JSON.stringify(early.json)).not.toContain(ownValue(id, sigOf(m, id))); // the value is not shown to whoever asks
+    // UM-096 review: the seller controls the DNS until the transfer, knows the public id and writes the TXT himself: that proves nothing
+    dns.set(DOMAIN, [`x207-sell=${s.hash}`, `x207-own=${id}`, `x207-own=${id}-${"0".repeat(32)}`]);
+    rdap.set(DOMAIN, { status: 200, body: { ldhName: DOMAIN, status: ["active"] } });
+    m.clock.now += 31_000;
+    expect((await m.post(`/transfers/${id}/proof`, {})).json.error.code).toBe("transfer_proof_pending");
     // the TXT is there but the registry still says the transfer is pending
-    dns.set(DOMAIN, [`x207-sell=${s.hash}`, `x207-own=${id}`]);
+    dns.set(DOMAIN, [`x207-sell=${s.hash}`, `x207-own=${ownValue(id, sigOf(m, id))}`]);
+    m.clock.now += 31_000;
     rdap.set(DOMAIN, { status: 200, body: { ldhName: DOMAIN, status: ["pending transfer"] } });
     expect((await m.post(`/transfers/${id}/proof`, {})).json.error.code).toBe("transfer_proof_pending");
     rdap.set(DOMAIN, { status: 200, body: { ldhName: DOMAIN, status: ["active"] } });
@@ -317,7 +327,7 @@ describe("BE-074 the transfer ledger", () => {
     const dBought = await buy(m, d, "citra");
     const dId = dBought.json.transferId as number;
     expect((await notice(m, dId, "cancelled", "citra")).json).toMatchObject({ status: "paid_held", cancelRequested: true });
-    dns.set(DOMAIN, [`x207-sell=${d.hash}`, `x207-own=${dId}`]);
+    dns.set(DOMAIN, [`x207-sell=${d.hash}`, `x207-own=${ownValue(dId, sigOf(m, dId))}`]);
     rdap.set(DOMAIN, { status: 200, body: { ldhName: DOMAIN, status: ["active"] } });
     expect((await m.post(`/transfers/${dId}/proof`, {})).json.status).toBe("confirmed");
     // an honest buyer: nothing was transferred, the cancel takes effect when the window ends, and the voucher never moves

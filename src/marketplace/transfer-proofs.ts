@@ -2,7 +2,7 @@
 // `buyer_confirm` (the buyer says so, for a ticket). An adapter answers `met`, `pending` (not yet: the voucher stays held) or `unavailable` (the platform did not answer: nothing is
 // decided). Every request goes through the SSRF guard (`guardedGet`): https only, public addresses only, no redirect, a small body. The HTTP is injectable for the tests (`resolver`, `transport`).
 import { guardedGet, type Resolver, type Transport } from "./ssrf.js";
-import { isDomainName, ownTxt, parseTxt, sellTxt } from "@x207/core";
+import { isDomainName, parseTxt, sellTxt } from "@x207/core";
 
 export type ProofVerdict = { status: "met"; detail: Record<string, unknown> } | { status: "pending"; detail: Record<string, unknown> } | { status: "unavailable"; detail: Record<string, unknown> };
 
@@ -60,11 +60,11 @@ export class DnsTxtProof {
     return records.some((r) => parseTxt(r)?.kind === "sell" && parseTxt(r)?.value === listingHash) ? { status: "met", detail: { txt: want } } : { status: "pending", detail: { want, found: records.slice(0, 5) } };
   }
 
-  /** After the transfer the buyer sets `x207-own=<purchase_id>`; the registry (RDAP) must show a live domain that is not in the middle of a transfer or a deletion. */
-  async buyerControls(domain: string, purchaseId: number): Promise<ProofVerdict> {
+  /** After the transfer the buyer sets `x207-own=<value>` (the value is `<id>-<token>` made by the backend: the seller controls the DNS until the transfer and must not be able to write it);  the registry (RDAP) must show a live domain that is not in the middle of a transfer or a deletion. */
+  async buyerControls(domain: string, purchaseId: number | string): Promise<ProofVerdict> {
     const records = await this.txt(domain);
     if (records === null) return { status: "unavailable", detail: { check: "dns" } };
-    if (!records.some((r) => parseTxt(r)?.kind === "own" && parseTxt(r)?.value === String(purchaseId))) return { status: "pending", detail: { want: ownTxt(purchaseId), found: records.slice(0, 5) } };
+    if (!records.some((r) => parseTxt(r)?.kind === "own" && parseTxt(r)?.value === String(purchaseId))) return { status: "pending", detail: { want: "the x207-own TXT record that the answer of the purchase gave to the buyer (its value is not shown here)", found: records.slice(0, 5) } };
     const rdap = await getJson(`${this.#o.rdapBaseUrl ?? DEFAULT_RDAP_BASE_URL}${encodeURIComponent(domain)}`, this.#o);
     if (rdap === null || (rdap.status !== 200 && rdap.status !== 404)) return { status: "unavailable", detail: { check: "rdap" } };
     if (rdap.status === 404) return { status: "pending", detail: { rdap: "domain not found in the registry" } };
@@ -73,7 +73,7 @@ export class DnsTxtProof {
     const bad = statuses.filter((s) => BAD_RDAP_STATUS.includes(s));
     if (typeof r?.ldhName !== "string" || r.ldhName.toLowerCase() !== domain.toLowerCase()) return { status: "pending", detail: { rdap: "the registry answered for another name" } };
     if (bad.length > 0) return { status: "pending", detail: { rdap: "the domain is not settled in the registry", statuses: bad } };
-    return { status: "met", detail: { txt: ownTxt(purchaseId), rdapStatus: statuses } };
+    return { status: "met", detail: { txt: "x207-own", rdapStatus: statuses } };
   }
 }
 

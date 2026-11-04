@@ -25,14 +25,14 @@ A domain, a game item or a ticket changes hands through the **official feature o
 The seller of a domain sets the TXT before the listing, so the `listing_hash` is the one of the body that is posted. The dry run `POST /listings/check` makes the same checks, DNS included.
 
 ## The purchase
-`POST /listings/{hash}/transfers` body `{voucher, signature, buyer_ref?}`. The voucher is for the seller, `resource` is `x207:transfer:<transfer_doc>`, the epoch is open, and `cumulativeAmount` adds the price to the highest cumulative that the pair already has, **counting the vouchers that purchases and transfers still hold** (B7-C3). A game item needs `buyer_ref`, the Steam account id of the buyer. One buyer per thing (`exclusive_taken`), and the open limit of purchases applies. The answer is the transfer with `status: "paid_held"` and `windowUntil`; for a domain also `instructions: {setTxtAfterTransfer: "x207-own=<id>", on: "<domain>"}`.
+`POST /listings/{hash}/transfers` body `{voucher, signature, buyer_ref?}`. The voucher is for the seller, `resource` is `x207:transfer:<transfer_doc>`, the epoch is open, and `cumulativeAmount` adds the price to the highest cumulative that the pair already has, **counting the vouchers that purchases and transfers still hold** (B7-C3). A game item needs `buyer_ref`, the Steam account id of the buyer. One buyer per thing (`exclusive_taken`), and the open limit of purchases applies. The answer is the transfer with `status: "paid_held"` and `windowUntil`; for a domain also `instructions: {setTxtAfterTransfer: "x207-own=<id>-<token>", on: "<domain>"}`.
 
 The window per platform: **domain 7 days, ticket 1 day, game item 1 hour**. When it passes without the proof the transfer is `cancelled` (`cancelReason: transfer_window_passed`), the voucher never moves, and the cancelled voucher no longer counts for the pair.
 
 ## The proof
 | Platform | Method | Met when |
 | --- | --- | --- |
-| domain | `dns_txt` | TXT `x207-own=<transfer id>` on the domain (DNS over HTTPS), and RDAP shows a live domain of that name that is not `pending transfer`, `pending delete`, `redemption period`, `server hold`, `client hold` or `inactive` |
+| domain | `dns_txt` | TXT `x207-own=<transfer id>-<token>` on the domain (the token is 32 hex characters, derived from the signature of the buyer's voucher; the exact text is in `instructions` of the purchase answer and is never shown by the proof endpoint, because until the registrar moves the domain the seller controls its DNS and must not be able to write it) (DNS over HTTPS), and RDAP shows a live domain of that name that is not `pending transfer`, `pending delete`, `redemption period`, `server hold`, `client hold` or `inactive` |
 | game item | `trade_api` | the Steam trade offer is `accepted` (state 3), goes to `buyer_ref`, gives `<appid>:<assetid>`, and its hold (`time_escrow_end`) is over |
 | ticket | `buyer_confirm` | the buyer signs the notice `confirmed` |
 
