@@ -1,9 +1,9 @@
+import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
-import { listingHash, signVoucher, type Listing, type UnsignedVoucher } from "@x207/core";
+import { listingHash, signVoucher, TRANSFER_WINDOW_SECONDS, transferDocumentHash, transferResource, type Listing, type TransferDocument, type TransferPlatform, type UnsignedVoucher } from "@x207/core";
 import { signNoticeJson } from "../../src/marketplace/notice.js";
 import type { Transport } from "../../src/marketplace/ssrf.js";
 import { DnsTxtProof, TradeApiProof } from "../../src/marketplace/transfer-proofs.js";
-import { PLATFORM_WINDOW_SECONDS, transferDocumentHash, transferResource, type TransferDocument, type TransferPlatform } from "../../src/marketplace/transfer-types.js";
 import { acct, CONTRACT, NOW_S, openEpoch, signedListing, startMarket, type Market } from "./helpers.js";
 
 // BE-074 (P4, ADR-49): transfer through the official feature of a platform. The DNS (DoH), the registry (RDAP) and Steam are a fake `Transport` behind the SSRF guard.
@@ -63,7 +63,14 @@ describe("BE-074 the transfer ledger", () => {
     const value = C(o.value ?? 10);
     const nonce = `t${++n}`;
     const doc: TransferDocument = { circle: CONTRACT, seller: acct("andi"), platform, transfer_ref: ref, proof_method: method, estimate_seconds: o.estimate ?? 3600, value, nonce };
-    const docHash = transferDocumentHash(doc);
+    // a document that the SDK refuses has no hash from it (the tests of the errors): any 64 hex characters, since the check reports the error of the SDK before it looks at the hash
+    const docHash = (() => {
+      try {
+        return transferDocumentHash(doc);
+      } catch {
+        return createHash("sha256").update(JSON.stringify(doc)).digest("hex");
+      }
+    })();
     const detail = JSON.stringify({ kind: "transfer", transfer_doc: docHash, platform, transfer_ref: ref, proof_method: method, estimate_seconds: doc.estimate_seconds, nonce, ...(o.detail ?? {}) });
     const assetType = o.assetType ?? (platform === "domain" ? "transfer:domain" : platform === "game_item" ? "transfer:game-item" : "transfer:ticket");
     const body = signedListing(m, "andi", { offer: { asset_type: assetType, asset_class: "B", quantity: 1, value }, want: { asset_type: "usdc", asset_class: "A", quantity: 1, value }, detail, nonce: `tl-${n}`, expires_at: NOW_S + 30 * 86_400 } as Partial<Listing>);
@@ -125,7 +132,7 @@ describe("BE-074 the transfer ledger", () => {
     expect([unavailable.status, unavailable.json.error.code]).toEqual([503, "transfer_platform_unavailable"]);
     expect((await m.get(`/transfers/${id}`)).json.status).toBe("paid_held");
     down.dns = false;
-    m.clock.now += (PLATFORM_WINDOW_SECONDS.domain + 5) * 1000;
+    m.clock.now += (TRANSFER_WINDOW_SECONDS.domain + 5) * 1000;
     const late = await m.get(`/transfers/${id}`);
     expect([late.json.status, late.json.cancelReason, "voucher" in late.json]).toEqual(["cancelled", "transfer_window_passed", false]);
     const proof = await m.post(`/transfers/${id}/proof`, {});
@@ -264,7 +271,7 @@ describe("BE-074 the transfer ledger", () => {
     const t2 = sell(m, { platform: "ticket", value: 5 });
     await m.post("/listings", t2.body);
     const id2 = (await buy(m, t2, "citra", {}, C(5))).json.transferId as number;
-    m.clock.now += (PLATFORM_WINDOW_SECONDS.ticket + 5) * 1000;
+    m.clock.now += (TRANSFER_WINDOW_SECONDS.ticket + 5) * 1000;
     expect((await m.get(`/transfers/${id2}`)).json.cancelReason).toBe("transfer_window_passed");
     expect((await rep()).abandoned).toEqual({ transactions: 0, counterparties: 0 }); // citra has paid nobody: a fresh account cannot damage anybody
     m.db.prepare("INSERT INTO obligations (circle_id, epoch, debtor, creditor, seq, cumulative_amount, registration_mode, registered_block, receipt_id) VALUES ('agents-main', 42, ?, ?, 1, 5000000, 'cumulative', 1, 'r1')").run(acct("citra"), acct("budi"));

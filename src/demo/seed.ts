@@ -5,12 +5,11 @@
 // backend answers "already exists" for what is there. Posted: class A listings (batch 1), P2 access rent, P3 one-time code, P4 transfers, P5 job, P6 order, P7 license, P8 invoice.
 import { createHash } from "node:crypto";
 import {
-  buildAssetTemplate, codeDocumentHash, contentHash, encryptCode, invoiceHash, licenseDocumentHash, orderHash, serializeOrder, signListing, voucherPublicKey,
-  type CodeDocument, type InvoiceDocument, type Listing, type LicenseDocument, type OrderDocument,
+  buildAssetTemplate, codeDocumentHash, contentHash, encryptCode, invoiceHash, licenseDocumentHash, orderHash, serializeOrder, signListing, transferDocumentHash, voucherPublicKey,
+  type CodeDocument, type TransferDocument, type InvoiceDocument, type Listing, type LicenseDocument, type OrderDocument,
 } from "@x207/core";
 import { serializeInvoiceNotice, type InvoiceNotice } from "../marketplace/invoices.js";
 import { signNoticeJson } from "../marketplace/notice.js";
-import { transferDocumentHash, type TransferDocument } from "../marketplace/transfer-types.js";
 
 export interface DemoClient {
   get(path: string): Promise<{ status: number; json: any }>;

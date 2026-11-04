@@ -4,7 +4,10 @@
 // for a ticket. The window per platform: domain 7 days, ticket 1 day, game item 1 hour; when it passes without the proof the purchase is `cancelled` and the voucher never moves.
 // A value at or above `bond_threshold` is a bundle of two legs with an arbiter (CT-094), not this ledger. A website or an online store (#67) is on the roadmap only.
 import type Database from "better-sqlite3";
-import { listingHash, verifyVoucher, type Listing, type UnsignedVoucher, type Voucher } from "@x207/core";
+import {
+  normalizeTransfer, TRANSFER_WINDOW_SECONDS, transferDocumentHash, TransferError, transferNeedsBond, transferResource, verifyVoucher,
+  type Listing, type TransferDocument, type TransferPlatform, type UnsignedVoucher, type Voucher,
+} from "@x207/core";
 import { assertOpenRoom, DEFAULT_OPEN } from "../api/abuse.js";
 import type { OpenLimits } from "../api/abuse.js";
 import { ApiError, invalidRequest } from "../api/errors.js";
@@ -15,11 +18,8 @@ import { nowSeconds } from "./common.js";
 import type { OpenEpochResolver } from "./epoch.js";
 import { findListing, type ListingAsyncCheck, type ListingCheck } from "./listings.js";
 import { NOTICE_SKEW_SECONDS, verifyNoticeJson } from "./notice.js";
-import { DnsTxtProof, isDomainName, TradeApiProof, type ProofVerdict } from "./transfer-proofs.js";
-import {
-  PLATFORM_METHOD, PLATFORM_WINDOW_SECONDS, ROADMAP_ONLY_ASSET_TYPES, TICKET_LIMIT, TRANSFER_ASSET_TYPES, transferDetail, transferDocumentHash, transferResource,
-  type TransferDocument, type TransferPlatform,
-} from "./transfer-types.js";
+import { DnsTxtProof, TradeApiProof, type ProofVerdict } from "./transfer-proofs.js";
+import { ROADMAP_ONLY_ASSET_TYPES, TRANSFER_ASSET_TYPES, transferDetail } from "./transfer-types.js";
 
 export interface TransferOptions {
   /** Value from which a transfer needs the bond of CT-094 and so a bundle of two legs; smallest unit, default 100 credit. */
@@ -30,7 +30,6 @@ export interface TransferOptions {
   /** At least this many seconds between two checks of the proof of one transfer (they ask the outside); default 15. */
   proofMinSeconds?: number;
 }
-const DEFAULT_BOND_THRESHOLD = 100_000_000n;
 
 const refuse = (status: number, code: ApiError["code"], message: string, details: Record<string, unknown> = {}): never => {
   throw new ApiError(status, code, message, details);
@@ -55,18 +54,15 @@ export const transferCheck = (options: TransferOptions = {}): ListingCheck => (l
   const d = transferDetail(String((listing as { detail?: unknown }).detail ?? ""));
   if (d === null) return refuse(400, "transfer_bad_platform", `a listing of ${assetType} needs detail {"kind":"transfer", ...}`, { assetType });
   if (d.platform !== platform) refuse(400, "transfer_bad_platform", `platform must be ${platform} for ${assetType}`, { platform: d.platform ?? null });
-  if (d.proof_method !== PLATFORM_METHOD[platform]) refuse(400, "transfer_method_mismatch", `${platform} is proved by ${PLATFORM_METHOD[platform]}`, { proofMethod: d.proof_method ?? null });
-  const ref = d.transfer_ref;
-  const refOk = typeof ref === "string" && ref.length > 0 && ref.length <= 256 && (platform === "domain" ? isDomainName(ref) : platform === "game_item" ? /^\d{1,10}:\d{1,20}$/.test(ref) : true);
-  if (!refOk) refuse(400, "transfer_bad_ref", platform === "domain" ? "transfer_ref is the domain name" : platform === "game_item" ? "transfer_ref is <appid>:<assetid>" : "transfer_ref is the ticket reference (1 to 256 characters)", {});
-  const window = PLATFORM_WINDOW_SECONDS[platform];
-  if (!Number.isSafeInteger(d.estimate_seconds) || (d.estimate_seconds as number) < 1 || (d.estimate_seconds as number) > window) refuse(400, "transfer_bad_estimate", `estimate_seconds is a whole number from 1 to ${window} for ${platform}`, { window });
-  if (typeof d.nonce !== "string" || d.nonce === "" || d.nonce.length > 64) refuse(400, "transfer_bad_nonce", "nonce is 1 to 64 characters", {});
   if (listing.offer.quantity !== 1) refuse(400, "transfer_bad_value", "a transfer is one thing: offer.quantity must be 1", { quantity: listing.offer.quantity });
-  if (!/^[1-9]\d*$/.test(listing.offer.value)) refuse(400, "transfer_bad_value", "offer.value must be a whole number above 0", {});
-  const value = BigInt(listing.offer.value);
-  if (platform === "ticket" && value > TICKET_LIMIT) refuse(400, "transfer_ticket_over_limit", "a ticket is sold for at most 100 credit (check local law on resale)", { limit: TICKET_LIMIT.toString() });
-  if (value >= BigInt(options.transferBondThreshold ?? DEFAULT_BOND_THRESHOLD)) refuse(400, "transfer_arbiter_required", "a value at or above the bond threshold is a bundle of two legs with an arbiter, not a single transfer", { value: listing.offer.value });
+  // the format and its errors are the ones of the SDK (SD-077): the document of the listing is normalized there and a `TransferError` keeps its code
+  try {
+    const doc = normalizeTransfer(documentOf(listing, d));
+    if (transferNeedsBond(doc, options.transferBondThreshold)) refuse(400, "transfer_arbiter_required", "a value at or above the bond threshold is a bundle of two legs with an arbiter, not a single transfer", { value: listing.offer.value });
+  } catch (error) {
+    if (error instanceof TransferError) refuse(400, error.code, error.message.replace(/^transfer_[a-z_]+: /, ""), {});
+    throw error;
+  }
   if (d.transfer_doc !== transferDocumentHash(documentOf(listing, d))) refuse(400, "transfer_bad_hash", "transfer_doc is not the hash of the transfer document of this listing", {});
 };
 
@@ -184,7 +180,7 @@ export function transferRoutes(resolveOpen: OpenEpochResolver, options: Transfer
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(circle.circle_id, listing.listing_hash, v.payer, listing.account_id, platform, d.proof_method, d.transfer_ref, typeof buyerRef === "string" ? buyerRef : null, JSON.stringify(v), signature,
-            nowSeconds(now()) + PLATFORM_WINDOW_SECONDS[platform], now()).lastInsertRowid;
+            nowSeconds(now()) + TRANSFER_WINDOW_SECONDS[platform], now()).lastInsertRowid;
         const created = findTransfer(db, circle.circle_id, String(id));
         const instructions = platform === "domain" ? { setTxtAfterTransfer: `x207-own=${created.id}`, on: created.transfer_ref } : null;
         return { status: 201, body: { ...view(created), ...(instructions ? { instructions } : {}) } };

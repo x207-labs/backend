@@ -1,6 +1,6 @@
 # Transfer through the official feature of a platform (BE-074, P4, ADR-49)
 
-A domain, a game item or a ticket changes hands through the **official feature of its platform** (a registrar transfer, a Steam trade offer, a ticket transfer). x207 holds the voucher of the buyer until the platform shows that the transfer happened. The contract does not change. The format of the listing is SD-077 (Main B); until the SDK has it, the types are local (`src/marketplace/transfer-types.ts`) and `transferDocumentHash` is a stand-in (sha256 of the canonical JSON) that the SDK function replaces.
+A domain, a game item or a ticket changes hands through the **official feature of its platform** (a registrar transfer, a Steam trade offer, a ticket transfer). x207 holds the voucher of the buyer until the platform shows that the transfer happened. The contract does not change. The format of the listing is SD-077 (`@x207/core`, `docs/transfer.md` of the SDK): the document, its hash, the resource `x207:transfer:<hash>`, the TXT texts (`sellTxt`, `ownTxt`, `parseTxt`) and the 14 `TransferError` codes are used as they are; the backend adds its own errors (`transfer_seller_unproven`, `transfer_proof_pending`, `transfer_window_passed`, `transfer_platform_unavailable`, `transfer_proof_not_configured`, `transfer_not_found`, `transfer_not_party`, `transfer_bad_state`, `asset_roadmap_only`).
 
 ## The listing
 `POST /listings` with `offer.asset_type` `transfer:domain`, `transfer:game-item` or `transfer:ticket` (class B, quantity 1) and `detail` JSON:
