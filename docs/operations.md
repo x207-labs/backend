@@ -28,7 +28,7 @@ Both read the environment; neither reads a file of settings. Secrets only in the
 | `X207_RDAP_BASE_URL` | backend | default `https://rdap.verisign.com/com/v1/domain/` | no | RDAP of the registry of the TLD (ends with a slash; `.com` and `.net` by default) |
 | `X207_STEAM_API_KEY` | backend | none (game item transfers answer `transfer_proof_not_configured`) | yes | Web API key of Steam for the trade offer proof (BE-074) |
 | `X207_CODE_MOCK_CODES` | backend | none | no | demo only: comma separated codes that the mock issuer says are valid |
-| `X207_DEMO_SEED` | script `scripts/demo-seed.mjs` | required by the script | yes | secret string that gives the voucher keys of the three demo accounts (BE-080); also `X207_DEMO_SELLER`, `X207_DEMO_BUYER`, `X207_DEMO_HELPER`, `X207_DEMO_EXPIRES_AT`, `X207_DEMO_DOMAIN`; see `docs/demo-seed.md` |
+| `X207_DEMO_SEED` | backend | none (read by `scripts/demo-seed.mjs`, required there) | yes | secret string that gives the voucher keys of the three demo accounts (BE-080); also `X207_DEMO_SELLER`, `X207_DEMO_BUYER`, `X207_DEMO_HELPER`, `X207_DEMO_EXPIRES_AT`, `X207_DEMO_DOMAIN`; see `docs/demo-seed.md` |
 | `NEAR_RPC_PRIMARY_URL` | backend | required | maybe | main RPC; the URL may carry an API key |
 | `NEAR_RPC_FALLBACK_URL` | backend | none | maybe | second RPC for the failover |
 | `ONECLICK_BASE_URL` | backend | default `https://1click.chaindefuser.com` | no | 1Click API |
