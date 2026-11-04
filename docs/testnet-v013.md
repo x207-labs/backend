@@ -24,8 +24,13 @@ All 15 members: stake 99979000 in the contract, 100000000 in the read model. `co
 - Decision of the coordinator: the indexer computes the charge itself from what it has (BE-081), and this script keeps comparing the stake with the view `member` as the watch.
 - **After BE-081** (`REBUILD=1 node scripts/testnet-v013.mjs`, the kept events of the same run replayed with the new handler, no network): all 15 stakes are 99979000 and all limits 80000000, equal to the view `member`; `members.stale` 0 and `fee_mismatches` 0. The only differences left in that run were the epoch 3, which the chain had closed after the last block that was read (`cutoff` against `open`).
 
+## Result of the run to block 276145783 (epoch 2 finalized, epoch 3 open)
+18 members (the 15 of A2 and the 3 demo accounts of BE-080), all equal to the views (`stake`, `limit`, status, voucher key); `stale` 0 and `fee_mismatches` 0. Events by name: `voucher_registered` 420, `member_joined` 18, `stake_added` 18, `epoch_cutoff` 2, `clearing_submitted` 1, `clearing_applied` 2, `epoch_committed` 2, `limits_updated` 1, `epoch_finalized` 1; every row handled, none unknown. Epoch 2: phase `finalized` in both, `cleared_total`, obligations (210, with `cleared`) and `edges_hash` = `proposal_hash` equal. Epoch 1: committed with no proposal (the hash of an empty set, `4f53cda1…b945`, 0 edges): the read model keeps it as `payment_window` and the 210 pairs with `cleared` 0 as the contract does. The only differences left are the three of epoch 3, which the chain closed after the last block that was read (`cutoff` against `open`, an edge count not written yet).
+
+A prune of an epoch of this circle was **not** read: the early `prune_epoch` was refused by the contract (`prune_delay_epochs`, B8-F1), so `edges_unavailable` after a real prune is covered by the unit tests (TC-BE-078-F1) and not by the chain.
+
 ## What this run does not show yet
-- `finalize_epoch` and a prune of an epoch of this circle (the run stopped at epoch 3 open); `edges_unavailable` after a real prune stays covered by the unit tests (TC-BE-078-F1) only.
+- A prune of an epoch of this circle (the delay of the contract has not passed); `edges_unavailable` after a real prune stays covered by the unit tests (TC-BE-078-F1) only.
 - An epoch with a non-zero position (every epoch so far is a balanced ring), so the positions are compared only as "none".
 - The comparison is at one moment, and the free neardata is slow: a run of 500 blocks takes 8 to 10 minutes.
 
