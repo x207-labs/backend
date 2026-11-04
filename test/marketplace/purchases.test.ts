@@ -333,6 +333,8 @@ describe("BE-056 license handover: fair exchange with encryption", () => {
 
   it("TC-BE-056-11 the ciphertext is streamed through a temporary file: a mismatch is refused without being read, the file is deleted, and the deadline follows the size allowed", async () => {
     const before = () => readdirSync(tmpdir()).filter((n) => n.startsWith("x207-cipher-"));
+    // other test files run at the same time (a code is downloaded before its key is released, B7-C2): start from a tmp folder with none of their files
+    for (let i = 0; i < 100 && before().length > 0; i++) await new Promise((r) => setTimeout(r, 100));
     const left = before().length;
     // other test files run at the same time and make their own temporary files (a code is downloaded before its key is released, B7-C2): wait for those to go before counting
     const gone = async (): Promise<number> => {

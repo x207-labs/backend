@@ -18,7 +18,7 @@ import { createLogger } from "./log.js";
 import { jsonRpcClaimRpc } from "./marketplace/order-claims.js";
 import { rpcViewFunction } from "./settlement/intents.js";
 import { OneClickClient } from "./settlement/one-click.js";
-import { viewClearedEdges } from "./indexer/view-edges.js";
+import { viewClearedEdges, viewMembers } from "./indexer/view-edges.js";
 
 /** Variabel `.env` proses utama; nama RPC dan settlement ada di `.env.example`. */
 export interface AppConfig {
@@ -110,6 +110,7 @@ export async function startApp(env: NodeJS.ProcessEnv = process.env, log: (line:
     startBlock: config.startBlock,
     fetchParams: () => viewGetParams(primary, config.contractId),
     fetchClearedEdges: (epoch) => viewClearedEdges(primary, config.contractId, epoch),
+    fetchMembers: () => viewMembers(primary, config.contractId),
   });
   await indexer.bootstrap();
 

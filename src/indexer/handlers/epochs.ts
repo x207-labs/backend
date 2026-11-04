@@ -1,8 +1,9 @@
 import type { HandlerContext, HandlerMap } from "./context.js";
-import { advancePhase, ensureEpoch, requireChange } from "./context.js";
+import { advancePhase, ensureEpoch, recordLimit, requireChange } from "./context.js";
 import { IndexerHaltError } from "../errors.js";
 import { ns, signedUnits, units } from "../units.js";
 import { storedClearingEdges } from "../clearing-edges.js";
+import { bondLockedOf, computeCharges, feesForEpoch } from "../fee-charges.js";
 import { clearingHashes } from "../clearing-hashes.js";
 
 /** Interface 0.0.13 (BE-077): `clearing_applied` is a summary; the edges come from `clearing_edges` (read from `list_obligations` and checked against `edges_hash`). */
@@ -31,6 +32,36 @@ export interface EpochCommittedSummary {
 const isSummary = (e: unknown): boolean => typeof (e as { edges_hash?: unknown }).edges_hash === "string";
 const isPositionsSummary = (e: unknown): boolean => typeof (e as { positions_hash?: unknown }).positions_hash === "string";
 
+/**
+ * BE-081: the stake and the limit after the fee of the commit. The contract charges the debtors inside `commit_epoch` and no event says how much each paid, so the same rule is repeated here
+ * (`fee-charges.ts`) over the cleared edges of the epoch. It is applied only when it adds up to the two totals of the event; otherwise nothing changes and the debtors are marked `stale`.
+ * `edgesKnown` is false for an epoch whose pairs were pruned: the charge cannot be computed, and the debtors that the indexer knows from the vouchers are marked.
+ */
+function chargeFees(ctx: HandlerContext, epoch: number, solver: string | null | undefined, clearedTotal: bigint, eventClearing: bigint, eventSolver: bigint, edgesKnown: boolean): void {
+  if (solver === null || solver === undefined || solver === "") return; // no solver, no fee (`charge_fees`)
+  const fees = feesForEpoch(ctx.db, ctx.circleId, epoch);
+  if (fees === null || clearedTotal === 0n || (fees.clearingBps === 0n && fees.solverBps === 0n)) return;
+  const stale = (accounts: string[]): void => {
+    const mark = ctx.db.prepare("UPDATE members SET stale = 1, fee_mismatches = fee_mismatches + 1, updated_block = ? WHERE circle_id = ? AND account_id = ?");
+    for (const a of accounts) mark.run(ctx.block.height, ctx.circleId, a);
+  };
+  const debtors = (ctx.db.prepare("SELECT DISTINCT debtor FROM obligations WHERE circle_id = ? AND epoch = ? AND (? = 0 OR cleared > 0)").all(ctx.circleId, epoch, edgesKnown ? 1 : 0) as Array<{ debtor: string }>).map((r) => r.debtor);
+  if (!edgesKnown) return stale(debtors);
+  const edges = (ctx.db.prepare("SELECT debtor, cleared FROM obligations WHERE circle_id = ? AND epoch = ? AND cleared > 0").safeIntegers(true).all(ctx.circleId, epoch) as Array<{ debtor: string; cleared: bigint }>);
+  const members = new Map<string, { stake: bigint; limit: bigint }>();
+  for (const r of ctx.db.prepare("SELECT account_id, stake, credit_limit FROM members WHERE circle_id = ?").safeIntegers(true).all(ctx.circleId) as Array<{ account_id: string; stake: bigint; credit_limit: bigint }>) {
+    members.set(r.account_id, { stake: r.stake, limit: r.credit_limit });
+  }
+  const result = computeCharges({ edges, clearedTotal, clearingBps: fees.clearingBps, solverBps: fees.solverBps, members, bondLocked: (a) => bondLockedOf(ctx.db, ctx.circleId, a) });
+  if (result === null || result.toReserve !== eventClearing || result.toSolver !== eventSolver) return stale(debtors);
+  const update = ctx.db.prepare("UPDATE members SET stake = ?, credit_limit = ?, updated_block = ? WHERE circle_id = ? AND account_id = ?");
+  for (const c of result.charges) {
+    const before = members.get(c.account) as { stake: bigint; limit: bigint };
+    update.run(c.stake, c.limit, ctx.block.height, ctx.circleId, c.account);
+    if (c.limit !== before.limit) recordLimit(ctx, { account: c.account, epoch, oldLimit: before.limit, newLimit: c.limit, status: "active", reason: "stake" });
+  }
+}
+
 function applyClearingSummary(ctx: HandlerContext, e: ClearingAppliedSummary): void {
   ensureEpoch(ctx, e.epoch);
   const stored = storedClearingEdges(ctx.db, ctx.circleId, e.epoch);
@@ -50,6 +81,7 @@ function applyClearingSummary(ctx: HandlerContext, e: ClearingAppliedSummary): v
         ctx.block.height, ctx.block.timestampNs, ctx.txHash, ctx.receiptId,
       );
     ctx.db.prepare("UPDATE epochs SET cleared_total = ?, edges_unavailable = 1 WHERE circle_id = ? AND epoch = ?").run(total, ctx.circleId, e.epoch);
+    chargeFees(ctx, e.epoch, e.solver, total, units(e.clearing_fee, "clearing_fee"), units(e.solver_fee, "solver_fee"), false);
     return;
   }
   if (stored.edges.length !== e.edge_count) throw new IndexerHaltError(`clearing_applied epoch ${e.epoch}: event ${e.edge_count} edges, read ${stored.edges.length}`);
@@ -70,6 +102,7 @@ function applyClearingSummary(ctx: HandlerContext, e: ClearingAppliedSummary): v
       ctx.block.height, ctx.block.timestampNs, ctx.txHash, ctx.receiptId,
     );
   ctx.db.prepare("UPDATE epochs SET cleared_total = ? WHERE circle_id = ? AND epoch = ?").run(total, ctx.circleId, e.epoch);
+  chargeFees(ctx, e.epoch, e.solver, total, units(e.clearing_fee, "clearing_fee"), units(e.solver_fee, "solver_fee"), true);
 }
 
 function applyCommittedSummary(ctx: HandlerContext, e: EpochCommittedSummary): void {
@@ -184,6 +217,8 @@ export const epochHandlers: HandlerMap = {
     ctx.db
       .prepare("UPDATE clearing_log SET edge_count = edge_count + ? WHERE circle_id = ? AND epoch = ?")
       .run((e.edges ?? []).length, ctx.circleId, e.epoch);
+    // BE-081: the fee comes out of the stake once the last chunk has set `cleared` of every edge
+    if (e.chunk === (e.chunks ?? 1) - 1) chargeFees(ctx, e.epoch, e.solver, units(e.cleared_total, "cleared_total"), units(e.clearing_fee, "clearing_fee"), units(e.solver_fee, "solver_fee"), true);
   },
 
   epoch_committed(ctx, e) {

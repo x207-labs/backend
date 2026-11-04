@@ -472,6 +472,13 @@ ALTER TABLE epochs ADD COLUMN edges_unavailable INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE clearing_edges ADD COLUMN unavailable INTEGER NOT NULL DEFAULT 0;
 `;
 
+// BE-081: the stake and the limit of a member after the fee of a commit are computed by the indexer, not read from an event. `stale` marks a member whose numbers could not be computed or were
+// found different from the view `member` (and were taken from the view); `fee_mismatches` counts how many times.
+const V14_MEMBER_STALE = `
+ALTER TABLE members ADD COLUMN stale INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE members ADD COLUMN fee_mismatches INTEGER NOT NULL DEFAULT 0;
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "d9_initial", sql: V1_D9_INITIAL },
   { version: 2, name: "d9_bundles", sql: V2_BUNDLES },
@@ -486,4 +493,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 11, name: "d9_clearing_edges", sql: V11_CLEARING_EDGES },
   { version: 12, name: "d9_epoch_totals", sql: V12_EPOCH_TOTALS },
   { version: 13, name: "d9_edges_unavailable", sql: V13_EDGES_UNAVAILABLE },
+  { version: 14, name: "d9_member_stale", sql: V14_MEMBER_STALE },
 ];

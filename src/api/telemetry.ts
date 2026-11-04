@@ -79,5 +79,13 @@ export function renderMetrics(telemetry: Telemetry, db: Database.Database, nowMs
   for (const c of cursors ?? []) lines.push(`x207_indexer_last_block_height${labels({ contract: c.name })} ${c.last_block_height}`);
   lines.push("# HELP x207_indexer_seconds_since_update Seconds since the cursor of the indexer was written (a stuck indexer grows).", "# TYPE x207_indexer_seconds_since_update gauge");
   for (const c of cursors ?? []) lines.push(`x207_indexer_seconds_since_update${labels({ contract: c.name })} ${Math.max(0, Math.round((nowMs - Number(c.updated_at)) / 1000))}`);
+  // BE-081: members whose stake or limit is `stale` (could not be computed after a fee, or the view said otherwise) and how many times the watch found a difference
+  try {
+    const m = db.prepare("SELECT COALESCE(SUM(stale), 0) AS stale, COALESCE(SUM(fee_mismatches), 0) AS mismatches FROM members").get() as { stale: number; mismatches: number };
+    lines.push("# HELP x207_members_stale Members whose stake or limit is marked stale after the fee of a commit.", "# TYPE x207_members_stale gauge", `x207_members_stale ${m.stale}`);
+    lines.push("# HELP x207_indexer_fee_mismatches_total Times the indexer computed the fee of a commit and the result was not the one of the contract.", "# TYPE x207_indexer_fee_mismatches_total counter", `x207_indexer_fee_mismatches_total ${m.mismatches}`);
+  } catch {
+    // an older database has no such column: the lines are left out
+  }
   return `${[...lines, ...extra].join("\n")}\n`;
 }

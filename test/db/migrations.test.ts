@@ -95,7 +95,7 @@ describe("BE-004 migrasi skema D9", () => {
     expect(() => migrate(db)).not.toThrow();
     expect(schemaSnapshot(db)).toEqual(before);
     const versions = db.prepare("SELECT version FROM schema_migrations").all();
-    expect(versions).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }, { version: 5 }, { version: 6 }, { version: 7 }, { version: 8 }, { version: 9 }, { version: 10 }, { version: 11 }, { version: 12 }, { version: 13 }]);
+    expect(versions).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }, { version: 4 }, { version: 5 }, { version: 6 }, { version: 7 }, { version: 8 }, { version: 9 }, { version: 10 }, { version: 11 }, { version: 12 }, { version: 13 }, { version: 14 }]);
   });
 
   it("TC-BE-004-03 kunci unik events_raw per (receipt_id, log_index)", () => {
@@ -285,7 +285,7 @@ describe("BE-065 migration 10: the limit history keeps its rows and learns the r
     db.prepare("INSERT INTO circles (circle_id, contract_id, network) VALUES ('c', 'c.near', 'x207:c')").run();
     db.prepare("INSERT INTO members (circle_id, account_id, pubkey_voucher, terms_hash, status, joined_at_ns, updated_block) VALUES ('c', 'a.near', 'k', 't', 'active', 1, 1)").run();
     db.prepare("INSERT INTO member_limits (circle_id, account_id, epoch, old_limit, new_limit, status, reason, block_height, receipt_id, log_index) VALUES ('c', 'a.near', 1, 0, 80, 'active', 'stake', 5, 'r1', 0)").run();
-    expect(migrate(db)).toEqual([10, 11, 12, 13]);
+    expect(migrate(db)).toEqual([10, 11, 12, 13, 14]);
     expect(db.prepare("SELECT id, old_limit, new_limit, reason FROM member_limits").all()).toEqual([{ id: 1, old_limit: 0, new_limit: 80, reason: "stake" }]);
     db.prepare("INSERT INTO member_limits (circle_id, account_id, epoch, old_limit, new_limit, status, reason, block_height, receipt_id, log_index) VALUES ('c', 'a.near', 1, 80, 70, 'active', 'ruling', 6, 'r2', 0)").run();
     expect(() => db.prepare("INSERT INTO member_limits (circle_id, account_id, epoch, old_limit, new_limit, status, reason, block_height, receipt_id, log_index) VALUES ('c', 'a.near', 1, 70, 60, 'active', 'other', 7, 'r3', 0)").run()).toThrow();

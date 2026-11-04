@@ -15,9 +15,11 @@ The infrastructure tables `events_raw`, `indexer_cursor`, `settlement_jobs` and 
 | members | account_id | D1 `account_id` | |
 | members | pubkey_voucher | D1 `pubkey_voucher` | |
 | members | terms_hash | D1 `terms_hash` | Hash of the terms accepted at `join` |
-| members | stake | D1 `stake` | Overwritten from events |
+| members | stake | D1 `stake` | Overwritten from events; lowered by the fee of a commit, which the indexer computes (BE-081, `src/indexer/fee-charges.ts`) |
 | members | credit_limit | D1 `limit` | Named `credit_limit` because `LIMIT` is an SQL keyword |
 | members | outstanding_debt | D2 `outstanding_debt[account]` | From `epoch_committed`, `member_defaulted` |
+| members | stale | teknis | 1 when the stake or the limit could not be computed after the fee of a commit, or was found different from the view `member` and taken from it (BE-081) |
+| members | fee_mismatches | teknis | How many times that happened to the member (BE-081) |
 | members | status | D1 `status` | `pending`/`active`/`suspended`/`exited` (ADR-26) |
 | members | admitted | D1 `admitted` | `MemberView.admitted` (admission = dao) |
 | members | settled_history | D1 `settled_history` | |

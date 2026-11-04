@@ -4,6 +4,7 @@ import type { BlockLog, BlockSource, SourceBlock } from "./block-source.js";
 import { IndexerHaltError } from "./errors.js";
 import { rawHandlers } from "./handlers/escrow.js";
 import { defaultHandlers, type HandlerContext, type HandlerMap } from "./handlers/index.js";
+import { verifyMembers, type ViewMember } from "./fee-charges.js";
 import { prefetchClearingEdges, type FetchClearedEdges, type PrefetchOptions } from "./clearing-edges.js";
 import { assertAmountsInRange } from "./units.js";
 
@@ -22,6 +23,8 @@ export interface IndexerOptions {
   fetchParams?: () => Promise<ContractAbi.Params>;
   /** BE-077: reads the cleared edges of an epoch (view `list_obligations`) for a `clearing_applied` summary; needed to apply interface 0.0.13. */
   fetchClearedEdges?: FetchClearedEdges;
+  /** BE-081: reads the stake and the limit of every member (view `list_members`); when the indexer is at the final head after a `clearing_applied`, the read model is checked against it. */
+  fetchMembers?: () => Promise<ViewMember[]>;
   /** Retry of that read (tests make it fast). */
   prefetch?: PrefetchOptions;
   now?: () => number;
@@ -76,6 +79,7 @@ export class Indexer {
   readonly #now: () => number;
   readonly #fetchEdges: FetchClearedEdges | undefined;
   readonly #prefetch: PrefetchOptions;
+  readonly #fetchMembers: (() => Promise<ViewMember[]>) | undefined;
   #head = 0;
 
   constructor(options: IndexerOptions) {
@@ -89,6 +93,7 @@ export class Indexer {
     this.#now = options.now ?? Date.now;
     this.#fetchEdges = options.fetchClearedEdges;
     this.#prefetch = options.prefetch ?? {};
+    this.#fetchMembers = options.fetchMembers;
   }
 
   /** Buat cursor dan baris awal `params` bila belum ada; aman dipanggil berulang. */
@@ -136,7 +141,20 @@ export class Indexer {
     // BE-077: what a handler needs from a view is read before the transaction of the block, never inside it
     if (block) await prefetchClearingEdges(this.#db, this.#circleId, this.#contractId, block, this.#fetchEdges, this.#prefetch);
     const events = this.#commitBlock(next, block);
+    // BE-081: the fee that a commit takes from the stake is computed here, not read from an event; at the final head the view says whether the computation was right
+    if (this.#fetchMembers && block && next >= this.#head && block.logs.some((l) => l.executorId === this.#contractId && l.log.includes('"clearing_applied"'))) await this.#watchMembers(next);
     return { kind: "processed", height: next, events };
+  }
+
+  /** Compare the read model with the view `member`; the view counts only when no block came in between (the final head is still the block that was processed). */
+  async #watchMembers(height: number): Promise<void> {
+    try {
+      const view = await (this.#fetchMembers as () => Promise<ViewMember[]>)();
+      if ((await this.#source.finalHeight()) !== height) return;
+      verifyMembers(this.#db, this.#circleId, view, height);
+    } catch {
+      // the watch is not the indexer: a view that does not answer is tried again at the next commit
+    }
   }
 
   /** Baca sampai head, lalu berhenti; berguna untuk test dan catch-up. */
