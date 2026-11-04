@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs";
 import type Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDatabase } from "../../src/db/index.js";
@@ -121,5 +122,43 @@ describe("BE-081 the handler of clearing_applied charges the fee", () => {
     expect(verifyMembers(db, CIRCLE, view.map((v) => (v.account_id === acct("m3") ? { ...v, stake: "99979000" } : v)), 902)).toEqual([]);
     expect(db.prepare("SELECT stale, fee_mismatches FROM members WHERE account_id = ?").get(acct("m3"))).toEqual({ stale: 0, fee_mismatches: 1 }); // the count stays
   });
+});
 
+// the golden vector of A2 (CT-101): `contracts/tests/vectors/fee_charges.json`, written by `scripts/fee_charges.py` from the rule of `commit.rs`
+const VECTOR = new URL("../../../contracts/tests/vectors/fee_charges.json", import.meta.url).pathname;
+interface VectorCase {
+  name: string;
+  solver: string | null;
+  fees: { clearing_fee_bps: number; solver_fee_bps: number };
+  edges: Array<{ debtor: string; creditor: string; cleared: string }>;
+  members: Array<{ account: string; stake: string; limit: string; bond_locked: string }>;
+  expected: { cleared_total: string; charges: Array<{ account: string; stake_cut: string; stake_after: string; limit_after: string }>; clearing_fee_charged: string; solver_fee_charged: string };
+}
+describe.skipIf(!existsSync(VECTOR))("BE-081 the golden vector of the fee charges", () => {
+  const cases = (): VectorCase[] => (JSON.parse(readFileSync(VECTOR, "utf8")) as { cases: VectorCase[] }).cases;
+
+  it("TC-BE-081-08 computeCharges gives the cuts, the stakes, the limits and the two totals of every case of the vector", () => {
+    expect(cases().length).toBeGreaterThanOrEqual(8);
+    for (const c of cases()) {
+      const edges = c.edges.map((e) => ({ debtor: e.debtor, cleared: BigInt(e.cleared) }));
+      const clearedTotal = edges.reduce((n, e) => n + e.cleared, 0n);
+      expect([c.name, String(clearedTotal)]).toEqual([c.name, c.expected.cleared_total]);
+      const members = new Map(c.members.map((m) => [m.account, { stake: BigInt(m.stake), limit: BigInt(m.limit) }]));
+      const bonds = new Map(c.members.map((m) => [m.account, BigInt(m.bond_locked)]));
+      const out = computeCharges({
+        solver: c.solver, edges, clearedTotal, clearingBps: BigInt(c.fees.clearing_fee_bps), solverBps: BigInt(c.fees.solver_fee_bps), members, bondLocked: (a) => bonds.get(a) ?? 0n,
+      })!;
+      if (out.charges.length === 0) {
+        // nothing is charged (no solver, nothing cleared, fees of 0): the vector lists every member unchanged, with a cut of 0
+        expect(c.expected.charges.length, c.name).toBeGreaterThan(0);
+        for (const x of c.expected.charges) {
+          const m = c.members.find((y) => y.account === x.account)!;
+          expect([c.name, x.stake_cut, x.stake_after, x.limit_after]).toEqual([c.name, "0", m.stake, m.limit]);
+        }
+      } else {
+        expect([c.name, out.charges.map((x) => ({ account: x.account, stake_cut: String(x.take), stake_after: String(x.stake), limit_after: String(x.limit) }))]).toEqual([c.name, c.expected.charges]);
+      }
+      expect([c.name, String(out.toReserve), String(out.toSolver)]).toEqual([c.name, c.expected.clearing_fee_charged, c.expected.solver_fee_charged]);
+    }
+  });
 });

@@ -40,6 +40,8 @@ export interface FeeCharge {
 
 /** The charge of one commit: who pays what, the new stake and the new limit of each, and the two totals as the contract reports them. */
 export function computeCharges(args: {
+  /** The solver of the proposal; with none, nothing is charged (`charge_fees`). */
+  solver?: string | null;
   edges: ReadonlyArray<{ debtor: string; cleared: bigint }>;
   clearedTotal: bigint;
   clearingBps: bigint;
@@ -47,6 +49,7 @@ export function computeCharges(args: {
   members: ReadonlyMap<string, { stake: bigint; limit: bigint }>;
   bondLocked: (account: string) => bigint;
 }): { charges: FeeCharge[]; toReserve: bigint; toSolver: bigint } | null {
+  if (args.solver === null || args.solver === "") return { charges: [], toReserve: 0n, toSolver: 0n };
   if (args.clearedTotal === 0n || (args.clearingBps === 0n && args.solverBps === 0n)) return { charges: [], toReserve: 0n, toSolver: 0n };
   const clearingFee = (args.clearedTotal * args.clearingBps) / 10_000n;
   const solverFee = (args.clearedTotal * args.solverBps) / 10_000n;
