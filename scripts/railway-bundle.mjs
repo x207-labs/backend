@@ -1,4 +1,4 @@
-// BE-089: makes the folder that `railway up` uploads for the public read API (GET only) of the testnet circle.
+// BE-089: makes the folder that `railway up` uploaded for (since UM-148 the folder is copied to the boxd machine, see deploy/boxd/README.md in the umbrella repository) the public read API (GET only) of the testnet circle.
 //   node scripts/railway-bundle.mjs <out dir> <read model sqlite>      (run `npm run build` first)
 // The folder holds the built backend (`dist`), a copy of `@x207/core` (`vendor/x207-core`, it is not on the npm registry), the Dockerfile, `start.sh`, `railway.json` and a SEED: the read model
 // without the tables of the marketplace, so the first start has the circle replayed up to a block and the indexer follows the chain from there (a walk from the first block takes hours).
