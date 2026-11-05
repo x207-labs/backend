@@ -20,7 +20,7 @@ The first start copies the seed to the volume (`start.sh`); later starts keep th
 ## Variables
 | Variable | Value |
 | --- | --- |
-| `NEAR_RPC_PRIMARY_URL`, `NEAR_RPC_FALLBACK_URL` | `https://rpc.testnet.fastnear.com`, `https://rpc.testnet.near.org` |
+| `NEAR_RPC_PRIMARY_URL`, `NEAR_RPC_FALLBACK_URL` | `https://rpc.testnet.fastnear.com`, `https://near-testnet.drpc.org` |
 | `X207_CONTRACT_ID`, `X207_CIRCLE_ID`, `X207_START_BLOCK` | `x207-v013.testnet`, `agents-main`, `276140918` |
 | `X207_DB_PATH` | `/data/x207.sqlite` |
 | `X207_READ_ONLY` | `1` (GET routes only; no settlement endpoints) |
