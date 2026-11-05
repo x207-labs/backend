@@ -30,11 +30,11 @@ flowchart TB
 
 ## Try it
 
-The read API of the testnet circle `x207-v013.testnet` runs on Railway, GET only, with no signing key and no settlement endpoints:
+The read API of the testnet circle `x207-v013.testnet` runs on a boxd machine, GET only, with no signing key and no settlement endpoints:
 
 ```bash
-curl -s https://x207-backend-production.up.railway.app/healthz
-curl -s https://x207-backend-production.up.railway.app/x207/circles/agents-main/epochs/8/metrics
+curl -s https://x207.boxd.sh/healthz
+curl -s https://x207.boxd.sh/x207/circles/agents-main/epochs/8/metrics
 ```
 
 CORS is open for `https://x207-dashboard.vercel.app` only. How it is set up: [`deploy/railway/README.md`](deploy/railway/README.md).

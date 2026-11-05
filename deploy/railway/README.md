@@ -1,5 +1,7 @@
 # Public read API on Railway (BE-089)
 
+> **Superseded (UM-148):** the Railway trial ended and these services now run on the boxd machine `x207`, see [deploy/boxd](../../../deploy/boxd/README.md) in the umbrella repository. This page is kept for the record.
+
 One service: the read API and the indexer that follows the testnet circle `x207-v013.testnet`, GET only, with a Railway volume at `/data` for the SQLite read model. No broker, no signing key, no secret: every variable below is a public value.
 
 ## Build the folder and deploy
@@ -30,9 +32,9 @@ The first start copies the seed to the volume (`start.sh`); later starts keep th
 
 ## Check
 ```bash
-curl https://x207-backend-production.up.railway.app/healthz
-curl https://x207-backend-production.up.railway.app/x207/circles/agents-main/epochs
-curl https://x207-backend-production.up.railway.app/x207/circles/agents-main/members
+curl https://x207.boxd.sh/healthz
+curl https://x207.boxd.sh/x207/circles/agents-main/epochs
+curl https://x207.boxd.sh/x207/circles/agents-main/members
 ```
 `/metrics` is open (no `METRICS_TOKEN`: the variables are public values only); it holds counts of requests, not data.
 
