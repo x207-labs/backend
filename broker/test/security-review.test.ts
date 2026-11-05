@@ -14,7 +14,7 @@ const ASSET = "mock:echo";
 const SCOPE = JSON.stringify({ path_prefixes: ["/v1/echo"], methods: ["GET", "POST"] });
 const cGrant = (quota: string | null = "2") => grant({ class: "C", asset_type: ASSET, unit: "call", unit_price: "20000", limits: { scope: SCOPE, quota, expires_at: grant().limits.expires_at } } as never);
 
-interface ProviderCall { method: string; url: string; headers: Headers; redirect: RequestRedirect | undefined }
+interface ProviderCall { method: string; url: string; headers: Headers; redirect: "follow" | "error" | "manual" | undefined }
 
 function setup(options: { quota?: string | null; provider?: (call: ProviderCall) => Promise<Response> | Response } = {}) {
   const chain = new FakeChain();

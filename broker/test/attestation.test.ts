@@ -17,7 +17,7 @@ const handlerWith = (attestor?: Attestor) =>
   createBrokerHandler({ dispatcher: {} as never, classB: {} as never, facilitatorUrl: "http://f.test", circleId: "c", brokerAccount: "b.test", ...(attestor ? { attestor } : {}) });
 
 /** A `fetch` that is served by the handler, as the client would reach a broker. */
-const via = (handler: (r: Request) => Promise<Response>): typeof fetch => (async (input: RequestInfo | URL, init?: RequestInit) => handler(new Request(input, init))) as typeof fetch;
+const via = (handler: (r: Request) => Promise<Response>): typeof fetch => (async (input: string | URL | Request, init?: RequestInit) => handler(new Request(input, init))) as typeof fetch;
 
 describe("BK-009 GET /attestation and the client that requires a TEE", () => {
   it("TC-BK-009-02 a broker without a TEE answers {mode:none, reason}; the route is counted by name and a POST is 405", async () => {
@@ -83,7 +83,7 @@ describe("BK-009 GET /attestation and the client that requires a TEE", () => {
     // the client sends a fresh nonce each time and the verifier gets the one it sent
     const urls: string[] = [];
     const verified: Array<string | undefined> = [];
-    const spy = (async (input: RequestInfo | URL, init?: RequestInit) => { urls.push(String(input)); return via(handlerWith(fakeTee()))(input, init); }) as typeof fetch;
+    const spy = (async (input: string | URL | Request, init?: RequestInit) => { urls.push(String(input)); return via(handlerWith(fakeTee()))(input, init); }) as typeof fetch;
     const verifier: Attestor = { quote: async () => null, verify: async (q, e, n) => { verified.push(n); return fakeTee().verify(q, e); } };
     await fetchAttestation("http://b.test", { fetch: spy, requireTee: true, expectedCodeHash: RELEASE, verifier });
     await fetchAttestation("http://b.test", { fetch: spy, requireTee: true, expectedCodeHash: RELEASE, verifier });
@@ -102,7 +102,7 @@ describe("BK-009 GET /attestation and the client that requires a TEE", () => {
     const oldNone = (async () => new Response(JSON.stringify({ mode: "none", reason: "x", nonce: "11".repeat(16) }))) as typeof fetch;
     expect(await fetchAttestation("http://b.test", { fetch: oldNone }).catch((e) => e)).toMatchObject({ code: "nonce_mismatch" });
     // the same nonce in upper case is the same nonce; a nonce the client chose is accepted when repeated
-    const echo = (async (input: RequestInfo | URL) => new Response(JSON.stringify({ mode: "none", reason: "x", nonce: new URL(String(input)).searchParams.get("nonce")!.toUpperCase() }))) as typeof fetch;
+    const echo = (async (input: string | URL | Request) => new Response(JSON.stringify({ mode: "none", reason: "x", nonce: new URL(String(input)).searchParams.get("nonce")!.toUpperCase() }))) as typeof fetch;
     expect(await fetchAttestation("http://b.test", { fetch: echo, nonce: "ab".repeat(8) })).toMatchObject({ mode: "none" });
     expect(await fetchAttestation("http://b.test", { fetch: echo, nonce: "zz" }).catch((e) => e)).toMatchObject({ code: "bad_answer" });
   });

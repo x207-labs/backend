@@ -3,9 +3,10 @@
   "version": "0.0.1",
   "description": "x207 backend: indexer M6, read API, HTTP 207 report, settlement worker M5",
   "scripts": {
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run --passWithNoTests && npm run test:broker",
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.test.json --noEmit",
+    "typecheck": "tsc -p tsconfig.test.json --noEmit && tsc -p broker/tsconfig.test.json --noEmit",
+    "test:broker": "vitest run --root broker --passWithNoTests",
     "start": "node dist/main.js",
     "openapi": "node scripts/build-openapi.mjs",
     "db:backup": "node scripts/db-backup.mjs",

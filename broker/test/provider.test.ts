@@ -142,7 +142,7 @@ describe("BE-057 P2 provider access: one interface, mock provider, revoke_pendin
 
   it("TC-BE-057-X2 two grants for the same thing paid at the same moment: the second is refused before it reaches the provider, and the key is free again if the first fails (X-2)", async () => {
     const adapter = new MockProviderAdapter({ now: () => clock.now });
-    adapter.sharedKey = ({ granteeRef, resource }) => `${granteeRef}|${resource ?? ""}`;
+    (adapter as MockProviderAdapter & { sharedKey?: (args: { granteeRef: string; resource: string | null }) => string | null }).sharedKey = ({ granteeRef, resource }) => `${granteeRef}|${resource ?? ""}`;
     let fail = true;
     const open = adapter.grant.bind(adapter);
     const calls: number[] = [];
