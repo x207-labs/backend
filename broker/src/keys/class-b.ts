@@ -91,7 +91,12 @@ export class ClassBAdapter implements AccessAssetAdapter<LeaseDelivery> {
   async revoke(grant: AccessGrant, _reason?: RevokeReason): Promise<void> {
     const lease = this.#o.store.lease(grant.grant_id);
     if (lease === undefined || lease.closed) return;
-    if (lease.keyAdded) await this.#o.chain.deleteLeaseKey(lease.publicKey);
+    if (lease.keyAdded) {
+      await this.#o.chain.deleteLeaseKey(lease.publicKey);
+      // BE-099: close the lease only when the node no longer shows the key; otherwise the lease stays open and the next sweep deletes again
+      const still = await this.#o.viewAccessKey(this.#o.chain.leaseAccount, lease.publicKey);
+      if (still !== null) throw new Error(`key ${lease.publicKey} is still on ${this.#o.chain.leaseAccount} after DeleteKey`);
+    }
     this.#o.store.save({ ...lease, closed: true });
   }
 }

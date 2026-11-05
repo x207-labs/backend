@@ -31,6 +31,21 @@ export interface NearBrokerChainOptions {
 
 type Hash = { transaction_outcome: { id: string } };
 
+/**
+ * BE-099: the one error that means "the key to delete is not on the account": the action `DeleteKey` failed with `DeleteKeyDoesNotExist`.
+ * `UNKNOWN_ACCESS_KEY` is NOT such an error: the node says it when it cannot find the key of the SIGNER (a node that is behind after a jump of block time, a wrong key),
+ * and treating it as "gone" closed the lease with the key still on the account (flaky E2E `broker-class-b`, key present after the expiry sweep).
+ */
+export function isKeyAlreadyGone(error: unknown): boolean {
+  let text = String((error as Error | undefined)?.message ?? "");
+  try {
+    text += JSON.stringify(error);
+  } catch {
+    /* circular error object: the message is enough */
+  }
+  return /DeleteKeyDoesNotExist/.test(text);
+}
+
 export class NearBrokerChain implements BrokerChain {
   readonly leaseAccount: AccountId;
   readonly #options: NearBrokerChainOptions;
@@ -81,7 +96,7 @@ export class NearBrokerChain implements BrokerChain {
       const result = (await this.#lease.deleteKey(publicKey)) as unknown as Hash;
       return result.transaction_outcome.id;
     } catch (error) {
-      if (/does not exist|UNKNOWN_ACCESS_KEY|DeleteKeyDoesNotExist/.test(String((error as Error).message) + JSON.stringify(error))) return "";
+      if (isKeyAlreadyGone(error)) return "";
       throw error;
     }
   }

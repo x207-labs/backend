@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { isKeyAlreadyGone } from "../src/chain.js";
 import { Dispatcher } from "../src/dispatcher.js";
 import { ClassBAdapter, DAY_MS } from "../src/keys/class-b.js";
 import { Revoker } from "../src/revoker.js";
@@ -129,5 +130,41 @@ describe("BK-007 revocation", () => {
     const report = await ctx.revoker.sweep();
     expect(report.closed).toMatchObject([{ grantId: 1, reason: "already_final", keyDeleted: true, revoked: false }]);
     expect(ctx.chain.keys.size).toBe(0);
+  });
+
+  it("TC-BE-099-01 a DeleteKey that returned but left the key on the account does not close the lease: the next sweep deletes it again", async () => {
+    const chain = new FakeChain();
+    const store = new BrokerStore(":memory:");
+    const clock = { now: NOW };
+    // the node view reads the fake chain's keys, as the real `viewAccessKey` reads the account
+    const viewAccessKey = async (_account: string, key: string) => (chain.keys.has(key) ? { nonce: 1, permission: "FullAccess" as const } : null);
+    const classB = new ClassBAdapter({ chain, store, viewAccessKey: viewAccessKey as never, now: () => clock.now });
+    const dispatcher = new Dispatcher({ chain, adapters: { B: classB } });
+    const log: string[] = [];
+    const revoker = new Revoker({ chain, store, classB, activeGrantIdsOf: chain.activeIdsOf, now: () => clock.now, log: (l) => log.push(l) });
+    chain.grants.set(1, grant());
+    await dispatcher.deliver(1);
+    clock.now = NOW + DAY_MS + 1;
+    const realDelete = chain.deleteLeaseKey.bind(chain);
+    chain.deleteLeaseKey = async () => ""; // what the old catch did with UNKNOWN_ACCESS_KEY: success without deleting
+    const first = await revoker.sweep();
+    expect(first.closed).toMatchObject([{ grantId: 1, keyDeleted: false, revoked: false, error: expect.stringContaining("still on") }]);
+    expect(store.lease(1)!.closed).toBe(false);
+    expect(chain.keys.has(KEY)).toBe(true);
+    chain.deleteLeaseKey = realDelete;
+    expect((await revoker.sweep()).closed).toMatchObject([{ grantId: 1, reason: "operator", keyDeleted: true, revoked: true }]);
+    expect(chain.keys.has(KEY)).toBe(false);
+    expect(store.lease(1)!.closed).toBe(true);
+  });
+
+  it("TC-BE-099-02 only DeleteKeyDoesNotExist means the key is gone; UNKNOWN_ACCESS_KEY of the signer is an error", () => {
+    expect(isKeyAlreadyGone(new Error("Receipt failed: {\"ActionError\":{\"kind\":{\"DeleteKeyDoesNotExist\":{\"account_id\":\"lease.test.near\"}}}}"))).toBe(true);
+    expect(isKeyAlreadyGone(new Error("Can't complete the action because access key ed25519:abc does not exist"))).toBe(false);
+    const rpc = Object.assign(new Error("RPC query"), { type: "UNKNOWN_ACCESS_KEY", data: { error_message: "access key ed25519:signer does not exist while viewing" } });
+    expect(isKeyAlreadyGone(rpc)).toBe(false);
+    expect(isKeyAlreadyGone(undefined)).toBe(false);
+    const circular: Record<string, unknown> = { message: "x" };
+    circular.self = circular;
+    expect(isKeyAlreadyGone(circular)).toBe(false);
   });
 });
