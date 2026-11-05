@@ -114,7 +114,11 @@ export async function startBroker(options: StartOptions): Promise<RunningBroker>
       await revoker.handle(event);
       await closeProviderAccess(event);
     });
-    await revoker.sweep();
+    // BE-096: an error of one entry (DeleteKey or revoke_grant) is logged, not dropped; the revoker repeats the entry in the next tick
+    const swept = await revoker.sweep();
+    for (const entry of swept.closed) {
+      if (entry.error !== undefined) options.log?.(`revoker sweep: grant=${entry.grantId} reason=${entry.reason} keyDeleted=${entry.keyDeleted} revoked=${entry.revoked} error=${entry.error}`);
+    }
     await provider.sweep();
   };
   let timer: NodeJS.Timeout | undefined;

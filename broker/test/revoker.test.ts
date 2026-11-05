@@ -82,6 +82,35 @@ describe("BK-007 revocation", () => {
     expect(broken.store.lease(1)!.closed).toBe(false);
   });
 
+  it("TC-BE-096-01 a revoke_grant that failed after DeleteKey is repeated by the next sweep until it works, and its error is in the report each time", async () => {
+    const ctx = setup();
+    await leased(ctx);
+    ctx.clock.now = NOW + DAY_MS + 1;
+    ctx.chain.revokeResult = { ok: false, error: "ERR_RPC_TIMEOUT" };
+    const first = await ctx.revoker.sweep();
+    expect(first.closed).toMatchObject([{ grantId: 1, keyDeleted: true, revoked: false, error: expect.stringContaining("ERR_RPC_TIMEOUT") }]);
+    const second = await ctx.revoker.sweep();
+    expect(second.closed).toMatchObject([{ grantId: 1, reason: "operator", revoked: false, error: expect.stringContaining("ERR_RPC_TIMEOUT") }]);
+    ctx.chain.revokeResult = { ok: true, txHash: "tx-revoke" };
+    const third = await ctx.revoker.sweep();
+    expect(third.closed).toMatchObject([{ grantId: 1, reason: "operator", revoked: true }]);
+    expect((await ctx.revoker.sweep()).closed).toEqual([]); // nothing left to repeat
+  });
+
+  it("TC-BE-096-02 a DeleteKey that failed leaves the lease open, so the next sweep tries it again", async () => {
+    const ctx = setup();
+    await leased(ctx);
+    ctx.clock.now = NOW + DAY_MS + 1;
+    const deleteKey = ctx.chain.deleteLeaseKey.bind(ctx.chain);
+    ctx.chain.deleteLeaseKey = async () => {
+      throw new Error("node down");
+    };
+    expect((await ctx.revoker.sweep()).closed).toMatchObject([{ keyDeleted: false, error: expect.stringContaining("node down") }]);
+    expect(ctx.store.lease(1)!.closed).toBe(false);
+    ctx.chain.deleteLeaseKey = deleteKey;
+    expect((await ctx.revoker.sweep()).closed).toMatchObject([{ grantId: 1, keyDeleted: true, revoked: true }]);
+  });
+
   it("TC-BK-007-05 a grant that the grantor revoked: the watcher event deletes the key, with no second revoke_grant", async () => {
     const ctx = setup();
     await leased(ctx);

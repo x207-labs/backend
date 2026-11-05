@@ -32,6 +32,8 @@ const nsToMs = (ns: string): number => Number(BigInt(ns) / 1_000_000n);
  */
 export class Revoker {
   readonly #o: RevokerOptions;
+  /** BE-096: grants whose `revoke_grant` failed after the key was deleted, with the reason to send again. */
+  readonly #retryRevoke = new Map<number, RevokeReason>();
 
   constructor(options: RevokerOptions) {
     this.#o = options;
@@ -58,7 +60,10 @@ export class Revoker {
     if (grant.status === "active" || grant.status === "offered") {
       const result = await this.#o.chain.revokeGrant(grant.grant_id, reason);
       entry.revoked = result.ok;
-      if (!result.ok) entry.error = `revoke_grant: ${result.error}`;
+      if (!result.ok) {
+        entry.error = `revoke_grant: ${result.error}`;
+        this.#retryRevoke.set(grant.grant_id, reason); // the key is gone, so the lease is closed and `openLeases` will not list it again: the next `sweep` repeats `revoke_grant`
+      } else this.#retryRevoke.delete(grant.grant_id);
       this.#log(`revoke_grant grant=${grant.grant_id} reason=${reason} ${result.ok ? `tx=${result.txHash}` : `failed ${result.error}`}`);
     }
     report.closed.push(entry);
@@ -69,6 +74,20 @@ export class Revoker {
     const report: RevokeReport = { closed: [] };
     const now = this.#o.now();
     const chainNow = await this.#o.chain.nowMs();
+    for (const [grantId, reason] of [...this.#retryRevoke]) {
+      const grant = await this.#o.chain.getGrant(grantId);
+      if (grant === null || (grant.status !== "active" && grant.status !== "offered")) {
+        this.#retryRevoke.delete(grantId);
+        continue;
+      }
+      const entry: RevokeReport["closed"][number] = { grantId, reason, keyDeleted: false, revoked: false };
+      const result = await this.#o.chain.revokeGrant(grantId, reason);
+      entry.revoked = result.ok;
+      if (result.ok) this.#retryRevoke.delete(grantId);
+      else entry.error = `revoke_grant: ${result.error}`;
+      this.#log(`revoke_grant retry grant=${grantId} reason=${reason} ${result.ok ? `tx=${result.txHash}` : `failed ${result.error}`}`);
+      report.closed.push(entry);
+    }
     for (const lease of this.#o.store.openLeases()) {
       const grant = await this.#o.chain.getGrant(lease.grantId);
       if (grant === null) continue;
