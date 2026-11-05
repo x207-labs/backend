@@ -58,5 +58,13 @@ describe("BE-012 params_updated", () => {
       await init([block(1000, { logs: [eventLog("params_updated", { old: DEFAULT_PARAMS, new: { ...DEFAULT_PARAMS, fees }, changed: ["fees"], effective_epoch: 43 })] })]);
       expect(JSON.parse((one("SELECT new_value FROM params WHERE field = 'fees' AND old_value IS NOT NULL") as { new_value: string }).new_value)).toEqual(fees);
     });
+
+    it("TC-UM-151-01 set_params names a nested field as a path: it is stored once as the whole fees group and the indexer keeps going", async () => {
+      const fees = { clearing_fee_bps: 10, solver_fee_bps: 5 };
+      await init([block(1000, { logs: [eventLog("params_updated", { old: DEFAULT_PARAMS, new: { ...DEFAULT_PARAMS, fees }, changed: ["fees.clearing_fee_bps", "fees.solver_fee_bps"], effective_epoch: 43 })] })]);
+      const rows = db.prepare("SELECT new_value FROM params WHERE field = 'fees' AND old_value IS NOT NULL").all() as { new_value: string }[];
+      expect(rows).toHaveLength(1);
+      expect(JSON.parse(rows[0]!.new_value)).toEqual(fees);
+    });
   });
 });

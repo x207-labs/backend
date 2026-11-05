@@ -10,7 +10,9 @@ export const paramsHandlers: HandlerMap = {
     );
     const oldParams = e.old as unknown as Record<string, unknown>;
     const newParams = e.new as unknown as Record<string, unknown>;
-    for (const field of e.changed) {
+    // A nested field (`fees.clearing_fee_bps`, from `set_params`) is stored as its top-level group (`fees`), once per event; the row holds the whole group.
+    const fields = [...new Set(e.changed.map((c) => c.split(".")[0] as string))];
+    for (const field of fields) {
       if (!(field in newParams)) throw new IndexerHaltError(`params_updated: field ${field} is missing from new`);
       insert.run(
         ctx.circleId, field, JSON.stringify(oldParams[field] ?? null), JSON.stringify(newParams[field]),
