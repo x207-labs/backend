@@ -19,13 +19,13 @@
     "node": ">=22.22.2"
   },
   "dependencies": {
-    "@defuse-protocol/intents-sdk": "0.93.0",
     "@defuse-protocol/one-click-sdk-typescript": "0.1.26",
     "@x207/core": "0.0.2",
     "better-sqlite3": "13.0.3",
     "near-api-js": "7.4.0"
   },
   "devDependencies": {
+    "@defuse-protocol/intents-sdk": "0.93.0",
     "@types/better-sqlite3": "9.6.0",
     "@types/node": "26.6.6",
     "ajv": "8.17.1",

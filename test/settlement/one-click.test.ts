@@ -68,7 +68,9 @@ describe("BE-025 E6 1Click/Intents client", () => {
   it("TC-BE-025-01 SDK version is pinned without ^ or ~", () => {
     const pkg = JSON.parse(readFileSync(fileURLToPath(new URL("../../package.json", import.meta.url)), "utf8"));
     expect(pkg.dependencies["@defuse-protocol/one-click-sdk-typescript"]).toBe("0.1.26");
-    expect(pkg.dependencies["@defuse-protocol/intents-sdk"]).toBe("0.93.0");
+    // BE-101: the backend source does not import intents-sdk; it stays pinned as a devDependency (so it is not installed with --omit=dev)
+    expect(pkg.devDependencies["@defuse-protocol/intents-sdk"]).toBe("0.93.0");
+    expect(pkg.dependencies["@defuse-protocol/intents-sdk"]).toBeUndefined();
   });
 
   it("TC-BE-025-02 mock mode answers from FX-1C without a network", async () => {
