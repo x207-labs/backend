@@ -122,8 +122,13 @@ export class Revoker {
       const grant = await this.#o.chain.getGrant(Number(event.data.grant_id));
       const lease = grant === null ? undefined : this.#o.store.lease(grant.grant_id);
       if (grant !== null && lease?.keyAdded === true && !lease.closed) {
-        await this.#o.classB.revoke(grant, event.data.reason as RevokeReason);
-        this.#log(`DeleteKey grant=${grant.grant_id} (revoked by ${String(event.data.reason)})`);
+        // BE-100 (c): a failed DeleteKey (or a key still shown) must not fail the whole tick before the sweep; the lease stays open and the sweep deletes it
+        try {
+          await this.#o.classB.revoke(grant, event.data.reason as RevokeReason);
+          this.#log(`DeleteKey grant=${grant.grant_id} (revoked by ${String(event.data.reason)})`);
+        } catch (error) {
+          this.#log(`DeleteKey failed grant=${grant.grant_id} (revoked by ${String(event.data.reason)}): ${(error as Error).message}; the sweep repeats it`);
+        }
       }
     }
   }

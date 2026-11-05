@@ -63,7 +63,7 @@ export async function startBroker(options: StartOptions): Promise<RunningBroker>
       leaseAccount: config.leaseAccount, leaseKey: config.leaseKey,
     });
   const store = new BrokerStore(config.dbPath);
-  const classB = new ClassBAdapter({ chain, store, viewAccessKey: createViewAccessKeyFn({ rpcUrls: [config.rpcUrl], finality: "optimistic" }), now });
+  const classB = new ClassBAdapter({ chain, store, viewAccessKey: createViewAccessKeyFn({ rpcUrls: [config.rpcUrl], finality: "optimistic" }), viewFinalAccessKey: createViewAccessKeyFn({ rpcUrls: [config.rpcUrl], finality: "final" }), now });
   const classCProviders = config.providers ?? [];
   const audit = options.audit ?? (config.auditPath ? new FileAudit(config.auditPath) : undefined);
   // BE-070 (ADR-48): the hosted broker is for the demo; a real secret is not put in it, so it does not even start with one

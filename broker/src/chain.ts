@@ -1,4 +1,5 @@
 import { Account, JsonRpcProvider, KeyPairSigner } from "near-api-js";
+import { DeleteKeyDoesNotExistActionError } from "near-api-js/rpc-errors";
 import type { AccessGrant, AccountId, RevokeReason } from "@x207/core";
 import { parseFunctionCallKeyScope } from "@x207/core";
 
@@ -37,6 +38,8 @@ type Hash = { transaction_outcome: { id: string } };
  * and treating it as "gone" closed the lease with the key still on the account (flaky E2E `broker-class-b`, key present after the expiry sweep).
  */
 export function isKeyAlreadyGone(error: unknown): boolean {
+  // BE-100 (L1): the class of near-api-js 7 first (that is what `deleteKey` throws), the name second; the text is only a fallback for an error that lost its class
+  if (error instanceof DeleteKeyDoesNotExistActionError || (error as { name?: unknown } | undefined)?.name === "DeleteKeyDoesNotExistActionError") return true;
   let text = String((error as Error | undefined)?.message ?? "");
   try {
     text += JSON.stringify(error);
