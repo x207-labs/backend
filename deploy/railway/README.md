@@ -1,6 +1,6 @@
 # Public read API on Railway (BE-089)
 
-> **Superseded (UM-148):** the Railway trial ended and these services now run on the boxd machine `x207`, see [deploy/boxd](../../../deploy/boxd/README.md) in the umbrella repository. This page is kept for the record.
+> **Superseded (UM-148):** the Railway trial ended and these services now run on the boxd machine `x207`, see [deploy/boxd](../../../deploy/boxd/README.md) in the umbrella repository. This page is kept for the record. Historical; transitive versions are not locked because the Dockerfile has no lockfile.
 
 One service: the read API and the indexer that follows the testnet circle `x207-v013.testnet`, GET only, with a Railway volume at `/data` for the SQLite read model. No broker, no signing key, no secret: every variable below is a public value.
 
