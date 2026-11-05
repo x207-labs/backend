@@ -33,6 +33,7 @@ export interface AppConfig {
   host: string;
   port: number;
   jobPollMs: number;
+  indexerPollMs: number;
 }
 
 function required(env: NodeJS.ProcessEnv, name: string): string {
@@ -58,7 +59,7 @@ function integer(env: NodeJS.ProcessEnv, name: string, fallback?: number): numbe
 /**
  * `X207_CONTRACT_ID`, `X207_START_BLOCK` (deploy block), `NEAR_RPC_PRIMARY_URL` are required; `NEAR_RPC_FALLBACK_URL`,
  * `X207_CIRCLE_ID` (default `agents-main`), `X207_DB_PATH` (default `x207.sqlite`), `X207_API_HOST`
- * (default `127.0.0.1`), `X207_API_PORT` (default 8080), `X207_JOB_POLL_MS` (default 15000) are optional.
+ * (default `127.0.0.1`), `X207_API_PORT` (default 8080), `X207_JOB_POLL_MS` (default 15000), `X207_INDEXER_POLL_MS` (default 1000; neardata allows 30 blocks a minute per IP, so two instances on one machine need 4000 or more) are optional.
  */
 export function appConfigFromEnv(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const rpcEndpoints = [required(env, "NEAR_RPC_PRIMARY_URL"), env.NEAR_RPC_FALLBACK_URL ?? ""].filter((u) => u !== "");
@@ -71,6 +72,7 @@ export function appConfigFromEnv(env: NodeJS.ProcessEnv = process.env): AppConfi
     host: env.X207_API_HOST || "127.0.0.1",
     port: integer(env, "X207_API_PORT", 8080),
     jobPollMs: integer(env, "X207_JOB_POLL_MS", 15_000),
+    indexerPollMs: integer(env, "X207_INDEXER_POLL_MS", 1_000),
   };
 }
 
@@ -149,7 +151,7 @@ export async function startApp(env: NodeJS.ProcessEnv = process.env, log: (line:
 
   const abort = new AbortController();
   const running = indexer
-    .run({ signal: abort.signal, onError: (error) => logger.warn("indexer: source failed, retrying", { error }) })
+    .run({ signal: abort.signal, pollMs: config.indexerPollMs, onError: (error) => logger.warn("indexer: source failed, retrying", { error }) })
     .catch((error: unknown) => logger.error("indexer stopped", { error }));
   logger.info("x207 backend ready", { host: config.host, port: config.port, contract: config.contractId, mode: settlement.mode });
 
