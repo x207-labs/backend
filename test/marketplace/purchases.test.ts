@@ -1,5 +1,6 @@
-import { readdirSync } from "node:fs";
+import { mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   contentHash, createRelease, deriveBoxKey, sealKey, signRelease, encryptContent, licenseDocumentHash, licenseResource, listingHash, makeCheatProof, signVoucher,
@@ -332,17 +333,15 @@ describe("BE-056 license handover: fair exchange with encryption", () => {
   });
 
   it("TC-BE-056-11 the ciphertext is streamed through a temporary file: a mismatch is refused without being read, the file is deleted, and the deadline follows the size allowed", async () => {
-    const before = () => readdirSync(tmpdir()).filter((n) => n.startsWith("x207-cipher-"));
-    // other test files run at the same time (a code is downloaded before its key is released, B7-C2): start from a tmp folder with none of their files
-    for (let i = 0; i < 100 && before().length > 0; i++) await new Promise((r) => setTimeout(r, 100));
-    const left = before().length;
-    // other test files run at the same time and make their own temporary files (a code is downloaded before its key is released, B7-C2): wait for those to go before counting
-    const gone = async (): Promise<number> => {
-      for (let i = 0; i < 100 && before().length > left; i++) await new Promise((r) => setTimeout(r, 100));
-      return before().length;
-    };
+    // BE-102: the test gives the market its own temporary folder and counts only the files in it. The old version counted `x207-cipher-*` in the shared
+    // system folder while other test files (they run at the same time and also download a code before its key is released, B7-C2) created and deleted
+    // theirs, so the count moved under it and the test failed now and then.
+    const dir = mkdtempSync(join(tmpdir(), "x207-purchases-test-"));
+    const before = () => readdirSync(dir).filter((n) => n.startsWith("x207-cipher-"));
+    const left = before().length; // 0
+    const gone = async (): Promise<number> => before().length;
     files.clear();
-    market = await startMarket(["andi", "budi", "citra", "dewi"], [], undefined, { sourceFetch: { resolver, transport }, maxCiphertextBytes: 4 * 1024 * 1024 });
+    market = await startMarket(["andi", "budi", "citra", "dewi"], [], undefined, { sourceFetch: { resolver, transport }, maxCiphertextBytes: 4 * 1024 * 1024, tmpDir: dir });
     const m = market;
     openEpoch(m, 42);
     const s = await sell(m);

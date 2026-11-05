@@ -77,6 +77,8 @@ export interface PurchaseOptions {
   licenseIds?: ReadonlyArray<{ id: string; redistribute: boolean; note: string }>;
   ipfsGateways?: readonly string[];
   maxCiphertextBytes?: number;
+  /** Folder of the temporary ciphertext files (default: the system temporary folder). A test gives its own so that it counts only its own files (BE-102). */
+  tmpDir?: string;
   /** For the downloads of the sources: replace the DNS resolver and the HTTPS transport (tests). */
   sourceFetch?: { resolver?: Resolver; transport?: Transport };
   /** One-time codes (BE-069, ADR-48): the issuers by name, which the check before the release asks. */
@@ -334,7 +336,7 @@ export function purchaseRoutes(resolveOpenEpoch: OpenEpochResolver, options: Pur
    */
   async function withCiphertext<T>(source: Source, cipherHash: string, cipherSize: number, fn: (ciphertext: Buffer) => T | Promise<T>): Promise<T> {
     await downloads.acquire();
-    const path = join(tmpdir(), `x207-cipher-${randomBytes(8).toString("hex")}.tmp`);
+    const path = join(options.tmpDir ?? tmpdir(), `x207-cipher-${randomBytes(8).toString("hex")}.tmp`);
     const fd = openSync(path, "w", 0o600);
     const hasher = new ContentHasher();
     const plain = createHash("sha256");

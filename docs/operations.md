@@ -19,6 +19,7 @@ Both read the environment; neither reads a file of settings. Secrets only in the
 | `X207_API_HOST` | backend | default `127.0.0.1` | no | address the API listens on |
 | `X207_API_PORT` | backend | default `8080` | no | port of the API |
 | `X207_JOB_POLL_MS` | backend | default `15000` | no | poll of the settlement jobs |
+| `X207_INDEXER_POLL_MS` | backend | default `1000` | no | wait between two reads of the block source when the indexer has caught up (UM-151). Neardata allows 30 blocks a minute per IP, so two indexers on one IP (for example the hosted one and a local one) share that limit: set 4000 or more on each, or the second one gets 429 |
 | `X207_SETTLEMENT_MODE` | backend | default `dry` | no | `mock`, `dry` or `live` (1Click); `live` moves money |
 | `X207_APP_FEES` | backend | none (no app fee) | no | JSON list of 1Click app fees |
 | `X207_DAO_REGISTRY_PATH` | backend | none (empty registry) | no | JSON file of the DAOs that rent votes (BE-061) |
