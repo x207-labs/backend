@@ -12,6 +12,8 @@ export interface ChainOutcome {
   receiptId: string;
   executorId: string;
   logs: string[];
+  /** A-BE-01: the receipt failed (status `Failure`): its logs are not events, its state change was rolled back. */
+  failed?: boolean;
   /** Block in which this outcome was executed. */
   blockHash: string;
 }
@@ -95,7 +97,7 @@ export class RpcBlockSource implements BlockSource {
 
   async #collect(tx: ChainTx): Promise<void> {
     for (const outcome of await this.#chain.txOutcomes(tx)) {
-      if (outcome.executorId !== this.#contractId || outcome.logs.length === 0) continue;
+      if (outcome.executorId !== this.#contractId || outcome.logs.length === 0 || outcome.failed === true) continue;
       const at = await this.#chain.heightOfBlock(outcome.blockHash);
       const list = this.#found.get(at) ?? [];
       outcome.logs.forEach((log, logIndex) => {
@@ -114,7 +116,7 @@ interface RpcChunkLike {
   transactions: { hash: string; signer_id: string; actions?: Array<{ FunctionCall?: { method_name?: string } }> }[];
 }
 interface RpcTxLike {
-  receipts_outcome?: { id: string; block_hash: string; outcome: { executor_id: string; logs: string[] } }[];
+  receipts_outcome?: { id: string; block_hash: string; outcome: { executor_id: string; logs: string[]; status?: Record<string, unknown> | string } }[];
 }
 
 /** Adaptor `ChainReader` di atas `FailoverRpcClient` (near-api-js). */
@@ -155,6 +157,7 @@ export function rpcChainReader(client: FailoverRpcClient): ChainReader {
         receiptId: o.id,
         executorId: o.outcome.executor_id,
         logs: o.outcome.logs,
+        failed: typeof o.outcome.status === "object" && o.outcome.status !== null && "Failure" in o.outcome.status,
         blockHash: o.block_hash,
       }));
     },

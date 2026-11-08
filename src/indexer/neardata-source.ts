@@ -71,6 +71,8 @@ export class NeardataBlockSource implements BlockSource {
       for (const item of shard.receipt_execution_outcomes ?? []) {
         const { id, outcome } = item.execution_outcome;
         if (outcome.executor_id !== this.#contractId) continue;
+        // A-BE-01: a failed receipt keeps the logs it wrote before the panic but its state change was rolled back; an event of it never happened
+        if (typeof outcome.status === "object" && outcome.status !== null && "Failure" in outcome.status) continue;
         const action = item.receipt?.receipt?.Action;
         const signerId = action?.signer_id ?? null;
         const methodName = action?.actions?.find((a) => a.FunctionCall !== undefined)?.FunctionCall?.method_name ?? null;
