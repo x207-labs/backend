@@ -87,12 +87,23 @@ async function readJsonBody(req: IncomingMessage, maxBytes: number): Promise<unk
 
 const REQUIRED_TABLES = ["circles", "indexer_cursor", "members", "epochs"];
 
+/**
+ * A-BE-02: read-only is the default. Only `0` or `false` (any case) turns the write routes on; `1`, `true`, empty, unset and every other value keep the server read-only.
+ * `warn` is set when the value is neither empty nor a known one (a typo), so the caller can log it.
+ */
+export function readOnlyFromEnv(env: NodeJS.ProcessEnv = process.env): { readOnly: boolean; warn?: string } {
+  const raw = (env.X207_READ_ONLY ?? "").trim().toLowerCase();
+  if (raw === "0" || raw === "false") return { readOnly: false };
+  if (raw === "" || raw === "1" || raw === "true") return { readOnly: true };
+  return { readOnly: true, warn: `X207_READ_ONLY="${env.X207_READ_ONLY}" is not 0, false, 1 or true: staying read-only` };
+}
+
 /** `.env` variable: `API_RATE_LIMIT_PER_MINUTE` (integer ≥ 0). */
 export function apiOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): { rateLimitPerMinute: number; abuse: AbuseLimits; readOnly?: boolean; corsOrigins?: string[] } {
   const { limits } = abuseFromEnv(env);
   const origins = (env.X207_CORS_ORIGINS ?? "").split(",").map((o) => o.trim()).filter((o) => o !== "");
   for (const o of origins) if (!/^https?:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(o)) throw new Error(`X207_CORS_ORIGINS: "${o}" is not an origin (scheme://host[:port], no path, no wildcard)`);
-  return { rateLimitPerMinute: limits.ipPerMinute, abuse: limits, ...(env.X207_READ_ONLY === "1" ? { readOnly: true } : {}), ...(origins.length > 0 ? { corsOrigins: origins } : {}) };
+  return { rateLimitPerMinute: limits.ipPerMinute, abuse: limits, ...(readOnlyFromEnv(env).readOnly ? { readOnly: true } : {}), ...(origins.length > 0 ? { corsOrigins: origins } : {}) };
 }
 
 function d9Ready(db: Database.Database): boolean {

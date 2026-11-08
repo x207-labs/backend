@@ -45,7 +45,7 @@ Both read the environment; neither reads a file of settings. Secrets only in the
 | `X207_NEARDATA_URL` | backend | required for `neardata` and `account-index` | no | e.g. `https://testnet.neardata.xyz` |
 | `X207_TX_INDEX_URL` | backend | required for `account-index` | no | the transaction index of the account, e.g. `https://tx.test.fastnear.com/v0/account` |
 | `X207_NEARDATA_MIN_INTERVAL_MS` | backend | default `2100` | no | least time between two Neardata requests of `account-index` (the free Neardata answers 429 above 30 blocks a minute) |
-| `X207_READ_ONLY` | backend | default off (`1` to turn on) | no | public read API (BE-089): only GET routes are served (a POST is `404 not_found`), no settlement endpoints and no job monitor; the preflight answers `GET, OPTIONS` |
+| `X207_READ_ONLY` | backend | default ON since BE-104 (only `0` or `false` turn it off; any other value or unset stays read-only and an unknown value logs a warning) | no | public read API (BE-089): only GET routes are served (a POST is `404 not_found`), no settlement endpoints and no job monitor; the preflight answers `GET, OPTIONS` |
 | `X207_CORS_ORIGINS` | backend | default empty = `*` | no | exact browser origins allowed to read the API, comma separated (`scheme://host[:port]`, no path, no wildcard); another origin gets no `Access-Control-Allow-Origin` |
 | `API_TRUST_PROXY` | backend | default off (`1` to turn on) | no | take the last `X-Forwarded-For` hop as the caller |
 | `API_MAX_OPEN_ORDERS` | backend | default `50` | no | open orders per account |

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createApiServer, apiOptionsFromEnv, corsHeaders } from "../../src/api/server.js";
+import { createApiServer, apiOptionsFromEnv, corsHeaders, readOnlyFromEnv } from "../../src/api/server.js";
 import { listen } from "../helpers/d9-fixtures.js";
 import Database from "better-sqlite3";
 
@@ -44,7 +44,15 @@ describe("BE-089 read-only mode and CORS allow-list", () => {
 
   it("TC-BE-089-03 the environment: X207_READ_ONLY=1 and X207_CORS_ORIGINS; a wildcard or a path is refused at start", () => {
     expect(apiOptionsFromEnv({ X207_READ_ONLY: "1", X207_CORS_ORIGINS: "https://a.example, https://b.example:8443" })).toMatchObject({ readOnly: true, corsOrigins: ["https://a.example", "https://b.example:8443"] });
-    expect(apiOptionsFromEnv({})).not.toHaveProperty("readOnly");
+    expect(apiOptionsFromEnv({ X207_READ_ONLY: "0" })).not.toHaveProperty("readOnly");
     for (const bad of ["*", "https://*.vercel.app", "https://a.example/path", "a.example"]) expect(() => apiOptionsFromEnv({ X207_CORS_ORIGINS: bad })).toThrow(/is not an origin/);
+  });
+
+  it("TC-BE-104-01 read-only is the default: only 0 or false open the write routes; unknown values stay read-only with a warning", () => {
+    expect(readOnlyFromEnv({})).toEqual({ readOnly: true });
+    expect(apiOptionsFromEnv({})).toMatchObject({ readOnly: true });
+    for (const on of ["1", "true", "TRUE", " 1 "]) expect(readOnlyFromEnv({ X207_READ_ONLY: on })).toEqual({ readOnly: true });
+    for (const off of ["0", "false", "False"]) expect(readOnlyFromEnv({ X207_READ_ONLY: off })).toEqual({ readOnly: false });
+    for (const odd of ["yes", "off", "2"]) expect(readOnlyFromEnv({ X207_READ_ONLY: odd })).toMatchObject({ readOnly: true, warn: expect.stringContaining("staying read-only") });
   });
 });

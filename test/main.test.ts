@@ -38,7 +38,7 @@ describe("main process", () => {
     await new Promise<void>((ready) => rpc!.listen(0, "127.0.0.1", ready));
     const rpcUrl = `http://127.0.0.1:${(rpc.address() as AddressInfo).port}`;
     const lines: string[] = [];
-    app = await startApp({ ...ENV, NEAR_RPC_PRIMARY_URL: rpcUrl, X207_DB_PATH: ":memory:", X207_API_PORT: "0", X207_SETTLEMENT_MODE: "mock" }, (l) => lines.push(l));
+    app = await startApp({ ...ENV, NEAR_RPC_PRIMARY_URL: rpcUrl, X207_DB_PATH: ":memory:", X207_API_PORT: "0", X207_SETTLEMENT_MODE: "mock", X207_READ_ONLY: "0" }, (l) => lines.push(l));
     const url = `http://127.0.0.1:${(app.server.address() as AddressInfo).port}`;
     expect((await fetch(`${url}/x207/health`)).status).toBe(200);
     const params = await fetch(`${url}/x207/circles/agents-main/params`);
