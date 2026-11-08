@@ -86,7 +86,7 @@ export function blockSourceFromEnv(env: NodeJS.ProcessEnv, config: AppConfig, rp
   if (mode !== "neardata" && mode !== "account-index") throw new Error(`X207_BLOCK_SOURCE must be rpc, neardata or account-index, got "${mode}"`);
   const neardata = new NeardataBlockSource({ baseUrl: (env.X207_NEARDATA_URL || missing("X207_NEARDATA_URL")), contractId: config.contractId, timeoutMs: 30_000 });
   if (mode === "neardata") return neardata;
-  return new AccountIndexBlockSource({ inner: neardata, txIndexUrl: (env.X207_TX_INDEX_URL || missing("X207_TX_INDEX_URL")), contractId: config.contractId, minIntervalMs: integer(env, "X207_NEARDATA_MIN_INTERVAL_MS", 2_100) });
+  return new AccountIndexBlockSource({ inner: neardata, txIndexUrl: (env.X207_TX_INDEX_URL || missing("X207_TX_INDEX_URL")), contractId: config.contractId, minIntervalMs: integer(env, "X207_NEARDATA_MIN_INTERVAL_MS", 2_100), spanBlocks: integer(env, "X207_ACCOUNT_INDEX_SPAN_BLOCKS", 8), marginBlocks: integer(env, "X207_ACCOUNT_INDEX_MARGIN_BLOCKS", 90) });
 }
 
 async function viewGetParams(rpcUrl: string, contractId: string): Promise<ContractAbi.Params> {
