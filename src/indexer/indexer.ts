@@ -59,6 +59,8 @@ const PARAM_FIELDS = [
   "limit_decay", "fees", "admission",
   // BE-092: the fields of interface 0.0.5 and later; absent from the view of an older contract, then not stored
   "max_search_share_bps", "bond_threshold", "bond_bps", "prune_delay_epochs",
+  // BE-103: interface 0.0.16 and later (relayer fee of the `*_evm` actions); absent from the view of 0.0.15 and older
+  "relayer_fee",
 ] as const;
 
 const INSERT_EVENT = `INSERT OR IGNORE INTO events_raw (receipt_id, log_index, block_height, block_hash, block_timestamp_ns,

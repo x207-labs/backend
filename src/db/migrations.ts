@@ -509,6 +509,35 @@ FROM params p
 WHERE p.id = (SELECT MAX(id) FROM params q WHERE q.circle_id = p.circle_id AND q.field = p.field);
 `;
 
+/** BE-103: `relayer_fee` (DAO parameter of interface 0.0.16 and later) is a field of `params`; without it a `params_updated` that changes it would fail the CHECK and halt the indexer. */
+const V16_PARAMS_RELAYER_FEE = `
+DROP VIEW params_active;
+ALTER TABLE params RENAME TO params_old;
+DROP INDEX idx_params_field;
+CREATE TABLE params (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  circle_id       TEXT    NOT NULL,
+  field           TEXT    NOT NULL CHECK (field IN ('epoch_length','payment_window','proposal_window',
+                    'base_limit_ratio','limit_growth','limit_cap','limit_decay','fees','admission',
+                    'max_search_share_bps','bond_threshold','bond_bps','prune_delay_epochs','relayer_fee')),
+  old_value       TEXT,
+  new_value       TEXT    NOT NULL,
+  effective_epoch INTEGER NOT NULL,
+  block_height    INTEGER NOT NULL,
+  receipt_id      TEXT    NOT NULL,
+  log_index       INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (receipt_id, log_index, field)
+);
+INSERT INTO params (id, circle_id, field, old_value, new_value, effective_epoch, block_height, receipt_id, log_index)
+  SELECT id, circle_id, field, old_value, new_value, effective_epoch, block_height, receipt_id, log_index FROM params_old;
+DROP TABLE params_old;
+CREATE INDEX idx_params_field ON params (circle_id, field, id);
+CREATE VIEW params_active AS
+SELECT p.circle_id, p.field, p.new_value AS value, p.effective_epoch
+FROM params p
+WHERE p.id = (SELECT MAX(id) FROM params q WHERE q.circle_id = p.circle_id AND q.field = p.field);
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "d9_initial", sql: V1_D9_INITIAL },
   { version: 2, name: "d9_bundles", sql: V2_BUNDLES },
@@ -525,4 +554,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 13, name: "d9_edges_unavailable", sql: V13_EDGES_UNAVAILABLE },
   { version: 14, name: "d9_member_stale", sql: V14_MEMBER_STALE },
   { version: 15, name: "d9_params_fields", sql: V15_PARAMS_FIELDS },
+  { version: 16, name: "d9_params_relayer_fee", sql: V16_PARAMS_RELAYER_FEE },
 ];
