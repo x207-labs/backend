@@ -181,9 +181,9 @@ export function syncInvoices(db: Database.Database, circleId: string): void {
 }
 
 /** For the reputation (BE-053): what a debtor did with the invoices it accepted, per issuer. */
-export function invoiceRecordOf(db: Database.Database, circleId: string, debtor: string): { registered: string[]; missed: string[]; blockedByDebtor: number } {
+export function invoiceRecordOf(db: Database.Database, circleId: string, debtor: string, sinceMs = 0): { registered: string[]; missed: string[]; blockedByDebtor: number } {
   syncInvoices(db, circleId);
-  const all = rows<InvoiceRow>(db, "SELECT * FROM invoices WHERE circle_id = ? AND debtor = ? AND status IN ('registered','missed')", circleId, debtor);
+  const all = rows<InvoiceRow>(db, "SELECT * FROM invoices WHERE circle_id = ? AND debtor = ? AND status IN ('registered','missed') AND created_at_ms > ?", circleId, debtor, sinceMs);
   const missed = all.filter((i) => i.status === "missed");
   const blocked = missed.filter((i) => installmentsOf(db, circleId, i.invoice_hash).some((it) => it.reason === "blocked_by_debtor" && it.status === "missed"));
   return { registered: all.filter((i) => i.status === "registered").map((i) => i.issuer), missed: missed.map((i) => i.issuer), blockedByDebtor: blocked.length };
