@@ -24,6 +24,8 @@ export type AccountAssetKind = "account" | "derived" | "member";
 
 /** The asset types that go to an account escrow. `derived` is #12 (the sign history is checked), `member` is #14. */
 export const ACCOUNT_ASSET_TYPES: Readonly<Record<string, AccountAssetKind>> = {
+  // `near:account` is the name of the ADR and of the sandbox tests of the contract (CT-127); the catalog calls the same kind #11 `near:named-account`. Both are accepted until one of them goes.
+  "near:account": "account",
   "near:named-account": "account",
   "vesting:transferable-lockup": "account",
   [DERIVED_ASSET]: "derived",

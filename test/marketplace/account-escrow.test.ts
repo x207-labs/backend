@@ -36,7 +36,7 @@ describe("BE-110 listing of a NEAR account", () => {
   it("TC-BE-110-00 the asset types are those of the catalog (#11, #12, #13); #14 is the entry that the owner registers (ADR 1.4)", () => {
     const names = new Set(CATALOG.map((c: { assetType: string }) => c.assetType));
     for (const t of ["near:named-account", "chain-signatures:derived-address", "vesting:transferable-lockup"]) expect(names.has(t), t).toBe(true);
-    expect(Object.keys(ACCOUNT_ASSET_TYPES).sort()).toEqual(["chain-signatures:derived-address", "near:member_account", "near:named-account", "vesting:transferable-lockup"]);
+    expect(Object.keys(ACCOUNT_ASSET_TYPES).sort()).toEqual(["chain-signatures:derived-address", "near:account", "near:member_account", "near:named-account", "vesting:transferable-lockup"]);
   });
 
   it("TC-BE-110-01 a named account that is not a member is accepted; the scope is exactly account_id (display keys are not checked)", async () => {
