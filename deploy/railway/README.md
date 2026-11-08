@@ -36,7 +36,7 @@ curl https://x207.boxd.sh/healthz
 curl https://x207.boxd.sh/x207/circles/agents-main/epochs
 curl https://x207.boxd.sh/x207/circles/agents-main/members
 ```
-`/metrics` is open (no `METRICS_TOKEN`: the variables are public values only); it holds counts of requests, not data.
+`/metrics` is closed without `METRICS_TOKEN` since BE-108 (every call is 401); set `METRICS_TOKEN`, or `X207_METRICS_OPEN=1` to open it (counts of requests, not data).
 
 ## Redeploy with a replay (BE-091)
 The hosted indexer read epoch 7 before it was pruned, so `edgesUnavailable` stays `false`. The prune transaction `5bDVKRKGJvemHiVdiN1Kjjxuj4zdfZh9MhSvWD5EbEPW` is in block 276185473 (receipts in 276185474 and 276185475). Deploy the build that has BE-091, then move the cursor back to that block so the indexer reads the call again.

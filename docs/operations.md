@@ -34,7 +34,7 @@ Both read the environment; neither reads a file of settings. Secrets only in the
 | `NEAR_RPC_FALLBACK_URL` | backend | none | maybe | second RPC for the failover |
 | `ONECLICK_BASE_URL` | backend | default `https://1click.chaindefuser.com` | no | 1Click API |
 | `ONECLICK_JWT` | backend | none (quotes pay +25 bps) | yes | partner token of 1Click |
-| `METRICS_TOKEN` | both | none (`/metrics` open) | yes | bearer token for `GET /metrics` |
+| `METRICS_TOKEN` | both | none (since BE-108 `/metrics` is closed without a token: every call is 401; `X207_METRICS_OPEN=1` opens it) | yes | bearer token for `GET /metrics` |
 | `API_LIMITS` | both | default `on` | no | `off` turns off every rate limit and open-object cap (tests only) |
 | `API_RATE_LIMIT_PER_MINUTE` | backend | default `600` | no | requests per minute per IP |
 | `API_WRITE_RATE_PER_MINUTE_IP` | backend | default `120` | no | POST per minute per IP |

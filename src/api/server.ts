@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { randomBytes } from "node:crypto";
 import type Database from "better-sqlite3";
 import { abuseFromEnv, accountOfBody, DEFAULT_LIMITS, rateLimited, WINDOW_MS, WindowCounter, type AbuseLimits } from "./abuse.js";
 import { ApiError, invalidRequest } from "./errors.js";
@@ -96,6 +97,16 @@ export function readOnlyFromEnv(env: NodeJS.ProcessEnv = process.env): { readOnl
   if (raw === "0" || raw === "false") return { readOnly: false };
   if (raw === "" || raw === "1" || raw === "true") return { readOnly: true };
   return { readOnly: true, warn: `X207_READ_ONLY="${env.X207_READ_ONLY}" is not 0, false, 1 or true: staying read-only` };
+}
+
+/**
+ * A-BE-10: `/metrics` needs a token. With `METRICS_TOKEN` set it needs that bearer token; without it the route is closed (a random token nobody knows, so every call is
+ * 401), unless `X207_METRICS_OPEN=1` opts in to the open route. `warn` is set when the route is closed because no token was given.
+ */
+export function metricsTokenFromEnv(env: NodeJS.ProcessEnv = process.env): { metricsToken?: string; warn?: string } {
+  if (env.METRICS_TOKEN) return { metricsToken: env.METRICS_TOKEN };
+  if (env.X207_METRICS_OPEN === "1") return {};
+  return { metricsToken: randomBytes(32).toString("hex"), warn: "METRICS_TOKEN is empty: /metrics is closed (set METRICS_TOKEN, or X207_METRICS_OPEN=1 to open it)" };
 }
 
 /** `.env` variable: `API_RATE_LIMIT_PER_MINUTE` (integer ≥ 0). */
