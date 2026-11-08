@@ -1,3 +1,4 @@
+import { parseInt64Param } from "../epoch-param.js";
 import { ApiError, invalidRequest } from "../errors.js";
 import { amount, DECIMALS, isoFromNs, row, rows, UNIT } from "../format.js";
 import { decodeCursor, encodeCursor, parseLimit } from "../pagination.js";
@@ -104,8 +105,9 @@ export const ruleRoutes: Route[] = [
     pattern: "/x207/circles/{circle}/deals/{bundleId}",
     circleScoped: true,
     handler: ({ db, circle, params }) => {
-      if (!/^(0|[1-9]\d*)$/.test(params.bundleId as string)) throw invalidRequest("bundleId must be an integer >= 0", { bundleId: params.bundleId });
-      const d = row<DealRow>(db, "SELECT * FROM deals WHERE circle_id = ? AND bundle_id = ?", circle.circle_id, BigInt(params.bundleId as string));
+      // parseInt64Param throws invalidRequest( ) = 400 invalid_request (the OpenAPI builder reads this text)
+      const bundleId = parseInt64Param(params.bundleId as string, "bundleId");
+      const d = row<DealRow>(db, "SELECT * FROM deals WHERE circle_id = ? AND bundle_id = ?", circle.circle_id, bundleId);
       if (!d) throw new ApiError(404, "deal_not_found", `Deal ${params.bundleId} not found`, { bundleId: params.bundleId });
       const events = rows<{ event: string; account_id: string | null; amount: bigint | null; detail: string | null; block_height: bigint }>(
         db,
