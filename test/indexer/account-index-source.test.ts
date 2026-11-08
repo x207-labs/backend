@@ -46,7 +46,34 @@ describe("BE-089 AccountIndexBlockSource", () => {
     expect(requests).toHaveLength(4); // one page, nothing new, stop
   });
 
-  it("TC-BE-089-06 X207_BLOCK_SOURCE picks the source; account-index needs both URLs; an unknown value is refused", () => {
+  it("TC-BE-109-01 with auditEvery set, every Nth skipped height is read anyway; a block with a log that the index did not list is warned about, counted and kept wanted; off by default", async () => {
+    const warnings: string[] = [];
+    const withLog = (h: number): SourceBlock => ({ height: h, hash: `h${h}`, timestampNs: BigInt(h), logs: [{ receiptId: "r", logIndex: 0, executorId: "c.testnet", txHash: null, log: "x" }] });
+    const asked: number[] = [];
+    const inner: BlockSource = { endpoint: "inner", finalHeight: async () => 1000, getBlock: async (h) => { asked.push(h); return h === 55 ? withLog(h) : block(h); } };
+    const fetchImpl = (async () => new Response(JSON.stringify({ account_txs: [{ tx_block_height: 10 }], resume_token: null }), { status: 200 })) as unknown as typeof fetch;
+    const make = (auditEvery?: number) => new AccountIndexBlockSource({ inner, txIndexUrl: "https://tx.example", contractId: "c.testnet", fetch: fetchImpl, sleep: async () => undefined, ...(auditEvery === undefined ? {} : { auditEvery }), warn: (m) => warnings.push(m) });
+    const off = make();
+    for (let h = 40; h < 70; h++) await off.getBlock(h);
+    expect(asked).toEqual([]);
+    expect(off.audit).toEqual({ checked: 0, missed: 0 });
+    const on = make(5);
+    await on.finalHeight();
+    for (let h = 40; h < 60; h++) await on.getBlock(h); // 20 skipped heights, every 5th is read: 44, 49, 54, 59
+    expect(asked).toEqual([44, 49, 54, 59]);
+    expect(on.audit).toEqual({ checked: 4, missed: 0 });
+    asked.length = 0;
+    const hit = make(1);
+    await hit.finalHeight();
+    expect((await hit.getBlock(55))?.logs).toHaveLength(1);
+    expect(hit.audit).toEqual({ checked: 1, missed: 1 });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/did not list a transaction at block 55/);
+    expect((await hit.getBlock(56))?.height).toBe(56); // the neighbour is wanted now
+    expect(hit.audit.checked).toBe(1);
+  });
+
+  it("TC-BE-089-06X207_BLOCK_SOURCE picks the source; account-index needs both URLs; an unknown value is refused", () => {
     const rpc = new FailoverRpcClient({ endpoints: ["http://127.0.0.1:1"] });
     const base = { NEAR_RPC_PRIMARY_URL: "http://127.0.0.1:1", X207_CONTRACT_ID: "c.testnet", X207_START_BLOCK: "1" };
     const cfg = (extra: Record<string, string>) => appConfigFromEnv({ ...base, ...extra });

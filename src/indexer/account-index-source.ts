@@ -15,6 +15,10 @@ export interface AccountIndexSourceOptions {
   refreshMs?: number;
   /** At least this long between two requests to the inner source (the free Neardata answers 429 above 30 blocks a minute); default 0. */
   minIntervalMs?: number;
+  /** BE-109 cross-check: read every Nth skipped height anyway and warn when it holds a log of the circle that the index did not list; default 0 (off), because each read costs one request to the inner source. */
+  auditEvery?: number;
+  /** Receives the warning of the cross-check; default `console.warn`. */
+  warn?: (message: string) => void;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
 }
@@ -25,14 +29,17 @@ export interface AccountIndexSourceOptions {
  * transaction that the index has not listed yet cannot make the indexer skip a block that matters. Free of any key: the index and Neardata are public.
  */
 export class AccountIndexBlockSource implements BlockSource {
-  readonly #o: Required<Pick<AccountIndexSourceOptions, "spanBlocks" | "marginBlocks" | "refreshMs" | "minIntervalMs">> & AccountIndexSourceOptions;
+  readonly #o: Required<Pick<AccountIndexSourceOptions, "spanBlocks" | "marginBlocks" | "refreshMs" | "minIntervalMs" | "auditEvery">> & AccountIndexSourceOptions;
   readonly #heights = new Set<number>();
   readonly #fetch: typeof fetch;
   #lastRefresh = 0;
   #lastCall = 0;
+  #skipped = 0;
+  #checked = 0;
+  #missed = 0;
 
   constructor(options: AccountIndexSourceOptions) {
-    this.#o = { spanBlocks: 8, marginBlocks: 90, refreshMs: 5_000, minIntervalMs: 0, ...options };
+    this.#o = { spanBlocks: 8, marginBlocks: 90, refreshMs: 5_000, minIntervalMs: 0, auditEvery: 0, ...options };
     this.#fetch = options.fetch ?? fetch;
   }
 
@@ -46,8 +53,36 @@ export class AccountIndexBlockSource implements BlockSource {
     return Math.max(0, head - this.#o.marginBlocks);
   }
 
+  /** BE-109 cross-check: how many skipped heights were read anyway, and how many of them held a log of the circle that the index had not listed. */
+  get audit(): { checked: number; missed: number } {
+    return { checked: this.#checked, missed: this.#missed };
+  }
+
   async getBlock(height: number): Promise<SourceBlock | null> {
-    if (!this.#wanted(height)) return null;
+    if (!this.#wanted(height)) {
+      const every = this.#o.auditEvery;
+      if (every > 0 && ++this.#skipped % every === 0) return this.#audit(height);
+      return null;
+    }
+    return this.#read(height);
+  }
+
+  /**
+   * Reads a height that the index did not list. A block with a log of the circle proves that the index missed a transaction: the height is kept as wanted (so its neighbours are
+   * read too), the miss is counted and warned about, and the block is returned so that nothing is lost. Neardata answers 429 above 30 blocks a minute, so `auditEvery` is off by default.
+   */
+  async #audit(height: number): Promise<SourceBlock | null> {
+    const block = await this.#read(height);
+    this.#checked++;
+    if (block !== null && (block.logs.length > 0 || (block.prunes?.length ?? 0) > 0)) {
+      this.#missed++;
+      this.#heights.add(height);
+      (this.#o.warn ?? console.warn)(`account-index: the index did not list a transaction at block ${height} (contract ${this.#o.contractId}); ${this.#missed} of ${this.#checked} audited blocks were missed`);
+    }
+    return block;
+  }
+
+  async #read(height: number): Promise<SourceBlock | null> {
     const gap = this.#lastCall + this.#o.minIntervalMs - (this.#o.now ?? Date.now)();
     if (gap > 0) await (this.#o.sleep ?? ((ms) => new Promise<void>((r) => setTimeout(r, ms))))(gap);
     this.#lastCall = (this.#o.now ?? Date.now)();
