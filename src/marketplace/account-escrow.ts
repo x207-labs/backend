@@ -137,6 +137,22 @@ export function accountEscrowRoutes(chainView?: ViewFunction): Route[] {
   const resolve = openEpochResolver(chainView);
   return [
     {
+      // the list behind the single read: every account sale of the circle, newest first (`?state=held|delivered|cancelled`)
+      method: "GET",
+      pattern: "/x207/circles/{circle}/account-escrows",
+      circleScoped: true,
+      handler: ({ db, circle, query }) => {
+        const state = query.get("state") || null;
+        if (state !== null && !["held", "delivered", "cancelled"].includes(state)) throw new ApiError(400, "invalid_request", "state is held, delivered or cancelled", { state });
+        const rows = db
+          .prepare(
+            `SELECT grant_id, account_id, state, locked_at_ns, new_owner FROM account_escrows WHERE circle_id = ? ${state === null ? "" : "AND state = ?"} ORDER BY grant_id DESC LIMIT 200`,
+          )
+          .all(...(state === null ? [circle.circle_id] : [circle.circle_id, state])) as Array<{ grant_id: bigint; account_id: string; state: string; locked_at_ns: bigint; new_owner: string | null }>;
+        return { status: 200, body: { items: rows.map((r) => ({ grantId: Number(r.grant_id), account: r.account_id, state: r.state, newOwner: r.new_owner })) } };
+      },
+    },
+    {
       method: "GET",
       pattern: "/x207/circles/{circle}/account-escrows/{grantId}",
       circleScoped: true,
@@ -156,7 +172,9 @@ export function accountEscrowRoutes(chainView?: ViewFunction): Route[] {
         const locked = lockedEpoch(db, circle.circle_id, found.locked_at_ns, open);
         const member = found.asset_type === MEMBER_ASSET;
         const phase = locked === null ? null : row<{ phase: string }>(db, "SELECT phase FROM epochs WHERE circle_id = ? AND epoch = ?", circle.circle_id, locked)?.phase ?? null;
-        const waitOver = !member || (locked !== null && open !== null && open > locked && phase === "finalized");
+        // contract 0.0.18 (CT-126, assert_epochs_settled): the locked epoch has ended and every earlier epoch the circle still keeps (32 at most) is finalized
+        const unsettled = open === null ? null : row<{ n: bigint }>(db, "SELECT COUNT(*) AS n FROM (SELECT phase FROM epochs WHERE circle_id = ? AND epoch < ? ORDER BY epoch DESC LIMIT 32) WHERE phase != 'finalized'", circle.circle_id, open)?.n ?? 0n;
+        const waitOver = !member || (locked !== null && open !== null && open > locked && unsettled === 0n);
         const reset = row<{ since_ms: bigint }>(db, "SELECT MAX(since_ms) AS since_ms FROM reputation_resets WHERE circle_id = ? AND account_id = ?", circle.circle_id, found.account_id);
         return {
           status: 200,

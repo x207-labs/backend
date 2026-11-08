@@ -122,6 +122,27 @@ describe("BE-110 account escrow in the read model", () => {
     expect(r.json).toMatchObject({ lockedEpoch: 7, openEpoch: 8, lockedEpochFinalized: true, waitOver: true, ready: true });
   });
 
+  it("TC-BE-110-30 a member account is not ready while an epoch before the open one is not finalized, even when the locked epoch is (CT-126)", async () => {
+    await ingest(setup(block(1003, { logs: [offer(2, "near:member_account", "seller"), held(2, acct("sold"))] })));
+    epochRow(6, "payment_window", 100);
+    epochRow(7, "finalized", 1500);
+    epochRow(8, "open", null);
+    const get = await market(8);
+    expect((await get("/account-escrows/2")).json).toMatchObject({ lockedEpoch: 7, lockedEpochFinalized: true, waitOver: false, ready: false });
+    await srv!.close();
+    db.prepare("UPDATE epochs SET phase = 'finalized' WHERE epoch = 6").run();
+    const again = await market(8);
+    expect((await again("/account-escrows/2")).json).toMatchObject({ waitOver: true, ready: true });
+  });
+
+  it("TC-BE-110-31 the list of account escrows, newest first, filtered by state; a bad state is 400", async () => {
+    await ingest(setup(block(1003, { logs: [offer(1, "near:named-account", "seller"), held(1, "old-shop.testnet"), offer(2, "near:account", "seller"), held(2, "other.testnet")] }), block(1004, { logs: [activated(1, "new-owner.testnet", null)] })));
+    const get = await market(7);
+    expect((await get("/account-escrows")).json.items.map((i: { grantId: number }) => i.grantId)).toEqual([2, 1]);
+    expect((await get("/account-escrows?state=held")).json.items).toEqual([{ grantId: 2, account: "other.testnet", state: "held", newOwner: null }]);
+    expect((await get("/account-escrows?state=bogus")).status).toBe(400);
+  });
+
   it("TC-BE-110-28 after delivery the read says delivered, not ready, and when the reputation restarted; an unknown or bad grant id is 404", async () => {
     await ingest(setup(block(1003, { logs: [offer(1, "near:named-account", "seller"), held(1, "old-shop.testnet")] }), block(1004, { logs: [activated(1, "new-owner.testnet", null)] })));
     const get = await market(7);
