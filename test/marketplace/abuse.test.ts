@@ -121,7 +121,7 @@ describe("BE-066 limits against abuse of the write routes", () => {
 
   it("TC-BE-066-13 with the limits off a flood of writes and many open orders pass; the server of apiOptionsFromEnv has no rate limit", async () => {
     const { apiOptionsFromEnv } = await import("../../src/api/server.js");
-    const env = { API_LIMITS: "off" };
+    const env = { API_LIMITS: "off", X207_READ_ONLY: "0" }; // BE-104: read-only is the default, the writes need 0
     const m = await start(["andi", "budi"], apiOptionsFromEnv(env), { openLimits: abuseFromEnv(env).open });
     for (let i = 0; i < 15; i++) expect((await call(m, "POST", "/intents", {})).status, `write ${i}`).toBe(400); // not 429
     for (let i = 0; i < 4; i++) await openOrder(m, orderDoc("andi", "budi", { nonce: `f${i}` }));
