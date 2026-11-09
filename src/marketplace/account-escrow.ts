@@ -1,7 +1,7 @@
 // BE-110 (P1, UM-076, contract 0.0.18, ADR `docs/adr-0.0.18.md` in `contracts`, branch `p1-0.0.18`): the sale of a NEAR account through a locker and an escrow of kind `account`.
 // What the backend adds to the contract, in the order of the ADR:
 //   - the listing (1.3, 1.4): the scope is exactly `{"account_id": ...}`; the seller is not the sold account (`ERR_ACCOUNT_SELF`); an account that is a member of the circle is sold only as
-//     `near:member_account` and only while it is `active`, admitted and not on its way out; any other account must not be a member;
+//     `near:member_account` and only while it is `active` and not on its way out; any other account must not be a member;
 //   - item #12 (1.1, 1.5): an address derived through Chain Signatures is listed only if the MPC contract never saw a `sign` call of the account. The history comes from an index of
 //     transactions (`AccountHistory`); when it is missing or does not answer, the listing is refused (fail closed);
 //   - the wait (1.4): a member account may be delivered only after the epoch of the lock has finished. The read `GET account-escrows/{grantId}` says when (`ready`);
@@ -70,11 +70,13 @@ function accountDetail(detail: unknown, assetType: string): string {
 
 /** What the sale of an account that is a member needs (ADR 1.4); the contract checks the same again at `account_on_lock` and at delivery. */
 function memberSellable(db: Database.Database, circleId: string, accountId: string): void {
-  const m = row<{ status: string; admitted: bigint; exit_requested_epoch: bigint | null }>(
-    db, "SELECT status, admitted, exit_requested_epoch FROM members WHERE circle_id = ? AND account_id = ?", circleId, accountId,
+  // The contract (`account_escrow.rs`) asks for status `active`, no exit request and no bond; it does not read `admitted`. That flag is set only by `member_admitted` (a `dao` circle), so in an
+  // `open` circle it stays 0 for a staked member: asking for it here refused every member account of the live circle `x207-v018.testnet` (found against its read model, BE-110).
+  const m = row<{ status: string; exit_requested_epoch: bigint | null }>(
+    db, "SELECT status, exit_requested_epoch FROM members WHERE circle_id = ? AND account_id = ?", circleId, accountId,
   );
   if (!m) return refuse(400, "account_not_member", `${MEMBER_ASSET} needs a member of this circle; ${accountId} is not one`, { account: accountId });
-  const reason = m.status !== "active" ? `status is ${m.status}` : m.admitted !== 1n ? "it is not admitted" : m.exit_requested_epoch !== null ? "it asked to leave" : null;
+  const reason = m.status !== "active" ? `status is ${m.status}` : m.exit_requested_epoch !== null ? "it asked to leave" : null;
   if (reason !== null) refuse(400, "account_not_sellable", `${accountId} cannot be sold as a member: ${reason}`, { account: accountId, status: m.status });
 }
 

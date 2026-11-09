@@ -72,12 +72,12 @@ describe("BE-110 listing of a NEAR account", () => {
     expect(err(await post(m, { type: "chain-signatures:derived-address", account: "budi.x207-circle.near" }))).toEqual([400, "account_is_member"]);
   });
 
-  it("TC-BE-110-06 near:member_account (#14): a member that is active and admitted is accepted; a stranger, a suspended, an unadmitted or a leaving member is not", async () => {
+  it("TC-BE-110-06 near:member_account (#14): an active member is accepted (the `admitted` flag is not read: the contract does not, and an open circle never sets it); a stranger, a suspended or a leaving member is not", async () => {
     const m = await start(undefined, ["dewi"]);
     expect((await post(m, { type: "near:member_account", account: "budi.x207-circle.near" })).status).toBe(201);
     expect(err(await post(m, { type: "near:member_account", account: SOLD }))).toEqual([400, "account_not_member"]);
     expect(err(await post(m, { type: "near:member_account", account: "dewi.x207-circle.near" }))).toEqual([400, "account_not_sellable"]);
-    expect(err(await post(m, { type: "near:member_account", account: "citra.x207-circle.near" }))).toEqual([400, "account_not_sellable"]); // not admitted
+    expect((await post(m, { type: "near:member_account", account: "citra.x207-circle.near" })).status).toBe(201); // active, never admitted: an open circle
     m.db.prepare("UPDATE members SET admitted = 1, exit_requested_epoch = 44 WHERE circle_id = ? AND account_id = ?").run(CIRCLE, "citra.x207-circle.near");
     expect(err(await post(m, { type: "near:member_account", account: "citra.x207-circle.near" }))).toEqual([400, "account_not_sellable"]); // asked to leave
   });

@@ -1,6 +1,8 @@
 // BE-110: the sign history of a NEAR account, for the listing of item #12 (an address that Chain Signatures derives from the account). Source: the transaction index of FastNEAR, the same
 // one the indexer uses to follow a circle (`X207_TX_INDEX_URL`, e.g. `https://tx.test.fastnear.com/v0/account`). Two steps, both read-only and free of any key:
-//   1. `POST {index}` `{account_id, limit, resume_token}` lists the transactions of the account (newest first) with flags; the ones the account itself sent as a function call are kept;
+//   1. `POST {index}` `{account_id, limit, resume_token}` lists the transactions of the account (newest first) with flags; the ones the account itself signed are kept. The flag
+//      `is_function_call` is NOT used: the live index (tx.test.fastnear.com, checked 2026-11-09 on `feral-039832.testnet`) sets it to false on real `sign` transactions, and filtering on it
+//      made every account look clean (count 0, complete). The second step looks at the actions, so nothing is lost by keeping the transactions that the account signed;
 //   2. `POST {index base}/transactions` `{tx_hashes}` returns each transaction with its receiver and its actions; the answer is a call to `sign` when the receiver is the MPC contract and one
 //      of the actions is a `FunctionCall` of `sign`.
 // Only transactions that the account signed itself count: the derivation path of the MPC contract uses the account that CALLS `sign`, so a contract that signs on behalf of the account is a
@@ -46,7 +48,7 @@ export class FastNearAccountHistory implements AccountHistory {
     for (let page = 0; page < this.#o.maxPages; page++) {
       const body: { account_txs?: IndexEntry[]; resume_token?: string | null } = await this.#post<{ account_txs?: IndexEntry[]; resume_token?: string | null }>(this.#o.txIndexUrl, { account_id: accountId, limit: 200, ...(token === null ? {} : { resume_token: token }) });
       for (const tx of body.account_txs ?? []) {
-        if ((tx.is_signer === true || tx.is_any_signer === true) && tx.is_function_call === true && typeof tx.transaction_hash === "string" && HASH.test(tx.transaction_hash)) hashes.push(tx.transaction_hash);
+        if ((tx.is_signer === true || tx.is_any_signer === true) && typeof tx.transaction_hash === "string" && HASH.test(tx.transaction_hash)) hashes.push(tx.transaction_hash);
       }
       token = body.resume_token ?? null;
       if (token === null) {

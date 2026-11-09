@@ -39,10 +39,10 @@ describe("BE-110 sign history over the FastNEAR index", () => {
     expect(await new FastNearAccountHistory({ txIndexUrl: INDEX, mpcContractId: MPC, fetch: fakeFetch([[]], {}) }).signCalls("b.testnet")).toEqual({ count: 0, complete: true });
   });
 
-  it("TC-BE-110-42 only transactions that the account signed as a function call are looked up (a transfer received, a call from another signer are not)", async () => {
+  it("TC-BE-110-42 only transactions that the account signed are looked up (a transfer received, a call from another signer are not); the live index sets is_function_call false on real sign calls, and they count", async () => {
     const calls: string[] = [];
-    const f = fakeFetch([[entry(1, { is_signer: false }), entry(2, { is_function_call: false }), entry(3)]], { [h(3)]: { receiver: MPC, methods: ["sign"] } }, calls);
-    expect(await new FastNearAccountHistory({ txIndexUrl: INDEX, mpcContractId: MPC, fetch: f }).signCalls("a.testnet")).toEqual({ count: 1, complete: true });
+    const f = fakeFetch([[entry(1, { is_signer: false }), entry(2, { is_function_call: false }), entry(3)]], { [h(2)]: { receiver: MPC, methods: ["sign"] }, [h(3)]: { receiver: MPC, methods: ["sign"] } }, calls);
+    expect(await new FastNearAccountHistory({ txIndexUrl: INDEX, mpcContractId: MPC, fetch: f }).signCalls("a.testnet")).toEqual({ count: 2, complete: true });
     expect(calls.filter((c) => c.endsWith("/transactions"))).toHaveLength(1);
   });
 
