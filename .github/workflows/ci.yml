@@ -15,5 +15,7 @@ jobs:
     with:
       path: backend
       package: backend
+      # the broker imports @x207/scheme (types come from its dist), and the scheme builds on core
+      build-first: "@x207/core @x207/scheme"
     secrets:
       checkout-token: ${{ secrets.X207_CHECKOUT_TOKEN }}
