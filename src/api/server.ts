@@ -63,8 +63,9 @@ export interface ApiServerOptions {
 
 /** The CORS header of an answer: `*` without a list; with a list the origin of the request when it is in it (and `Vary: Origin`), nothing for any other origin. */
 export function corsHeaders(allowed: readonly string[] | undefined, origin: string | undefined): Record<string, string> {
-  if (allowed === undefined) return { "Access-Control-Allow-Origin": "*" };
-  return origin !== undefined && allowed.includes(origin) ? { "Access-Control-Allow-Origin": origin, Vary: "Origin" } : { Vary: "Origin" };
+  // BE-113: a browser script may read only the safelisted response headers unless the server names more; the dashboard needs `Retry-After` of a 429 to wait the right time
+  if (allowed === undefined) return { "Access-Control-Allow-Origin": "*", "Access-Control-Expose-Headers": "Retry-After" };
+  return origin !== undefined && allowed.includes(origin) ? { "Access-Control-Allow-Origin": origin, "Access-Control-Expose-Headers": "Retry-After", Vary: "Origin" } : { Vary: "Origin" };
 }
 
 /** JSON body of a `POST`: any object that fits in `maxBytes`; larger than that is 413 `payload_too_large`, not JSON 400 `invalid_request`. */

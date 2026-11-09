@@ -39,7 +39,29 @@ describe("BE-089 read-only mode and CORS allow-list", () => {
     expect((await fetch(`${srv.url}/healthz`)).headers.get("access-control-allow-origin")).toBeNull(); // no Origin header: nothing to allow
     const pre = await fetch(`${srv.url}/healthz`, { method: "OPTIONS", headers: { origin: dash } });
     expect(pre.headers.get("access-control-allow-origin")).toBe(dash);
-    expect(corsHeaders(undefined, undefined)).toEqual({ "Access-Control-Allow-Origin": "*" });
+    expect(corsHeaders(undefined, undefined)).toEqual({ "Access-Control-Allow-Origin": "*", "Access-Control-Expose-Headers": "Retry-After" });
+  });
+
+  it("TC-BE-113-01 Retry-After is exposed to browser scripts: on a 200, on the preflight and on the 429 itself (allowed origin and the * case); an origin that is not allowed gets none", async () => {
+    const dash = "https://x207-dashboard.vercel.app";
+    const srv = await start({ corsOrigins: [dash], rateLimitPerMinute: 1 });
+    const first = await fetch(`${srv.url}/healthz`, { headers: { origin: dash } });
+    expect(first.headers.get("access-control-expose-headers")).toBe("Retry-After");
+    const limited = await fetch(`${srv.url}/x207/circles/agents-main/epochs`, { headers: { origin: dash } });
+    const again = limited.status === 429 ? limited : await fetch(`${srv.url}/x207/circles/agents-main/epochs`, { headers: { origin: dash } });
+    expect(again.status).toBe(429);
+    expect(Number(again.headers.get("retry-after"))).toBeGreaterThanOrEqual(1);
+    expect(again.headers.get("access-control-expose-headers")).toBe("Retry-After");
+    expect(again.headers.get("access-control-allow-origin")).toBe(dash);
+    const stranger = await fetch(`${srv.url}/healthz`, { headers: { origin: "https://evil.example" } });
+    expect(stranger.headers.get("access-control-expose-headers")).toBeNull();
+    const pre = await fetch(`${srv.url}/healthz`, { method: "OPTIONS", headers: { origin: dash } });
+    expect(pre.headers.get("access-control-expose-headers")).toBe("Retry-After");
+    const open = await start({ rateLimitPerMinute: 1 });
+    await fetch(`${open.url}/healthz`);
+    const star = await fetch(`${open.url}/x207/circles/agents-main/epochs`);
+    const star2 = star.status === 429 ? star : await fetch(`${open.url}/x207/circles/agents-main/epochs`);
+    expect([star2.status, star2.headers.get("access-control-allow-origin"), star2.headers.get("access-control-expose-headers")]).toEqual([429, "*", "Retry-After"]);
   });
 
   it("TC-BE-089-03 the environment: X207_READ_ONLY=1 and X207_CORS_ORIGINS; a wildcard or a path is refused at start", () => {
