@@ -28,11 +28,11 @@ describe("BE-089 read-only mode and CORS allow-list", () => {
   });
 
   it("TC-BE-089-02 with a list of origins only those are allowed, exactly; any other origin gets no allow header; without a list it is *", async () => {
-    const dash = "https://x207-dashboard.vercel.app";
+    const dash = "https://x207.vercel.app";
     const srv = await start({ corsOrigins: [dash] });
     const ok = await fetch(`${srv.url}/healthz`, { headers: { origin: dash } });
     expect([ok.headers.get("access-control-allow-origin"), ok.headers.get("vary")]).toEqual([dash, "Origin"]);
-    for (const origin of ["https://evil.vercel.app", "https://x207-dashboard.vercel.app.evil.com", "http://x207-dashboard.vercel.app"]) {
+    for (const origin of ["https://evil.vercel.app", "https://x207.vercel.app.evil.com", "http://x207.vercel.app"]) {
       const other = await fetch(`${srv.url}/healthz`, { headers: { origin } });
       expect(other.headers.get("access-control-allow-origin")).toBeNull();
     }
@@ -43,7 +43,7 @@ describe("BE-089 read-only mode and CORS allow-list", () => {
   });
 
   it("TC-BE-113-01 Retry-After is exposed to browser scripts: on a 200, on the preflight and on the 429 itself (allowed origin and the * case); an origin that is not allowed gets none", async () => {
-    const dash = "https://x207-dashboard.vercel.app";
+    const dash = "https://x207.vercel.app";
     const srv = await start({ corsOrigins: [dash], rateLimitPerMinute: 1 });
     const first = await fetch(`${srv.url}/healthz`, { headers: { origin: dash } });
     expect(first.headers.get("access-control-expose-headers")).toBe("Retry-After");

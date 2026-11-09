@@ -57,7 +57,7 @@ export interface ApiServerOptions {
   daoView?: ViewFunction;
   /** BE-089: a public read API serves GET only. Every route that is not a GET is left out, so a POST is `404 not_found`; the preflight answers `GET, OPTIONS`. Env `X207_READ_ONLY=1`. */
   readOnly?: boolean;
-  /** BE-089: browser origins that may read the API (exact match, e.g. `https://x207-dashboard.vercel.app`). Without it the answer carries `Access-Control-Allow-Origin: *`. Env `X207_CORS_ORIGINS`, comma separated. */
+  /** BE-089: browser origins that may read the API (exact match, e.g. `https://x207.vercel.app`). Without it the answer carries `Access-Control-Allow-Origin: *`. Env `X207_CORS_ORIGINS`, comma separated. */
   corsOrigins?: readonly string[];
 }
 

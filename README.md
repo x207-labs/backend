@@ -37,7 +37,7 @@ curl -s https://x207.boxd.sh/healthz
 curl -s https://x207.boxd.sh/x207/circles/agents-main/epochs/8/metrics
 ```
 
-CORS is open for `https://x207-dashboard.vercel.app` only. It runs on the boxd machine `x207` (UM-148): [deploy/boxd](https://github.com/x207-labs/x207/blob/main/deploy/boxd/README.md). The Railway setup it replaced is kept for the record in [`deploy/railway/README.md`](deploy/railway/README.md).
+CORS is open for `https://x207.vercel.app` only. It runs on the boxd machine `x207` (UM-148): [deploy/boxd](https://github.com/x207-labs/x207/blob/main/deploy/boxd/README.md). The Railway setup it replaced is kept for the record in [`deploy/railway/README.md`](deploy/railway/README.md).
 
 ## Run and test
 

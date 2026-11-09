@@ -24,7 +24,7 @@ The first start copies the seed to the volume (`start.sh`); later starts keep th
 | `X207_CONTRACT_ID`, `X207_CIRCLE_ID`, `X207_START_BLOCK` | `x207-v013.testnet`, `agents-main`, `276140918` |
 | `X207_DB_PATH` | `/data/x207.sqlite` |
 | `X207_READ_ONLY` | `1` (GET routes only; no settlement endpoints) |
-| `X207_CORS_ORIGINS` | `https://x207-dashboard.vercel.app` (exact origin, no wildcard) |
+| `X207_CORS_ORIGINS` | `https://x207.vercel.app` (exact origin, no wildcard) |
 | `API_TRUST_PROXY` | `1` (behind the proxy of Railway) |
 | `X207_BLOCK_SOURCE`, `X207_NEARDATA_URL`, `X207_TX_INDEX_URL` | `account-index`, `https://testnet.neardata.xyz`, `https://tx.test.fastnear.com/v0/account` |
 
