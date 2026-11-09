@@ -55,6 +55,7 @@ function fakeRpc(accounts: Record<string, string[]>, down = false): Deps["rpc"] 
   return async (_m, p: any) => {
     if (down) throw new Error("rpc down");
     const keys = accounts[p.account_id];
+    if (p.request_type === "view_account") return keys ? { result: { amount: "1", locked: "0" } } : { error: { cause: { name: "UNKNOWN_ACCOUNT" } } };
     if (!keys) return { error: { cause: { name: "UNKNOWN_ACCOUNT" } } };
     if (keys.includes(p.public_key)) return { result: { nonce: 1, permission: "FullAccess" } };
     if (keys.includes(`fc:${p.public_key}`)) return { result: { nonce: 1, permission: { FunctionCall: { allowance: "1", receiver_id: "x", method_names: [] } } } };
@@ -217,5 +218,47 @@ describe("BE-116 the Edge Function logic", () => {
     expect(code(await m.call({ action: "drop_tables" }))).toEqual([400, "invalid_request"]);
     expect(code(await m.call({ action: "get" }))).toEqual([400, "invalid_request"]);
     expect(code(await m.call({ action: "get", accountId: "Bad Account", publicKey: "a", signature: "b", message: "c", nonce: "d", recipient: "e" }))).toEqual([400, "invalid_request"]);
+  });
+
+  it("TC-BE-116-12 an implicit account that is new, with the answers of rpc.testnet.fastnear.com: the key is 'does not exist while viewing' for the key AND the account is missing", async () => {
+    const k = newKey();
+    const id = bytesToHex(k.bytes);
+    const keyMissing = `access key ${k.publicKey} does not exist while viewing`;
+    const fastnear = (accountExists: boolean): Deps["rpc"] => async (_m, p: any) => {
+      if (p.request_type === "view_access_key") return { result: { error: keyMissing, logs: [], block_height: 1, block_hash: "x" } };
+      if (p.request_type === "view_account") return accountExists ? { result: { amount: "1", locked: "0", code_hash: "11111111111111111111111111111111", storage_usage: 182, block_height: 1, block_hash: "x" } } : { result: { error: `account ${p.account_id} does not exist while viewing`, logs: [], block_height: 1, block_hash: "x" } };
+      throw new Error("unexpected " + p.request_type);
+    };
+    expect(await keyBelongsToAccount(fastnear(false), id, k.publicKey, k.bytes)).toBe("ok"); // new account, its own key
+    expect(await keyBelongsToAccount(fastnear(true), id, k.publicKey, k.bytes)).toBe("no"); // the account exists and the key was rotated away
+    const other = newKey();
+    expect(await keyBelongsToAccount(fastnear(false), id, other.publicKey, other.bytes)).toBe("no"); // another key
+    expect(await keyBelongsToAccount(fastnear(false), "alice.testnet", k.publicKey, k.bytes)).toBe("no"); // not an implicit account
+    const m = setup();
+    m.deps.rpc = fastnear(false);
+    expect(code(await m.call({ action: "get", ...(await signed(k, id, "get")) }))).toEqual([200, "ok"]);
+    const down: Deps["rpc"] = async (_m, p: any) => { if (p.request_type === "view_account") throw new Error("down"); return { result: { error: keyMissing } }; };
+    expect(await keyBelongsToAccount(down, id, k.publicKey, k.bytes)).toBe("unavailable");
+  });
+
+  it("TC-BE-116-13 weak keys: the zero key with the zero signature, the small-order points and non-canonical keys are invalid_signature", async () => {
+    const m = setup({ [bytesToHex(new Uint8Array(32))]: [] });
+    const zero = new Uint8Array(32);
+    const req = (key: Uint8Array) => ({ action: "get", accountId: bytesToHex(key), publicKey: `ed25519:${base58Encode(key)}`, signature: b64(new Uint8Array(64)), message: "x207:get", nonce: b64(nonceAt(NOW)), recipient: RECIPIENT });
+    expect(code(await m.call(req(zero)))).toEqual([401, "invalid_signature"]);
+    const hexKeys = [
+      "00".repeat(32), "00".repeat(31) + "80", "01" + "00".repeat(31), "01" + "00".repeat(30) + "80", "ec" + "ff".repeat(30) + "7f", "ec" + "ff".repeat(31),
+      "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05", "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85",
+      "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a", "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa",
+      "ed" + "ff".repeat(30) + "7f", "ee" + "ff".repeat(30) + "7f", "ff".repeat(31) + "7f",
+    ];
+    for (const h of hexKeys) {
+      const key = Uint8Array.from(Buffer.from(h, "hex"));
+      expect(code(await m.call(req(key))), h).toEqual([401, "invalid_signature"]);
+    }
+    expect(m.store.nonces.size).toBe(0);
+    // a normal key is not caught by the filter
+    const k = newKey();
+    expect(code(await m.call({ action: "get", ...(await signed(k, bytesToHex(k.bytes), "get")) }))).toEqual([200, "ok"]);
   });
 });

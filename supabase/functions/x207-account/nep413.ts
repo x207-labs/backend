@@ -63,6 +63,26 @@ export function base64Decode(text: string): Uint8Array | null {
 const hex = (b: Uint8Array): string => [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
 export const bytesToHex = hex;
 
+// y coordinates (little endian hex, sign bit cleared) of the 8 small-order points of ed25519: y = 0, 1, p-1 and the two others (each with both signs).
+// A key like that makes a signature that anybody can forge (WebCrypto in Deno accepts the zero key with the zero signature).
+const SMALL_ORDER_Y = new Set([
+  "00".repeat(32),
+  "01" + "00".repeat(31),
+  "ec" + "ff".repeat(30) + "7f",
+  "26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05",
+  "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a",
+]);
+
+/** True for a key that is not canonical (y >= p) or of small order. */
+export function isWeakPublicKey(bytes: Uint8Array): boolean {
+  const y = Uint8Array.from(bytes);
+  y[31] = y[31]! & 0x7f;
+  const yHex = hex(y);
+  if (SMALL_ORDER_Y.has(yHex)) return true;
+  // y >= p = 2^255 - 19: every byte from 1 to 30 is ff, the top byte (sign cleared) is 7f, the first byte is >= ed
+  return y[31] === 0x7f && y.slice(1, 31).every((b) => b === 0xff) && y[0]! >= 0xed;
+}
+
 /** `ed25519:<base58>` to its 32 bytes. */
 export function parsePublicKey(publicKey: string): Uint8Array | null {
   if (!publicKey.startsWith("ed25519:")) return null;
@@ -126,6 +146,7 @@ export async function verifyNep413(req: SignedRequest, expectedAction: string, n
   if (req.message !== `x207:${expectedAction}`) return { ok: false, error: "wrong_message" };
   const at = nonceTimeMs(nonce);
   if (nowMs - at > MAX_NONCE_AGE_MS || at - nowMs > MAX_NONCE_FUTURE_MS) return { ok: false, error: "nonce_expired" };
+  if (isWeakPublicKey(publicKeyBytes)) return { ok: false, error: "invalid_signature" };
   const hash = await nep413Hash(req.message, nonce, req.recipient);
   let valid = false;
   try {

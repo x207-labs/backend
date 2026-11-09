@@ -66,8 +66,22 @@ export async function keyBelongsToAccount(rpc: Deps["rpc"], accountId: string, p
   const name: string = r?.error?.cause?.name ?? "";
   const text = String(r?.result?.error ?? r?.error?.data ?? "");
   const unknownAccount = name === "UNKNOWN_ACCOUNT" || (/does not exist/i.test(text) && !/access key/i.test(text));
-  if (unknownAccount) return IMPLICIT.test(accountId) && bytesToHex(publicKeyBytes) === accountId ? "ok" : "no";
-  if (name === "UNKNOWN_ACCESS_KEY" || /access key/i.test(text)) return "no";
+  const unknownKey = name === "UNKNOWN_ACCESS_KEY" || /access key/i.test(text);
+  if (!unknownAccount && !unknownKey) return "unavailable";
+  const implicitKey = IMPLICIT.test(accountId) && bytesToHex(publicKeyBytes) === accountId;
+  if (unknownAccount) return implicitKey ? "ok" : "no";
+  // Some nodes (fastnear) answer "access key ... does not exist while viewing" also when the ACCOUNT is missing: ask the account itself.
+  if (!implicitKey) return "no";
+  let a: any;
+  try {
+    a = await rpc("query", { request_type: "view_account", finality: "final", account_id: accountId });
+  } catch {
+    return "unavailable";
+  }
+  if (a?.result && a.result.error === undefined && a.result.amount !== undefined) return "no"; // the account exists and does not have the key (rotated away)
+  const aname: string = a?.error?.cause?.name ?? "";
+  const atext = String(a?.result?.error ?? a?.error?.data ?? "");
+  if (aname === "UNKNOWN_ACCOUNT" || /does not exist/i.test(atext)) return "ok";
   return "unavailable";
 }
 
