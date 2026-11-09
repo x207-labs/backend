@@ -551,6 +551,22 @@ CREATE TABLE code_check_notices (
 );
 `;
 
+// BE-114: one row per account that asked for test funds; the primary key is what refuses a second grant to the same account
+const V1120_FAUCET = `
+CREATE TABLE faucet_grants (
+  account_id    TEXT PRIMARY KEY,
+  ip            TEXT NOT NULL,
+  state         TEXT NOT NULL CHECK (state IN ('pending', 'near_sent', 'sent')),
+  near_yocto    TEXT NOT NULL,
+  usdt_amount   TEXT NOT NULL,
+  near_tx       TEXT,
+  usdt_txs      TEXT,
+  created_at_ms INTEGER NOT NULL
+);
+CREATE INDEX faucet_grants_by_ip ON faucet_grants (ip, created_at_ms);
+CREATE INDEX faucet_grants_by_time ON faucet_grants (created_at_ms);
+`;
+
 export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1101, name: "m11_intents", sql: V1101_INTENTS },
   { version: 1102, name: "m11_listings", sql: V1102_LISTINGS },
@@ -571,4 +587,5 @@ export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1117, name: "m11_transfers", sql: V1117_TRANSFERS },
   { version: 1118, name: "m11_code_check_notices", sql: V1118_CODE_CHECK_NOTICES },
   { version: 1119, name: "m11_transfer_cancel_request", sql: V1119_TRANSFER_CANCEL_REQUEST },
+  { version: 1120, name: "m11_faucet", sql: V1120_FAUCET },
 ];

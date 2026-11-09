@@ -156,9 +156,9 @@ describe("BE-073 backup and restore of the SQLite file", () => {
   it("TC-BE-073-05 a file from an OLDER build is healthy and lists the migrations the next start would apply", async () => {
     const file = join(dir, "older.db");
     const { db } = await makeLive(file, LAST);
-    db.prepare("DELETE FROM schema_migrations WHERE version IN (17, 1119)").run(); // as if the file was written before them
+    db.prepare("DELETE FROM schema_migrations WHERE version IN (17, 1119, 1120)").run(); // as if the file was written before them
     db.close();
-    expect(checkDatabase(file)).toMatchObject({ ok: true, unknownVersions: [], pendingVersions: [17, 1119], migrations: { d9: 16, marketplace: 1118 } });
+    expect(checkDatabase(file)).toMatchObject({ ok: true, unknownVersions: [], pendingVersions: [17, 1119, 1120], migrations: { d9: 16, marketplace: 1118 } });
   });
 
   const dist = new URL("../../dist/db/backup.js", import.meta.url).pathname;

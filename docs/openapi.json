@@ -15300,6 +15300,226 @@
         }
       }
     },
+    "/x207/faucet": {
+      "get": {
+        "operationId": "get_faucet",
+        "summary": "Read faucet",
+        "tags": [
+          "read-api"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_request",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "invalid_request"
+            ]
+          },
+          "429": {
+            "description": "Too many requests; see the header `Retry-After` (BE-066).",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "rate_limited",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "rate_limited"
+            ]
+          }
+        },
+        "x-source": "src/faucet/faucet.ts"
+      },
+      "post": {
+        "operationId": "post_faucet",
+        "summary": "Send faucet",
+        "tags": [
+          "read-api"
+        ],
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_request",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "invalid_request"
+            ]
+          },
+          "413": {
+            "description": "The body is larger than `API_MAX_BODY_BYTES` (BE-066).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "payload_too_large",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "payload_too_large"
+            ]
+          },
+          "429": {
+            "description": "Too many requests; see the header `Retry-After` (BE-066).",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "rate_limited",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "rate_limited"
+            ]
+          },
+          "502": {
+            "description": "A service behind the API failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "faucet_failed",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "faucet_failed",
+              "faucet_partial"
+            ]
+          }
+        },
+        "x-source": "src/faucet/faucet.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
     "/x207/health": {
       "get": {
         "operationId": "get_health",

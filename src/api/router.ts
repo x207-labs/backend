@@ -18,6 +18,8 @@ export interface RouteContext {
   body: unknown;
   /** Request headers (lowercase names), for routes that check `authorization` (`GET /metrics`). */
   headers: Record<string, string | string[] | undefined>;
+  /** Address of the caller as the abuse limiter sees it (last `X-Forwarded-For` hop behind a trusted proxy). BE-114: the faucet limits per address. */
+  ip?: string;
 }
 
 export interface RouteResult {
@@ -34,6 +36,8 @@ export interface Route {
   pattern: string;
   /** Route under `/x207/circles/{circle}`: the circle and D9 readiness are checked before the handler. */
   circleScoped: boolean;
+  /** BE-114: a POST that is served even when the server is read-only (the faucet holds no settlement key; it only pays out test funds). Default false. */
+  allowInReadOnly?: boolean;
   handler: (ctx: RouteContext) => RouteResult | Promise<RouteResult>;
 }
 

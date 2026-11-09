@@ -154,7 +154,7 @@ export function createApiServer(options: ApiServerOptions): Server {
   const abuse: AbuseLimits = { ...DEFAULT_LIMITS, ipPerMinute: limit, writeIpPerMinute: 0, writeAccountPerMinute: 0, ...options.abuse };
   const telemetry = options.telemetry ?? new Telemetry(now());
   const logger = options.logger ?? silentLogger;
-  const routes = collectRoutes({ ...options, telemetry }).filter((r) => !options.readOnly || r.method === "GET");
+  const routes = collectRoutes({ ...options, telemetry }).filter((r) => !options.readOnly || r.method === "GET" || r.allowInReadOnly === true);
   const ipHits = new WindowCounter();
   const writeIpHits = new WindowCounter();
   const accountHits = new WindowCounter();
@@ -214,7 +214,7 @@ export function createApiServer(options: ApiServerOptions): Server {
         const wait = accountHits.wait(account, abuse.writeAccountPerMinute, now());
         if (wait > 0) throw rateLimited(`Account ${account} is writing too often`, { scope: "account_write", account, limitPerMinute: abuse.writeAccountPerMinute }, wait);
       }
-      const result = await match.route.handler({ db, params: match.params, query: url.searchParams, now, circle, body, headers: req.headers });
+      const result = await match.route.handler({ db, params: match.params, query: url.searchParams, now, circle, body, headers: req.headers, ip: callerOf(req) });
       if (account !== null && result.status >= 200 && result.status < 300) accountHits.add(account, now());
       return indexedBlock === undefined ? { result } : { result, indexedBlock };
     } catch (err) {

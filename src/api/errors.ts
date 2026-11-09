@@ -42,7 +42,12 @@ export type ApiErrorCode =
   | OrderApiErrorCode
   | PurchaseApiErrorCode
   | TransferApiErrorCode
-  | AccountApiErrorCode;
+  | AccountApiErrorCode
+  | FaucetApiErrorCode;
+
+/** BE-114: codes of the test-funds faucet (`POST /x207/faucet`). */
+export type FaucetApiErrorCode =
+  | "faucet_already_claimed" | "faucet_already_funded" | "faucet_account_not_found" | "faucet_bad_account" | "faucet_empty" | "faucet_failed" | "faucet_partial";
 
 /** BE-110 (P1, contract 0.0.18): codes of the listing of a NEAR account. */
 export type AccountApiErrorCode =

@@ -44,6 +44,16 @@ Both read the environment; neither reads a file of settings. Secrets only in the
 | `X207_BLOCK_SOURCE` | backend | default `rpc` | no | where the indexer reads blocks: `rpc` (every transaction is traced: near-sandbox and small networks only), `neardata` (one request per block) or `account-index` (testnet, BE-089: Neardata, but only the blocks of the transactions that the FastNEAR index of the account lists) |
 | `X207_NEARDATA_URL` | backend | required for `neardata` and `account-index` | no | e.g. `https://testnet.neardata.xyz` |
 | `X207_TX_INDEX_URL` | backend | required for `account-index` | no | the transaction index of the account, e.g. `https://tx.test.fastnear.com/v0/account` |
+| `X207_FAUCET_ACCOUNT` | backend | none (faucet off) | no | BE-114: the testnet account (`*.testnet`) that pays `POST /x207/faucet`; give a small account made for this, never the deployer. Needs `X207_FAUCET_KEY` too |
+| `X207_FAUCET_KEY` | backend | none (faucet off) | yes | BE-114: ed25519 secret key of `X207_FAUCET_ACCOUNT`; only in the env file of the unit, never in a log or a response |
+| `X207_FAUCET_USDT` | backend | default `usdt.x207-deployer.testnet` | no | BE-114: the mock USDT (open `mint`) that the faucet gives to a new account |
+| `X207_FAUCET_RPC_URL` | backend | default `https://rpc.testnet.fastnear.com` | no | BE-114: RPC of the faucet; a mainnet URL is refused |
+| `X207_FAUCET_NEAR_YOCTO` | backend | default `600000000000000000000000` (0.6 NEAR) | no | BE-114: NEAR paid to an account (join deposit 0.35 + storage + gas) |
+| `X207_FAUCET_USDT_AMOUNT` | backend | default `300000000` (300 USDT, 6 decimals) | no | BE-114: mock USDT minted to an account (the wizard stakes 150) |
+| `X207_FAUCET_PER_IP_PER_DAY` | backend | default `3` | no | BE-114: grants per address per rolling day |
+| `X207_FAUCET_PER_DAY` | backend | default `100` | no | BE-114: grants for all addresses per rolling day |
+| `X207_FAUCET_FUNDED_ABOVE_YOCTO` | backend | default `1000000000000000000000000` (1 NEAR) | no | BE-114: an account that holds more than this is refused as already funded |
+| `X207_FAUCET_RESERVE_YOCTO` | backend | default `2000000000000000000000000` (2 NEAR) | no | BE-114: the faucet does not pay when it would be left with less than this |
 | `X207_MPC_CONTRACT_ID` | backend | none | no | BE-110 (branch `p1-0.0.18`): the MPC contract (`v1.signer-prod.testnet` on testnet, `v1.signer` on mainnet). With `X207_TX_INDEX_URL` it turns on the sign history of the account behind a listing of `chain-signatures:derived-address` (#12). Without both, that listing is refused with 501 `account_history_not_configured` |
 | `X207_ACCOUNT_INDEX_SPAN_BLOCKS` | backend | default 8 | no | A-BE-05: how many blocks after a listed transaction the source still reads (a receipt that runs later is skipped for good). Raise it (e.g. 30) on a congested network, at the cost of more block reads |
 | `X207_ACCOUNT_INDEX_MARGIN_BLOCKS` | backend | default 90 | no | A-BE-05: how far behind the final head the account-index source stops, so the index has listed the last transactions |

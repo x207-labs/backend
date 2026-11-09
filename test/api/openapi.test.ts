@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { collectRoutes } from "../../src/api/server.js";
 import { openDatabase } from "../../src/db/index.js";
 import { marketplaceRoutes } from "../../src/marketplace/index.js";
+import { faucetRoutes, FAUCET_DEFAULTS } from "../../src/faucet/faucet.js";
 
 const FILE = new URL("../../docs/openapi.json", import.meta.url);
 const doc = JSON.parse(readFileSync(FILE, "utf8")) as any;
@@ -17,7 +18,7 @@ describe("BE-068 the OpenAPI document and the router say the same", () => {
   const routes = collectRoutes({
     settlement: { client: {} as never, accountExists: async () => true },
     daoView: async () => null,
-    extraRoutes: marketplaceRoutes(db),
+    extraRoutes: [...marketplaceRoutes(db), ...faucetRoutes(db, {} as never, { ...FAUCET_DEFAULTS, usdtContract: "usdt.example.testnet" })],
   });
   const mine = flatten(doc.paths);
 
