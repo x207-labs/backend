@@ -41,7 +41,13 @@ export type ApiErrorCode =
   | InvoiceApiErrorCode
   | OrderApiErrorCode
   | PurchaseApiErrorCode
-  | TransferApiErrorCode;
+  | TransferApiErrorCode
+  | AccountApiErrorCode;
+
+/** BE-110 (P1, contract 0.0.18): codes of the listing of a NEAR account. */
+export type AccountApiErrorCode =
+  | "account_self_sale" | "account_is_member" | "account_not_member" | "account_not_sellable" | "account_has_sign_history"
+  | "account_history_unavailable" | "account_history_not_configured" | "account_escrow_not_found";
 
 /** BE-051: codes of 5e; the `InvoiceError` codes of `@x207/core` are passed on as they are. */
 export type InvoiceApiErrorCode =

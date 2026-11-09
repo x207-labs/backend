@@ -538,6 +538,33 @@ FROM params p
 WHERE p.id = (SELECT MAX(id) FROM params q WHERE q.circle_id = p.circle_id AND q.field = p.field);
 `;
 
+// BE-110 (P1, contract 0.0.18): the sale of a NEAR account. `account_escrows` is the read model of the event `account_escrow_held` (the locker of the sold account registered with the circle);
+// `reputation_resets` marks the time from which the reputation of an account counts again after it changed hands (ADR 0.0.18, 1.1: "Reputation is reset when the owner changes (backend)").
+const V17_ACCOUNT_ESCROWS = `
+CREATE TABLE account_escrows (
+  circle_id      TEXT    NOT NULL REFERENCES circles (circle_id),
+  grant_id       INTEGER NOT NULL,
+  account_id     TEXT    NOT NULL,
+  state          TEXT    NOT NULL CHECK (state IN ('held','delivered','cancelled')),
+  locked_at_ns   INTEGER NOT NULL,
+  new_owner      TEXT,
+  block_height   INTEGER NOT NULL,
+  receipt_id     TEXT    NOT NULL,
+  log_index      INTEGER NOT NULL,
+  PRIMARY KEY (circle_id, grant_id)
+);
+CREATE INDEX idx_account_escrows_account ON account_escrows (circle_id, account_id);
+CREATE TABLE reputation_resets (
+  circle_id    TEXT    NOT NULL REFERENCES circles (circle_id),
+  account_id   TEXT    NOT NULL,
+  grant_id     INTEGER NOT NULL,
+  new_owner    TEXT    NOT NULL,
+  since_ms     INTEGER NOT NULL,
+  block_height INTEGER NOT NULL,
+  PRIMARY KEY (circle_id, account_id, grant_id)
+);
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   { version: 1, name: "d9_initial", sql: V1_D9_INITIAL },
   { version: 2, name: "d9_bundles", sql: V2_BUNDLES },
@@ -555,4 +582,5 @@ export const MIGRATIONS: readonly Migration[] = [
   { version: 14, name: "d9_member_stale", sql: V14_MEMBER_STALE },
   { version: 15, name: "d9_params_fields", sql: V15_PARAMS_FIELDS },
   { version: 16, name: "d9_params_relayer_fee", sql: V16_PARAMS_RELAYER_FEE },
+  { version: 17, name: "d9_account_escrows", sql: V17_ACCOUNT_ESCROWS },
 ];

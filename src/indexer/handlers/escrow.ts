@@ -86,6 +86,27 @@ export const rawHandlers: Record<string, RawHandler> = {
       .run(ctx.circleId, int(data, "grant_id"), str(data, "ft_contract"), tokenAmount(str(data, "amount")), ctx.block.height, ctx.receiptId, ctx.logIndex);
   },
 
+  /**
+   * BE-110 (contract 0.0.18, ADR 1.3): the locker of a sold NEAR account registered with the circle. The time of the lock is kept, the epoch of the lock is worked out when it is read
+   * (`account-escrow.ts`), because the epoch row may not exist yet when the event arrives.
+   */
+  account_escrow_held(ctx, data) {
+    ctx.db
+      .prepare(
+        `INSERT OR IGNORE INTO account_escrows (circle_id, grant_id, account_id, state, locked_at_ns, block_height, receipt_id, log_index)
+         VALUES (?, ?, ?, 'held', ?, ?, ?, ?)`,
+      )
+      .run(ctx.circleId, int(data, "grant_id"), str(data, "account_id"), ctx.block.timestampNs, ctx.block.height, ctx.receiptId, ctx.logIndex);
+  },
+
+  /**
+   * BE-110 (contract 0.0.18, ADR 2, A-CT-01): a member that was never admitted is removed (`remove_pending`, or the oldest one when a join finds the circle full). Only a `pending` row goes;
+   * the contract refuses to remove anybody else, and a replay finds nothing to remove.
+   */
+  member_removed(ctx, data) {
+    ctx.db.prepare("DELETE FROM members WHERE circle_id = ? AND account_id = ? AND status = 'pending'").run(ctx.circleId, str(data, "account_id"));
+  },
+
   /** CT-092: the escrow holds an exact amount of one NEP-245 multi-token. The amount is in the units of that token, not credits. */
   mt_escrow_held(ctx, data) {
     ctx.db
