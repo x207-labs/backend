@@ -76,6 +76,10 @@ Recommendation: the backend faucet. The NEAR is the part nobody can mint, and th
 
 All in `docs/operations.md` (table `X207_FAUCET_*`). The faucet is off unless `X207_FAUCET_ACCOUNT` and `X207_FAUCET_KEY` are both set.
 
+## Refill of the faucet account (BE-117)
+
+`node dist/faucet/topup-cli.js` (`src/faucet/topup.ts` has the logic) runs on a systemd timer every 30 minutes on the machine of the faucet. If the balance of `X207_FAUCET_ACCOUNT` is under 3 NEAR it asks the official testnet faucet service (`https://helper.nearprotocol.com/account`, the one behind `near account create-account sponsor-by-faucet-service`) to sponsor a throwaway account (10 NEAR), then deletes that account with the faucet account as beneficiary, so the NEAR moves over. It repeats until the balance is over 8 NEAR, at most 3 accounts per run. If the service refuses, the run ends and the next one tries again (no tight retry). The throwaway key exists in memory only; the job does not read `X207_FAUCET_KEY`. The log has balances and transaction hashes only. Testnet only (it refuses a non-`.testnet` account and a mainnet RPC). Env: `X207_FAUCET_TOPUP_*` in `docs/operations.md`.
+
 ## Not done
 
 - Not deployed to boxd. A key-holding endpoint needs the owner's permission.

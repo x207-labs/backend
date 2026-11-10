@@ -54,6 +54,10 @@ Both read the environment; neither reads a file of settings. Secrets only in the
 | `X207_FAUCET_PER_DAY` | backend | default `100` | no | BE-114: grants for all addresses per rolling day |
 | `X207_FAUCET_FUNDED_ABOVE_YOCTO` | backend | default `1000000000000000000000000` (1 NEAR) | no | BE-114: an account that holds more than this is refused as already funded |
 | `X207_FAUCET_RESERVE_YOCTO` | backend | default `2000000000000000000000000` (2 NEAR) | no | BE-114: the faucet does not pay when it would be left with less than this |
+| `X207_FAUCET_TOPUP_LOW_YOCTO` | backend | default `3000000000000000000000000` (3 NEAR) | no | BE-117: `node dist/faucet/topup-cli.js` does nothing while the balance of `X207_FAUCET_ACCOUNT` is at or over this |
+| `X207_FAUCET_TOPUP_HIGH_YOCTO` | backend | default `8000000000000000000000000` (8 NEAR) | no | BE-117: the job stops adding when the balance is over this |
+| `X207_FAUCET_TOPUP_MAX_ACCOUNTS` | backend | default `3` | no | BE-117: throwaway sponsored accounts per run (10 NEAR each) |
+| `X207_FAUCET_TOPUP_HELPER_URL` | backend | default `https://helper.nearprotocol.com/account` | no | BE-117: the official testnet faucet service that sponsors the throwaway account |
 | `X207_MPC_CONTRACT_ID` | backend | none | no | BE-110 (branch `p1-0.0.18`): the MPC contract (`v1.signer-prod.testnet` on testnet, `v1.signer` on mainnet). With `X207_TX_INDEX_URL` it turns on the sign history of the account behind a listing of `chain-signatures:derived-address` (#12). Without both, that listing is refused with 501 `account_history_not_configured` |
 | `X207_ACCOUNT_INDEX_SPAN_BLOCKS` | backend | default 8 | no | A-BE-05: how many blocks after a listed transaction the source still reads (a receipt that runs later is skipped for good). Raise it (e.g. 30) on a congested network, at the cost of more block reads |
 | `X207_ACCOUNT_INDEX_MARGIN_BLOCKS` | backend | default 90 | no | A-BE-05: how far behind the final head the account-index source stops, so the index has listed the last transactions |
