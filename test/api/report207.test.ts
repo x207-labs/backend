@@ -9,8 +9,11 @@ describe("BE-020 GET …/epochs/{n} (207 report)", () => {
   let close: (() => Promise<void>) | undefined;
   afterEach(async () => close?.());
 
-  async function get(path: string, upTo: number) {
-    const s = await fxServer(upTo);
+  // The clock of the server. In the scenario FX-LOG42 epoch 42 closes at 11:19:56 and its proposal deadline is 11:29:56 on 2026-11-09, the next cutoff 12:19:56:
+  // the phases `open` and `clearing` hold only before those instants, so a test that wants one gives `at` (a fixed instant) and never reads the real clock.
+  const CLEARING_AT = Date.parse("2026-11-09T11:25:00Z");
+  async function get(path: string, upTo: number, at?: number) {
+    const s = await fxServer(upTo, [], at === undefined ? undefined : () => at);
     close = s.close;
     const res = await fetch(`${s.srv.url}${BASE}${path}`);
     return { res, body: await res.json(), headers: res.headers };
@@ -81,13 +84,13 @@ describe("BE-020 GET …/epochs/{n} (207 report)", () => {
   });
 
   it("TC-BE-020-09 epoch open: 200, committed false, members empty", async () => {
-    const { res, body } = await get("/epochs/43", 8);
+    const { res, body } = await get("/epochs/43", 8, CLEARING_AT);
     expect(res.status).toBe(200);
     expect(body).toMatchObject({ epoch: 43, phase: "open", committed: false, finalized: false, members: [] });
   });
 
   it("TC-BE-020-10 epoch clearing: 200, committed false, members empty", async () => {
-    const { res, body } = await get("/epochs/42", 5);
+    const { res, body } = await get("/epochs/42", 5, CLEARING_AT);
     expect(res.status).toBe(200);
     expect(body).toMatchObject({ epoch: 42, phase: "clearing", committed: false, members: [], totalObligation: "190000000" });
   });

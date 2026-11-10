@@ -8,15 +8,18 @@ describe("BE-015 GET …/epochs/{n}/obligations", () => {
   let close: (() => Promise<void>) | undefined;
   afterEach(async () => close?.());
 
-  async function get(path: string, upTo = 5, extra: Parameters<typeof fxServer>[1] = []) {
-    const s = await fxServer(upTo, extra);
+  // The clock of the server. The scenario FX-LOG42 has epoch 42 closed at 11:19:56 with its proposal deadline at 11:29:56 on 2026-11-09, so the phase `clearing`
+  // holds only before that: a test that wants it gives `at` (a fixed instant), it never reads the real clock.
+  const CLEARING_AT = Date.parse("2026-11-09T11:25:00Z");
+  async function get(path: string, upTo = 5, extra: Parameters<typeof fxServer>[1] = [], at?: number) {
+    const s = await fxServer(upTo, extra, at === undefined ? undefined : () => at);
     close = s.close;
     const res = await fetch(`${s.srv.url}${BASE}${path}`);
     return { res, body: await res.json() };
   }
 
   it("TC-BE-015-01 cutoff snapshot (default)", async () => {
-    const { res, body } = await get("/epochs/42/obligations");
+    const { res, body } = await get("/epochs/42/obligations", 5, [], CLEARING_AT);
     expect(res.status).toBe(200);
     expect(body).toMatchObject({ circle: "agents-main", epoch: 42, phase: "clearing", stage: "cutoff", unit: "credit", decimals: 6, edgeCount: 7, totalObligation: "190000000" });
     expect(body.edges).toHaveLength(7);
