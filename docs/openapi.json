@@ -168,6 +168,407 @@
         "x-source": "src/api/routes/ops.ts"
       }
     },
+    "/x207/appraisals/{appraisal}": {
+      "get": {
+        "operationId": "get_appraisals_appraisal",
+        "summary": "Read appraisals by appraisal",
+        "tags": [
+          "read-api"
+        ],
+        "parameters": [
+          {
+            "name": "appraisal",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "appraiser_bad_asset",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "appraiser_bad_asset",
+              "invalid_request"
+            ]
+          },
+          "404": {
+            "description": "Not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "appraisal_not_found",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "appraisal_not_found"
+            ]
+          },
+          "413": {
+            "description": "The body is larger than `API_MAX_BODY_BYTES` (BE-066).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "payload_too_large",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "payload_too_large"
+            ]
+          },
+          "429": {
+            "description": "Too many requests; see the header `Retry-After` (BE-066).",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "rate_limited",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "rate_limited"
+            ]
+          },
+          "502": {
+            "description": "A service behind the API failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "appraiser_unavailable",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "appraiser_unavailable"
+            ]
+          },
+          "503": {
+            "description": "A dependency is not ready.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "appraiser_credits_exhausted",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "appraiser_credits_exhausted",
+              "appraiser_unavailable"
+            ]
+          }
+        },
+        "x-source": "src/appraiser/appraiser.ts"
+      }
+    },
+    "/x207/appraise": {
+      "post": {
+        "operationId": "post_appraise",
+        "summary": "Send appraise",
+        "tags": [
+          "read-api"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "OK.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request is not valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "appraiser_bad_asset",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "appraiser_bad_asset",
+              "invalid_request"
+            ]
+          },
+          "409": {
+            "description": "The state does not allow this.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "appraisal_in_progress",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "appraisal_in_progress"
+            ]
+          },
+          "413": {
+            "description": "The body is larger than `API_MAX_BODY_BYTES` (BE-066).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "payload_too_large",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "payload_too_large"
+            ]
+          },
+          "429": {
+            "description": "Too many requests; see the header `Retry-After` (BE-066).",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait.",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "rate_limited",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "rate_limited"
+            ]
+          },
+          "502": {
+            "description": "A service behind the API failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "appraiser_bad_output",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "appraiser_bad_output",
+              "appraiser_unavailable"
+            ]
+          },
+          "503": {
+            "description": "A dependency is not ready.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "codes": {
+                    "value": {
+                      "error": {
+                        "code": "appraiser_credits_exhausted",
+                        "message": "…",
+                        "details": {}
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "x-error-codes": [
+              "appraiser_credits_exhausted",
+              "appraiser_disabled",
+              "appraiser_unavailable"
+            ]
+          }
+        },
+        "x-source": "src/appraiser/appraiser.ts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "asset_class": {},
+                  "asset_type": {},
+                  "description": {},
+                  "duration_days": {},
+                  "market_price_credits": {},
+                  "provider": {},
+                  "quantity": {},
+                  "scope": {}
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
     "/x207/circles/{circle}/account-escrows/{grantId}": {
       "get": {
         "operationId": "get_account_escrows_grantId",

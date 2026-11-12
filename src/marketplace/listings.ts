@@ -9,6 +9,7 @@ import { row, rows } from "../api/format.js";
 import { decodeCursor, encodeCursor, parseLimit } from "../api/pagination.js";
 import type { Route } from "../api/router.js";
 import { activeMemberKey, memberKeys } from "./auth.js";
+import { appraisalOfDetail } from "../appraiser/appraiser.js";
 import { isoSeconds, nowSeconds } from "./common.js";
 
 const STATUSES = ["open", "matched", "cancelled", "expired", "all"] as const;
@@ -43,7 +44,9 @@ export interface ListingRow {
 export const effectiveStatus = (r: ListingRow, nowS: number): string =>
   r.status === "open" && Number(r.expires_at) <= nowS ? "expired" : r.status;
 
-export function listingView(r: ListingRow, nowS: number) {
+/** BE-119: with `db`, a listing whose `detail` names an appraisal (`appraisal=apr_<24 hex>`) that is done carries its short form in `appraisal`. */
+export function listingView(r: ListingRow, nowS: number, db?: Database.Database) {
+  const appraisal = db ? appraisalOfDetail(db, r.detail) : null;
   return {
     listingHash: r.listing_hash,
     account: r.account_id,
@@ -58,6 +61,7 @@ export function listingView(r: ListingRow, nowS: number) {
     nonce: r.nonce,
     signature: r.signature,
     status: effectiveStatus(r, nowS),
+    ...(appraisal ? { appraisal } : {}),
   };
 }
 
@@ -143,7 +147,7 @@ export function listingRoutes(checks: readonly ListingCheck[] = [], asyncChecks:
             listing.terms, listing.detail, listing.expires_at, listing.discount_bps, listing.accept_payment ? 1 : 0,
             listing.discoverable ? 1 : 0, listing.nonce, signature, now());
         if (inserted.changes === 0) throw new ApiError(409, "already_exists", "A listing with this hash is already recorded", { listingHash: hash });
-        return { status: 201, body: listingView(findListing(db, circle.circle_id, hash), nowS) };
+        return { status: 201, body: listingView(findListing(db, circle.circle_id, hash), nowS, db) };
       },
     },
     {
@@ -192,7 +196,7 @@ export function listingRoutes(checks: readonly ListingCheck[] = [], asyncChecks:
         const last = page[page.length - 1];
         return {
           status: 200,
-          body: { items: page.map((r) => listingView(r, nowS)), nextCursor: found.length > limit && last ? encodeCursor({ a: Number(last.id) }) : null },
+          body: { items: page.map((r) => listingView(r, nowS, db)), nextCursor: found.length > limit && last ? encodeCursor({ a: Number(last.id) }) : null },
         };
       },
     },
@@ -202,7 +206,7 @@ export function listingRoutes(checks: readonly ListingCheck[] = [], asyncChecks:
       circleScoped: true,
       handler: ({ db, circle, params, now }) => ({
         status: 200,
-        body: listingView(findListing(db, circle.circle_id, params.hash as string), nowSeconds(now())),
+        body: listingView(findListing(db, circle.circle_id, params.hash as string), nowSeconds(now()), db),
       }),
     },
     {
@@ -221,7 +225,7 @@ export function listingRoutes(checks: readonly ListingCheck[] = [], asyncChecks:
         const status = effectiveStatus(found, nowS);
         if (status !== "open") throw new ApiError(409, "listing_not_open", `Listing is ${status}`, { listingHash: found.listing_hash, status });
         db.prepare("UPDATE listings SET status = 'cancelled', closed_at_ms = ? WHERE id = ?").run(now(), found.id);
-        return { status: 200, body: listingView(findListing(db, circle.circle_id, found.listing_hash), nowS) };
+        return { status: 200, body: listingView(findListing(db, circle.circle_id, found.listing_hash), nowS, db) };
       },
     },
   ];

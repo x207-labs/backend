@@ -110,4 +110,25 @@ describe("BE-040 listing book D12", () => {
     const second = await m.get(`/listings?limit=2&cursor=${first.json.nextCursor}`);
     expect(second.json.items.map((i: any) => i.account)).toEqual([acct("citra")]);
   });
+
+  it("TC-BE-119-17 a listing whose detail names a done appraisal carries it in `appraisal`; others do not", async () => {
+    market = await startMarket();
+    const m = market;
+    const id = `apr_${"c".repeat(24)}`;
+    m.db.prepare(
+      `INSERT INTO appraisals (appraisal_id, input_hash, ip, state, asset_json, model, rubric_version, rubric_hash, result_json, signature_ok, attestation_verdict, created_at_ms, completed_at_ms)
+       VALUES (?, ?, '1.2.3.4', 'done', '{}', 'z-ai/glm-5.3-flash', 'v1', ?, ?, 1, 'not_checked', 1, 2)`,
+    ).run(id, "c".repeat(64), "d".repeat(64), JSON.stringify({ value_credits: "100", range: { low: "80", high: "120" }, confidence: 0.6, rationale: "r", flags: [] }));
+    const withIt = await m.post("/listings", signedListing(m, "andi", { detail: `A100 80GB, batch inference | appraisal=${id}` }));
+    expect(withIt.status).toBe(201);
+    expect(withIt.json.appraisal).toEqual({
+      appraisal_id: id, model: "z-ai/glm-5.3-flash", value_credits: "100", range: { low: "80", high: "120" }, confidence: 0.6, flags: [],
+      verified: { signature: true, attestation: "not_checked" }, rubric_hash: "d".repeat(64), url: `/x207/appraisals/${id}`,
+    });
+    expect((await m.get(`/listings/${withIt.json.listingHash}`)).json.appraisal.appraisal_id).toBe(id);
+    const without = await m.post("/listings", signedListing(m, "budi", { detail: `appraisal=apr_${"e".repeat(24)}` }));
+    expect(without.json).not.toHaveProperty("appraisal");
+    const items = (await m.get("/listings")).json.items;
+    expect(items.filter((i: any) => i.appraisal).map((i: any) => i.account)).toEqual([acct("andi")]);
+  });
 });

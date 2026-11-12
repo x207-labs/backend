@@ -56,6 +56,14 @@ Both read the environment; neither reads a file of settings. Secrets only in the
 | `X207_FAUCET_RESERVE_YOCTO` | backend | default `2000000000000000000000000` (2 NEAR) | no | BE-114: the faucet does not pay when it would be left with less than this |
 | `X207_FAUCET_TOPUP_LOW_YOCTO` | backend | default `3000000000000000000000000` (3 NEAR) | no | BE-117: `node dist/faucet/topup-cli.js` does nothing while the balance of `X207_FAUCET_ACCOUNT` is at or over this |
 | `X207_FAUCET_TOPUP_HIGH_YOCTO` | backend | default `8000000000000000000000000` (8 NEAR) | no | BE-117: the job stops adding when the balance is over this |
+| `X207_APPRAISER_NEARAI_KEY` | backend | none (appraiser off; falls back to `NEARAI_API_KEY`) | yes | BE-119: NEAR AI Cloud API key of `POST /x207/appraise`; without it the POST answers 503 `appraiser_disabled` and the GET still serves stored appraisals |
+| `X207_APPRAISER_MODEL` | backend | default `Qwen/Qwen3.6-35B-A3B-FP8` | no | BE-119: TEE model of the appraiser; one of `Qwen/Qwen3.6-35B-A3B-FP8`, `Qwen/Qwen3.8-27B`, `z-ai/glm-5.3-flash` (glm ignored "no reasoning" on 2026-11-12 and timed out its token budget) |
+| `X207_APPRAISER_BASE_URL` | backend | default `https://cloud-api.near.ai/v1` | no | BE-119: base URL of NEAR AI Cloud |
+| `X207_APPRAISER_PER_IP_PER_DAY` | backend | default `20` | no | BE-119: appraisals per address per rolling day (cached answers are free) |
+| `X207_APPRAISER_PER_DAY` | backend | default `200` | no | BE-119: appraisals for all addresses per rolling day |
+| `X207_APPRAISER_QUOTE_CHECK` | backend | default on (`0` turns it off) | no | BE-119: send the TDX quote to the Phala verifier and the GPU evidence to NVIDIA NRAS; off means `verified.attestation` stays `not_checked` |
+| `X207_APPRAISER_MAX_TOKENS` | backend | default `600` | no | BE-119: `max_tokens` of the chat call |
+| `X207_APPRAISER_TIMEOUT_MS` | backend | default `60000` | no | BE-119: timeout of one call to NEAR AI Cloud |
 | `X207_FAUCET_TOPUP_MAX_ACCOUNTS` | backend | default `3` | no | BE-117: throwaway sponsored accounts per run (10 NEAR each) |
 | `X207_FAUCET_TOPUP_HELPER_URL` | backend | default `https://helper.nearprotocol.com/account` | no | BE-117: the official testnet faucet service that sponsors the throwaway account |
 | `X207_MPC_CONTRACT_ID` | backend | none | no | BE-110 (branch `p1-0.0.18`): the MPC contract (`v1.signer-prod.testnet` on testnet, `v1.signer` on mainnet). With `X207_TX_INDEX_URL` it turns on the sign history of the account behind a listing of `chain-signatures:derived-address` (#12). Without both, that listing is refused with 501 `account_history_not_configured` |

@@ -567,6 +567,42 @@ CREATE INDEX faucet_grants_by_ip ON faucet_grants (ip, created_at_ms);
 CREATE INDEX faucet_grants_by_time ON faucet_grants (created_at_ms);
 `;
 
+// BE-119: one row per appraisal by the NEAR AI Cloud appraiser. `input_hash` (asset + rubric + model) is the cache key; the bytes sent to and
+// received from NEAR AI Cloud are kept as they are, because their sha256 is what the TEE signed. The API key is never stored.
+const V1121_APPRAISALS = `
+CREATE TABLE appraisals (
+  appraisal_id        TEXT PRIMARY KEY,
+  input_hash          TEXT NOT NULL UNIQUE,
+  ip                  TEXT NOT NULL,
+  state               TEXT NOT NULL CHECK (state IN ('pending', 'done')),
+  asset_json          TEXT NOT NULL,
+  model               TEXT NOT NULL,
+  rubric_version      TEXT NOT NULL,
+  rubric_hash         TEXT NOT NULL,
+  request_body        TEXT,
+  response_body       TEXT,
+  request_hash        TEXT,
+  response_hash       TEXT,
+  chat_id             TEXT,
+  result_json         TEXT,
+  signed_text         TEXT,
+  signature           TEXT,
+  signing_address     TEXT,
+  signing_algo        TEXT,
+  signature_kind      TEXT,
+  signature_ok        INTEGER,
+  signature_reasons   TEXT,
+  attestation_json    TEXT,
+  attestation_verdict TEXT,
+  usage_json          TEXT,
+  cost_usd            TEXT,
+  created_at_ms       INTEGER NOT NULL,
+  completed_at_ms     INTEGER
+);
+CREATE INDEX appraisals_by_ip ON appraisals (ip, created_at_ms);
+CREATE INDEX appraisals_by_time ON appraisals (created_at_ms);
+`;
+
 export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1101, name: "m11_intents", sql: V1101_INTENTS },
   { version: 1102, name: "m11_listings", sql: V1102_LISTINGS },
@@ -588,4 +624,5 @@ export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1118, name: "m11_code_check_notices", sql: V1118_CODE_CHECK_NOTICES },
   { version: 1119, name: "m11_transfer_cancel_request", sql: V1119_TRANSFER_CANCEL_REQUEST },
   { version: 1120, name: "m11_faucet", sql: V1120_FAUCET },
+  { version: 1121, name: "m11_appraisals", sql: V1121_APPRAISALS },
 ];

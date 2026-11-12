@@ -43,7 +43,13 @@ export type ApiErrorCode =
   | PurchaseApiErrorCode
   | TransferApiErrorCode
   | AccountApiErrorCode
-  | FaucetApiErrorCode;
+  | FaucetApiErrorCode
+  | AppraiserApiErrorCode;
+
+/** BE-119: codes of the NEAR AI Cloud appraiser (`POST /x207/appraise`, `GET /x207/appraisals/{id}`). */
+export type AppraiserApiErrorCode =
+  | "appraisal_not_found" | "appraisal_in_progress" | "appraiser_disabled" | "appraiser_credits_exhausted" | "appraiser_unavailable" | "appraiser_bad_output"
+  | "appraiser_bad_asset";
 
 /** BE-114: codes of the test-funds faucet (`POST /x207/faucet`). */
 export type FaucetApiErrorCode =

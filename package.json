@@ -20,6 +20,8 @@
   },
   "dependencies": {
     "@defuse-protocol/one-click-sdk-typescript": "0.1.26",
+    "@noble/curves": "2.2.0",
+    "@noble/hashes": "2.2.0",
     "@x207/core": "0.0.2",
     "better-sqlite3": "13.0.3",
     "near-api-js": "7.4.0"

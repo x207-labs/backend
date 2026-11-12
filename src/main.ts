@@ -11,6 +11,7 @@ import { FastNearAccountHistory } from "./marketplace/account-history.js";
 import { marketplaceRoutes } from "./marketplace/index.js";
 import { faucetRoutes } from "./faucet/faucet.js";
 import { faucetFromEnv } from "./faucet/near-chain.js";
+import { appraiserFromEnv, appraiserRoutes } from "./appraiser/appraiser.js";
 import { FailoverRpcClient } from "./indexer/rpc-client.js";
 import { Indexer } from "./indexer/indexer.js";
 import { RpcBlockSource, rpcChainReader } from "./indexer/rpc-source.js";
@@ -154,7 +155,7 @@ export async function startApp(env: NodeJS.ProcessEnv = process.env, log: (line:
   if (metricsAccess.warn) logger.warn(metricsAccess.warn);
   const faucet = faucetFromEnv(env); // BE-114: off unless X207_FAUCET_ACCOUNT and X207_FAUCET_KEY are set
   const server = createApiServer({ db, ...apiOptionsFromEnv(env), logger, ...(metricsAccess.metricsToken ? { metricsToken: metricsAccess.metricsToken } : {}), rpcProbe: async () => { await viewGetParams(primary, config.contractId); return { endpoint: primary }; }, ...(readOnlyFromEnv(env).readOnly ? {} : { settlement: { client, accountExists: nearAccountExists(primary) } }), daoView: rpcViewFunction(primary), extraRoutes: [...marketplaceRoutes(db, { chainView: rpcViewFunction(primary), claimRpc: jsonRpcClaimRpc(primary), openLimits: abuseFromEnv(env).open, ...(env.X207_CODE_SEEN_KEY ? { codeSeenKey: env.X207_CODE_SEEN_KEY } : {}), onIssuerError: (issuer, reason) => logger.warn("issuer error", { issuer, reason }), dnsTxt: new DnsTxtProof({ ...(env.X207_DOH_URL ? { dohUrl: env.X207_DOH_URL } : {}), ...(env.X207_RDAP_BASE_URL ? { rdapBaseUrl: env.X207_RDAP_BASE_URL } : {}) }),
-    ...(env.X207_STEAM_API_KEY ? { tradeApi: new TradeApiProof({ apiKey: env.X207_STEAM_API_KEY }) } : {}), ...(mockIssuer ? { codeIssuers: { [env.X207_CODE_MOCK_ISSUER as string]: mockIssuer } } : {}), ...(env.X207_TX_INDEX_URL && env.X207_MPC_CONTRACT_ID ? { accountHistory: new FastNearAccountHistory({ txIndexUrl: env.X207_TX_INDEX_URL, mpcContractId: env.X207_MPC_CONTRACT_ID }) } : {}), daoRegistry: env.X207_DAO_REGISTRY_PATH ? daoRegistryFromFile(env.X207_DAO_REGISTRY_PATH) : [] }), ...(faucet ? faucetRoutes(db, faucet.chain, faucet.config) : [])] });
+    ...(env.X207_STEAM_API_KEY ? { tradeApi: new TradeApiProof({ apiKey: env.X207_STEAM_API_KEY }) } : {}), ...(mockIssuer ? { codeIssuers: { [env.X207_CODE_MOCK_ISSUER as string]: mockIssuer } } : {}), ...(env.X207_TX_INDEX_URL && env.X207_MPC_CONTRACT_ID ? { accountHistory: new FastNearAccountHistory({ txIndexUrl: env.X207_TX_INDEX_URL, mpcContractId: env.X207_MPC_CONTRACT_ID }) } : {}), daoRegistry: env.X207_DAO_REGISTRY_PATH ? daoRegistryFromFile(env.X207_DAO_REGISTRY_PATH) : [] }), ...(faucet ? faucetRoutes(db, faucet.chain, faucet.config) : []), ...appraiserRoutes(db, appraiserFromEnv(env))] });
   await new Promise<void>((ready) => server.listen(config.port, config.host, ready));
   const stopMonitor = readOnlyFromEnv(env).readOnly ? () => undefined : startJobMonitor({ db, client }, config.jobPollMs);
 
