@@ -26,6 +26,7 @@ flowchart TB
 | `src/report207/` | HTTP `207 Multi-Status` report |
 | `src/settlement/` | Residual worker: `deposit`, `withdraw`, `claims` (holds no keys) |
 | `src/db/` | SQLite schema and migrations |
+| `src/appraiser/` | Barter asset appraiser on NEAR AI Cloud (`POST /x207/appraise`) |
 | `broker/` | Access broker (leases, grants) |
 
 ## Try it
@@ -68,6 +69,33 @@ CI runs at the umbrella workspace (`.github/workflows/ci-node-workspace.yml` in 
 - **Limits, health, metrics, logs:** per-IP and per-account rate limits (in memory of one process, so two instances count separately), `GET /healthz`, `GET /metrics`, JSON logs that never carry a path, query, body or secret: [docs/reference.md](docs/reference.md).
 
 More: [operations](docs/operations.md) · [testnet read model](docs/testnet-readmodel.md) · [security findings](docs/security-findings.md).
+
+## Appraiser (NEAR AI Cloud)
+
+Barter assets (API quota, compute, licences, data) have no market price. `POST /x207/appraise` asks a model on [NEAR AI Cloud](https://cloud.near.ai) (private inference inside a TEE) for a value in credit, with a fixed rubric, and keeps proof that anyone can check again. `GET /x207/appraisals/{appraisal}` returns the asset, the answer, the exact request and response bytes, the TEE signature, and an attestation summary. A demo agent (`agents`, AG-051) calls it before it prices a listing and names the appraisal in the listing `detail` (`appraisal=apr_...`); the marketplace listing view then carries an `appraisal` summary.
+
+```bash
+curl -s -X POST localhost:8080/x207/appraise -H 'content-type: application/json' -d '{"asset_type":"api_quota","asset_class":"B","quantity":100000,"scope":"100000 geocoding calls, read-only","provider":"Mapbox","duration_days":30,"market_price_credits":"75"}'
+node scripts/verify-appraisal.ts http://localhost:8080/x207/appraisals/apr_... --quote-check
+```
+
+`scripts/verify-appraisal.ts` needs no x207 code and no key. It recomputes every hash and the signer, fetches a fresh attestation with its own nonce, and prints PASS, FAIL or SKIP per check. A recorded run (2026-11-12, `Qwen/Qwen3.6-35B-A3B-FP8`, 496 prompt and 143 completion tokens, about USD 0.00024, 4.6 s): 14 PASS, one SKIP (signature refetch without a key), no FAIL. Changing one byte of the stored answer makes the response-hash check FAIL.
+
+What is checked, and how:
+
+- **Signature, locally.** NEAR AI Cloud signs `model:sha256(request):sha256(response)` with a secp256k1 key (EIP-191). x207 and the script recompute both hashes from the stored bytes and recover the signer.
+- **Key binding, locally.** The attestation report must carry `signing_address || 12 zero bytes || nonce` in the TDX `report_data`, with a nonce x207 chose.
+- **TDX quote, by a third party.** The quote is sent to Phala's verifier (`cloud-api.phala.network`). x207 does not run Intel DCAP itself.
+- **GPU evidence, by a third party.** The evidence is sent to NVIDIA NRAS. x207 reads the result claims of the returned token but does not check the token's signature.
+- **Rubric.** `rubric.hash` is the SHA-256 of the rubric version, system prompt and flag list; the script recomputes it from the system prompt in the request bytes.
+
+What it does not do:
+
+- The attestation is fetched right after the chat, not inside it. It shows that the key which signed the answer belongs to a TEE at that time; it does not prove which code ran for that one call beyond `compose_hash`.
+- The value is advice. The parties still agree on the price, and the circle contract does not read appraisals. The agent keeps an appraised price within 50 % of the owner's own price.
+- A model can be wrong or be steered by the asset text. The rubric asks it to treat the text as data and to flag doubts; nothing guarantees it.
+
+Protection: the key comes only from `X207_APPRAISER_NEARAI_KEY` (or `NEARAI_API_KEY`) and is never logged or returned. Without it the route answers `503 appraiser_disabled`. Limits per client address and per day are counted in SQLite, so a restart does not reset them. The body limit is 4096 bytes. Identical requests return the stored appraisal (`cached: true`) without a new call. Out of NEAR AI credit gives `503 appraiser_credits_exhausted`. Settings: [operations](docs/operations.md).
 
 ## Back to x207
 
