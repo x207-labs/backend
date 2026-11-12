@@ -126,7 +126,11 @@ describe("BE-119 the NEAR AI Cloud appraiser", () => {
       const res = await fetch(`${url}/x207/appraisals/${id}`);
       return { status: res.status, json: (await res.json()) as any };
     };
-    return { db, fake, clock, post, get };
+    const raw = async (path: string) => {
+      const res = await fetch(`${url}${path}`);
+      return { status: res.status, json: (await res.json()) as any };
+    };
+    return { db, fake, clock, post, get, raw };
   }
   const code = (r: { status: number; json: any }) => [r.status, r.json.error?.code];
 
@@ -153,6 +157,23 @@ describe("BE-119 the NEAR AI Cloud appraiser", () => {
     const g = await m.get(a.appraisal_id);
     expect(g.status).toBe(200);
     expect(g.json).toEqual({ ...a, cached: false });
+  });
+
+  it("TC-BE-119-18 the raw attestation evidence is kept byte-exact: the quote hashes to the summary and its report_data names the key and the stored nonce", async () => {
+    const m = await start();
+    const a = (await m.post(ASSET)).json;
+    expect(a.evidence.attestation_evidence).toBe(`/x207/appraisals/${a.appraisal_id}/attestation`);
+    const res = await m.raw(a.evidence.attestation_evidence);
+    expect(res.status).toBe(200);
+    const e = res.json;
+    expect(e).toMatchObject({ appraisal_id: a.appraisal_id, model: MODEL, signing_address: m.fake.key.address, nonce: a.attestation.nonce, fetched_at: a.attestation.fetched_at });
+    expect(e.intel_quote_sha256).toBe(a.attestation.intel_quote_sha256);
+    expect(sha256Hex(e.intel_quote)).toBe(a.attestation.intel_quote_sha256);
+    expect(sha256Hex(e.nvidia_payload)).toBe(a.attestation.nvidia_payload_sha256);
+    expect(tdxReportData(e.intel_quote)).toBe(m.fake.key.address.replace(/^0x/, "") + "0".repeat(24) + e.nonce);
+    expect(JSON.parse(e.nvidia_payload).nonce).toBe(e.nonce);
+    expect(code(await m.raw("/x207/appraisals/apr_000000000000000000000000/attestation"))).toEqual([404, "appraisal_not_found"]);
+    expect(code(await m.raw("/x207/appraisals/nope/attestation"))).toEqual([400, "invalid_request"]);
   });
 
   it("TC-BE-119-02 the same asset is answered from the database, without calling NEAR AI Cloud and without counting against the limit", async () => {
@@ -303,7 +324,9 @@ describe("BE-119 the NEAR AI Cloud appraiser", () => {
     const on = appraiserFromEnv({ X207_APPRAISER_NEARAI_KEY: "k", X207_APPRAISER_PER_DAY: "5", X207_APPRAISER_QUOTE_CHECK: "0" });
     expect(on.cloud).toBeInstanceOf(NearAiCloud);
     expect(on).toMatchObject({ perDay: 5, quoteCheck: false });
-    expect(() => appraiserFromEnv({ X207_APPRAISER_MODEL: "openai/gpt-5" })).toThrow(/X207_APPRAISER_MODEL/);
+    for (const proxied of ["openai/gpt-5", "anthropic/claude-sonnet-5-5", "google/gemini-3-pro"]) {
+      expect(() => appraiserFromEnv({ X207_APPRAISER_MODEL: proxied })).toThrow(/X207_APPRAISER_MODEL/);
+    }
     expect(() => appraiserFromEnv({ X207_APPRAISER_PER_DAY: "0" })).toThrow();
   });
 });

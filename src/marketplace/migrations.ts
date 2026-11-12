@@ -603,6 +603,14 @@ CREATE INDEX appraisals_by_ip ON appraisals (ip, created_at_ms);
 CREATE INDEX appraisals_by_time ON appraisals (created_at_ms);
 `;
 
+// BE-119: the raw attestation evidence of each appraisal (Intel TDX quote hex, NVIDIA GPU evidence JSON, the nonce x207 chose),
+// byte-exact as NEAR AI Cloud returned it, so a third party can check the same quote again (GET /x207/appraisals/{appraisal}/attestation).
+const V1122_APPRAISAL_EVIDENCE = `
+ALTER TABLE appraisals ADD COLUMN attestation_nonce TEXT;
+ALTER TABLE appraisals ADD COLUMN intel_quote TEXT;
+ALTER TABLE appraisals ADD COLUMN nvidia_payload TEXT;
+`;
+
 export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1101, name: "m11_intents", sql: V1101_INTENTS },
   { version: 1102, name: "m11_listings", sql: V1102_LISTINGS },
@@ -625,4 +633,5 @@ export const MARKETPLACE_MIGRATIONS: readonly Migration[] = [
   { version: 1119, name: "m11_transfer_cancel_request", sql: V1119_TRANSFER_CANCEL_REQUEST },
   { version: 1120, name: "m11_faucet", sql: V1120_FAUCET },
   { version: 1121, name: "m11_appraisals", sql: V1121_APPRAISALS },
+  { version: 1122, name: "m11_appraisal_evidence", sql: V1122_APPRAISAL_EVIDENCE },
 ];

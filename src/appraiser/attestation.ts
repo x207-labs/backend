@@ -38,6 +38,16 @@ export interface AttestationSummary {
   attempts: number;
 }
 
+/**
+ * The raw evidence of the report the summary was made from, exactly as NEAR AI Cloud returned it (the Intel TDX quote as hex, the
+ * NVIDIA GPU evidence as the JSON text NRAS takes), so a third party can check the same quote and evidence again.
+ */
+export interface AttestationEvidence {
+  nonce: string;
+  intel_quote: string;
+  nvidia_payload: string | null;
+}
+
 /** "checked" only when the binding holds and both third-party checks passed; "failed" when one of them said no. */
 export function attestationVerdict(s: AttestationSummary): "checked" | "not_checked" | "failed" {
   if (!s.report_binding || s.tdx_quote === "failed" || s.gpu_evidence === "failed") return "failed";
@@ -99,7 +109,7 @@ async function nrasCheck(doFetch: typeof fetch, url: string, payload: string, no
 }
 
 /** Fetches a fresh report (our nonce), checks the binding locally and, when enabled, the quote and the GPU evidence through third parties. */
-export async function attest(model: string, signingAddress: string, opts: AttestationOptions): Promise<AttestationSummary> {
+export async function attest(model: string, signingAddress: string, opts: AttestationOptions): Promise<{ summary: AttestationSummary; evidence: AttestationEvidence | null }> {
   const now = opts.now ?? Date.now;
   const doFetch = opts.fetch ?? fetch;
   const max = opts.maxAttempts ?? 4;
@@ -155,5 +165,6 @@ export async function attest(model: string, signingAddress: string, opts: Attest
     summary.gpu_evidence = gpu;
     summary.gpu_evidence_checked_by = gpu === "not_checked" ? null : new URL(nrasUrl).host;
   }
-  return summary;
+  const evidence = a?.intel_quote ? { nonce, intel_quote: a.intel_quote, nvidia_payload: a.nvidia_payload ?? null } : null;
+  return { summary, evidence };
 }

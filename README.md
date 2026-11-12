@@ -79,12 +79,16 @@ curl -s -X POST localhost:8080/x207/appraise -H 'content-type: application/json'
 node scripts/verify-appraisal.ts http://localhost:8080/x207/appraisals/apr_... --quote-check
 ```
 
-`scripts/verify-appraisal.ts` needs no x207 code and no key. It recomputes every hash and the signer, fetches a fresh attestation with its own nonce, and prints PASS, FAIL or SKIP per check. A recorded run (2026-11-12, `Qwen/Qwen3.6-35B-A3B-FP8`, 496 prompt and 143 completion tokens, about USD 0.00024, 4.6 s): 14 PASS, one SKIP (signature refetch without a key), no FAIL. Changing one byte of the stored answer makes the response-hash check FAIL.
+`scripts/verify-appraisal.ts` needs no x207 code and no key. It recomputes every hash and the signer, re-checks the stored attestation evidence (`GET /x207/appraisals/{appraisal}/attestation`: the raw Intel TDX quote and NVIDIA GPU evidence of appraisal time, byte-exact, about 110 KB), fetches a fresh attestation with its own nonce, and prints PASS, FAIL or SKIP per check. A recorded run (2026-11-12, `Qwen/Qwen3.6-35B-A3B-FP8`, 496 prompt and 133 completion tokens, about USD 0.00023, 4.6 s, with `--quote-check`): 21 PASS, one SKIP (signature refetch without a key), no FAIL. Changing one byte of the stored answer makes the response-hash check FAIL.
+
+In short: signature checked locally; quote checked via third-party verifiers (Phala, NVIDIA NRAS).
+
+The model is fixed by `X207_APPRAISER_MODEL` to an allowlist of NEAR AI Cloud models served inside a TEE; any other name (such as a proxied `anthropic/`, `google/` or `openai/` model) stops the start. The default is `Qwen/Qwen3.6-35B-A3B-FP8`: on 2026-11-12 `z-ai/glm-5.3-flash` ignored `enable_thinking: false` and spent all 600 tokens on reasoning (about 50 s, no answer).
 
 What is checked, and how:
 
 - **Signature, locally.** NEAR AI Cloud signs `model:sha256(request):sha256(response)` with a secp256k1 key (EIP-191). x207 and the script recompute both hashes from the stored bytes and recover the signer.
-- **Key binding, locally.** The attestation report must carry `signing_address || 12 zero bytes || nonce` in the TDX `report_data`, with a nonce x207 chose.
+- **Key binding, locally.** For each appraisal x207 picks a fresh random nonce and fetches the attestation report with it; the TDX `report_data` must carry `signing_address || 12 zero bytes || nonce`. The nonce, the quote and the GPU evidence are stored as received.
 - **TDX quote, by a third party.** The quote is sent to Phala's verifier (`cloud-api.phala.network`). x207 does not run Intel DCAP itself.
 - **GPU evidence, by a third party.** The evidence is sent to NVIDIA NRAS. x207 reads the result claims of the returned token but does not check the token's signature.
 - **Rubric.** `rubric.hash` is the SHA-256 of the rubric version, system prompt and flag list; the script recomputes it from the system prompt in the request bytes.

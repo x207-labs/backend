@@ -17,7 +17,7 @@ import { isoFromMs, row } from "../api/format.js";
 import type { Route } from "../api/router.js";
 import { migrate } from "../db/migrate.js";
 import { MARKETPLACE_MIGRATIONS } from "../marketplace/migrations.js";
-import { attest, attestationVerdict, type AttestationSummary } from "./attestation.js";
+import { attest, attestationVerdict, type AttestationEvidence, type AttestationSummary } from "./attestation.js";
 import { CloudError, DEFAULT_CLOUD_URL, NearAiCloud, parseJson } from "./cloud.js";
 import { RUBRIC_HASH, RUBRIC_VERSION, SYSTEM_PROMPT, parseAppraisal, type AppraisalResult } from "./rubric.js";
 import { checkSignature, sha256Hex } from "./verify.js";
@@ -178,6 +178,9 @@ interface AppraisalRow {
   signature_ok: bigint | null;
   signature_reasons: string | null;
   attestation_json: string | null;
+  attestation_nonce: string | null;
+  intel_quote: string | null;
+  nvidia_payload: string | null;
   attestation_verdict: string | null;
   usage_json: string | null;
   cost_usd: string | null;
@@ -186,6 +189,7 @@ interface AppraisalRow {
 }
 
 export const NOTES = [
+  "Signature checked locally; quote checked via third-party verifiers (Phala, NVIDIA NRAS).",
   "Advice only: the parties of the barter still agree on the price.",
   "The x207 circle contract does not read this appraisal.",
   "verified.signature is checked by x207: sha256 of the stored request and response bytes, and secp256k1 recovery of the TEE signature over model:request_hash:response_hash.",
@@ -220,6 +224,8 @@ function view(r: AppraisalRow, cached: boolean) {
       signature_kind: r.signature_kind,
       request_body: r.request_body,
       response_body: r.response_body,
+      /** The raw Intel TDX quote and NVIDIA GPU evidence of the attestation summary, byte-exact (null when none was fetched). */
+      attestation_evidence: r.intel_quote ? `/x207/appraisals/${r.appraisal_id}/attestation` : null,
     },
     attestation,
     verified: {
@@ -286,6 +292,36 @@ export function appraiserRoutes(db: Database.Database, config: AppraiserConfig):
         const r = row<AppraisalRow>(db, "SELECT * FROM appraisals WHERE appraisal_id = ?", id);
         if (!r) throw new ApiError(404, "appraisal_not_found", `Appraisal ${id} not found`, { appraisal: id });
         return { status: 200, body: view(r, false) };
+      },
+    },
+    {
+      method: "GET",
+      pattern: "/x207/appraisals/{appraisal}/attestation",
+      circleScoped: false,
+      handler: ({ params }) => {
+        const id = params.appraisal ?? "";
+        if (!APPRAISAL_ID.test(id)) throw invalidRequest("appraisal id must be apr_ followed by 24 lowercase hex characters", { appraisal: id });
+        const r = row<AppraisalRow>(db, "SELECT * FROM appraisals WHERE appraisal_id = ?", id);
+        if (!r || !r.intel_quote) throw new ApiError(404, "appraisal_not_found", `No attestation evidence for appraisal ${id}`, { appraisal: id });
+        const summary = r.attestation_json ? (JSON.parse(r.attestation_json) as AttestationSummary) : null;
+        return {
+          status: 200,
+          body: {
+            appraisal_id: r.appraisal_id,
+            model: r.model,
+            signing_address: r.signing_address,
+            nonce: r.attestation_nonce,
+            fetched_at: summary?.fetched_at ?? null,
+            intel_quote: r.intel_quote,
+            intel_quote_sha256: sha256Hex(r.intel_quote),
+            nvidia_payload: r.nvidia_payload,
+            nvidia_payload_sha256: r.nvidia_payload ? sha256Hex(r.nvidia_payload) : null,
+            notes: [
+              "Raw evidence, byte-exact as NEAR AI Cloud returned it at appraisal time.",
+              "Check it again: TDX report_data (bytes 568..632 of the quote) = signing_address || 12 zero bytes || nonce; send intel_quote to a TDX verifier (for example Phala) and nvidia_payload to NVIDIA NRAS.",
+            ],
+          },
+        };
       },
     },
     {
@@ -356,16 +392,17 @@ export function appraiserRoutes(db: Database.Database, config: AppraiserConfig):
             : { ok: false, reasons: ["NEAR AI Cloud returned no signature for this chat"], recovered_address: null };
 
           let attestation: AttestationSummary | null = null;
+          let attestationEvidence: AttestationEvidence | null = null;
           if (signature) {
             try {
-              attestation = await attest(model, signature.signing_address, {
+              ({ summary: attestation, evidence: attestationEvidence } = await attest(model, signature.signing_address, {
                 cloud,
                 quoteCheck: config.quoteCheck,
                 now,
                 ...(config.fetch ? { fetch: config.fetch } : {}),
                 ...(config.phalaUrl ? { phalaUrl: config.phalaUrl } : {}),
                 ...(config.nrasUrl ? { nrasUrl: config.nrasUrl } : {}),
-              });
+              }));
             } catch (err) {
               if (err instanceof CloudError && err.kind === "credits") throw cloudFailure(err);
             }
@@ -379,12 +416,15 @@ export function appraiserRoutes(db: Database.Database, config: AppraiserConfig):
           db.prepare(
             `UPDATE appraisals SET state = 'done', request_body = ?, response_body = ?, request_hash = ?, response_hash = ?, chat_id = ?, result_json = ?,
                signed_text = ?, signature = ?, signing_address = ?, signing_algo = ?, signature_kind = ?, signature_ok = ?, signature_reasons = ?,
-               attestation_json = ?, attestation_verdict = ?, usage_json = ?, cost_usd = ?, completed_at_ms = ? WHERE appraisal_id = ?`,
+               attestation_json = ?, attestation_verdict = ?, attestation_nonce = ?, intel_quote = ?, nvidia_payload = ?,
+               usage_json = ?, cost_usd = ?, completed_at_ms = ? WHERE appraisal_id = ?`,
           ).run(
             requestBody, responseBody, requestHash, responseHash, chatId, JSON.stringify(result),
             signature?.text ?? null, signature?.signature ?? null, signature?.signing_address.toLowerCase() ?? null, signature?.signing_algo ?? null, signature?.signature_kind ?? null,
             sigCheck.ok ? 1 : 0, JSON.stringify(sigCheck.reasons),
-            attestation ? JSON.stringify(attestation) : null, verdict, JSON.stringify({ prompt_tokens: prompt, completion_tokens: completion }), cost, now(), id,
+            attestation ? JSON.stringify(attestation) : null, verdict,
+            attestationEvidence?.nonce ?? null, attestationEvidence?.intel_quote ?? null, attestationEvidence?.nvidia_payload ?? null,
+            JSON.stringify({ prompt_tokens: prompt, completion_tokens: completion }), cost, now(), id,
           );
         } catch (err) {
           release();

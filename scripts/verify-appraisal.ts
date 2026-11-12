@@ -8,12 +8,15 @@
 //   2. the request is the appraiser's: same model, temperature 0, and the system prompt hashes to the stored rubric hash;
 //   3. the response is the chat named by chat_id, and its JSON answer is the stored result;
 //   4. the signed text is `model:sha256(request):sha256(response)` and the signature recovers (secp256k1, EIP-191) to signing_address;
-//   5. a FRESH attestation report of NEAR AI Cloud (your own random nonce) names signing_address, echoes your nonce, and the TDX quote
+//   5. the STORED evidence of appraisal time (`<url>/attestation`): the raw Intel quote and NVIDIA evidence hash to the summary, the
+//      quote's report_data is signing_address || 12 zero bytes || the nonce x207 chose, the GPU evidence carries that nonce; with
+//      --quote-check the stored quote goes to the Phala verifier and the stored GPU evidence to NVIDIA NRAS;
+//   6. a FRESH attestation report of NEAR AI Cloud (your own random nonce) names signing_address, echoes your nonce, and the TDX quote
 //      carries signing_address || 12 zero bytes || nonce in report_data;
-//   6. with --quote-check: the TDX quote is sent to the Phala verifier and the GPU evidence to NVIDIA NRAS (services of other parties).
+//   7. with --quote-check: the fresh TDX quote is sent to the Phala verifier and the GPU evidence to NVIDIA NRAS (services of other parties).
 //   Optional: with NEARAI_API_KEY in the env, the signature is fetched again from NEAR AI Cloud and compared (the key is never printed).
-// It does NOT run Intel DCAP locally and does not check the signature of the NRAS token. Step 5 fails when the TEE instance that signed
-// the chat has since restarted with a new key: the stored attestation summary (fetched at appraisal time) is then the only record.
+// It does NOT run Intel DCAP locally and does not check the signature of the NRAS token. Step 6 fails when the TEE instance that signed
+// the chat has since restarted with a new key: the stored evidence of step 5 (fetched at appraisal time) is then the only record.
 // Exit code 0 when no check failed.
 import { createHash, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -129,7 +132,53 @@ if (process.env.NEARAI_API_KEY && ev.chat_id) {
   report("SKIP", "fetch the signature again from NEAR AI Cloud", "set NEARAI_API_KEY to do it");
 }
 
-// 5. a fresh attestation report, with our own nonce
+// 5. the stored attestation evidence of appraisal time (raw Intel TDX quote and NVIDIA GPU evidence, the nonce x207 chose)
+let stored: any = null;
+if (typeof ev.attestation_evidence === "string" && /^https?:\/\//.test(target)) {
+  try {
+    stored = await load(new URL(ev.attestation_evidence, target).href);
+  } catch (err) {
+    report("FAIL", "stored attestation evidence can be fetched", err instanceof Error ? err.message : "");
+  }
+} else if (a.attestation_evidence) {
+  stored = a.attestation_evidence; // a saved file may carry it inline
+}
+if (!stored) {
+  report("SKIP", "stored attestation evidence", ev.attestation_evidence ? "give the appraisal URL, not a file" : "this appraisal has none");
+} else {
+  const want = String(ev.signing_address).toLowerCase();
+  report(sha256(stored.intel_quote) === a.attestation?.intel_quote_sha256 ? "PASS" : "FAIL", "stored Intel quote hashes to attestation.intel_quote_sha256");
+  report(stored.nvidia_payload && sha256(stored.nvidia_payload) === a.attestation?.nvidia_payload_sha256 ? "PASS" : "FAIL", "stored NVIDIA evidence hashes to attestation.nvidia_payload_sha256");
+  report(stored.nonce === a.attestation?.nonce ? "PASS" : "FAIL", "stored nonce = nonce of the attestation summary", stored.nonce);
+  const srd = reportData(stored.intel_quote);
+  report(srd === want.replace(/^0x/, "") + "0".repeat(24) + String(stored.nonce).toLowerCase() ? "PASS" : "FAIL", "stored quote: TDX report_data = signing_address || 0x00*12 || stored nonce");
+  let gpuNonce = "";
+  try { gpuNonce = String(JSON.parse(stored.nvidia_payload).nonce ?? "").toLowerCase(); } catch { /* reported below */ }
+  report(gpuNonce === String(stored.nonce).toLowerCase() ? "PASS" : "FAIL", "stored GPU evidence carries the stored nonce");
+  if (!quoteCheck) {
+    report("SKIP", "stored quote and GPU evidence by third parties", "add --quote-check");
+  } else {
+    try {
+      const p = await fetch(PHALA, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ hex: stored.intel_quote }) });
+      const body = (await p.json()) as { quote?: { verified?: boolean; body?: { reportdata?: string } } };
+      const pr = String(body.quote?.body?.reportdata ?? "").replace(/^0x/, "").toLowerCase();
+      report(body.quote?.verified === true && pr === srd ? "PASS" : "FAIL", "Phala verifier: stored TDX quote verified, same report_data", new URL(PHALA).host);
+    } catch (err) {
+      report("FAIL", "Phala verifier reachable", err instanceof Error ? err.message : "");
+    }
+    try {
+      const n = await fetch(NRAS, { method: "POST", headers: { "content-type": "application/json" }, body: stored.nvidia_payload });
+      const body = (await n.json()) as unknown;
+      const jwt = Array.isArray(body) && Array.isArray(body[0]) && body[0][0] === "JWT" ? String(body[0][1]) : "";
+      const claims = jwt ? JSON.parse(Buffer.from(jwt.split(".")[1] ?? "", "base64url").toString("utf8")) : {};
+      report(claims["x-nvidia-overall-att-result"] === true ? "PASS" : "FAIL", "NVIDIA NRAS: stored GPU evidence, overall result true (token signature not checked)", n.ok ? new URL(NRAS).host : `HTTP ${n.status}`);
+    } catch (err) {
+      report("FAIL", "NVIDIA NRAS reachable", err instanceof Error ? err.message : "");
+    }
+  }
+}
+
+// 6. a fresh attestation report, with our own nonce
 if (noAttestation) {
   report("SKIP", "fresh attestation report", "--no-attestation");
 } else {
@@ -154,7 +203,7 @@ if (noAttestation) {
     if (a.attestation?.compose_hash && entry.info?.compose_hash) {
       report(entry.info.compose_hash === a.attestation.compose_hash ? "PASS" : "FAIL", "compose_hash today equals compose_hash at appraisal time", entry.info.compose_hash);
     }
-    // 6. third-party checks of the quote and the GPU evidence
+    // 7. third-party checks of the fresh quote and GPU evidence
     if (!quoteCheck) {
       report("SKIP", "TDX quote and GPU evidence by third parties", "add --quote-check");
     } else {
