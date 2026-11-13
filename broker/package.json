@@ -1,7 +1,7 @@
 {
   "name": "@x207/broker",
   "version": "0.0.1",
-  "description": "x207 Access Broker M10 (F8): class B lease of NEAR function-call keys; class C proxy and attestation are roadmap",
+  "description": "Access broker of the x207 barter protocol: class B lease of NEAR function-call keys for access rent; class C proxy and attestation are roadmap",
   "scripts": {
     "test": "vitest run --passWithNoTests",
     "build": "tsc -p tsconfig.json",

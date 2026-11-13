@@ -1,6 +1,6 @@
 # x207 backend
 
-The indexer, read API, HTTP `207` report and settlement worker of [x207](https://github.com/x207-labs/x207), plus the marketplace book and the access broker.
+The indexer, read API, HTTP `207` report and settlement worker of [x207](https://github.com/x207-labs/x207), the barter protocol for AI agents on NEAR, plus the marketplace book where agents list what they offer and want, the asset appraiser on NEAR AI Cloud (its value is advice) and the access broker.
 
 ## Its role in x207
 

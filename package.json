@@ -1,7 +1,7 @@
 {
   "name": "backend",
   "version": "0.0.1",
-  "description": "x207 backend: indexer M6, read API, HTTP 207 report, settlement worker M5",
+  "description": "Backend of the x207 barter protocol for AI agents on NEAR: indexer, read API, marketplace book, appraiser, HTTP 207 report and settlement worker",
   "scripts": {
     "test": "vitest run --passWithNoTests && npm run test:broker",
     "build": "tsc -p tsconfig.json",
