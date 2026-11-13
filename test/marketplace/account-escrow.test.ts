@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { CIRCLE, NOW_S, signedListing, startMarket, type Market } from "./helpers.js";
 import { ACCOUNT_ASSET_TYPES, type AccountHistory } from "../../src/marketplace/account-escrow.js";
-import { CATALOG } from "../helpers/asset-catalog.js";
+import { CATALOG, CATALOG_MISSING } from "../helpers/asset-catalog.js";
 
 const PRICE = "100000000";
 let nonce = 0;
@@ -33,7 +33,7 @@ describe("BE-110 listing of a NEAR account", () => {
     }));
   const err = (r: { status: number; json: any }) => [r.status, r.json.error?.code];
 
-  it("TC-BE-110-00 the asset types are those of the catalog (#11, #12, #13); #14 is the entry that the owner registers (ADR 1.4)", () => {
+  it.skipIf(CATALOG_MISSING)(`TC-BE-110-00 the asset types are those of the catalog (#11, #12, #13); #14 is the entry that the owner registers (ADR 1.4)${CATALOG_MISSING ? ` (${CATALOG_MISSING})` : ""}`, () => {
     const names = new Set(CATALOG.map((c: { assetType: string }) => c.assetType));
     for (const t of ["near:named-account", "chain-signatures:derived-address", "vesting:transferable-lockup"]) expect(names.has(t), t).toBe(true);
     expect(Object.keys(ACCOUNT_ASSET_TYPES).sort()).toEqual(["chain-signatures:derived-address", "near:account", "near:member_account", "near:named-account", "vesting:transferable-lockup"]);

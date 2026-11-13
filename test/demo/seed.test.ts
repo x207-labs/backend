@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { demoKeys, seedDemo, type DemoClient, type DemoOptions } from "../../src/demo/seed.js";
 import { MockCodeIssuer } from "../../src/marketplace/code-issuers.js";
-import { CATALOG } from "../helpers/asset-catalog.js";
+import { CATALOG, CATALOG_MISSING } from "../helpers/asset-catalog.js";
 import { acct, CIRCLE, CONTRACT, NOW_S, openEpoch, startMarket, type Market } from "../marketplace/helpers.js";
 
+if (CATALOG_MISSING) it.skip(`BE-080 demo seed ${CATALOG_MISSING}`, () => {});
+
 // BE-080: the demo seed fills a market with one example of every pipeline, and a second run adds nothing.
-describe("BE-080 demo seed", () => {
+describe.skipIf(CATALOG_MISSING)("BE-080 demo seed", () => {
   let market: Market | undefined;
   afterEach(async () => {
     await market?.srv.close();

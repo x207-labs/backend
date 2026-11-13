@@ -5,11 +5,18 @@
 // this machine: check `pgrep -fl near-sandbox` first (the suite of the contracts uses it). A run takes about a minute.
 import { afterAll, describe, expect, it } from "vitest";
 import { generateVoucherKeypair, orderHash, payForProofs, serializeOrder, type OrderDocument } from "@x207/core";
-import { sandboxAvailable } from "../../../sdk/test-support/sandbox.js";
-import { deployCircle, SHORT_PARAMS, type CircleFixture } from "../../../sdk/test-support/circle.js";
+import type { CircleFixture } from "../../../sdk/test-support/circle.js";
+import { inUmbrella, umbrellaSkipReason } from "../helpers/umbrella.js";
 import { FailoverRpcClient, Indexer, RpcBlockSource, createApiServer, openDatabase, rpcChainReader } from "../../src/index.js";
 import { marketplaceRoutes } from "../../src/marketplace/index.js";
 import { signNoticeJson } from "../../src/marketplace/notice.js";
+
+// the near-sandbox fixtures are those of the SDK in the umbrella; a backend cloned on its own skips this file with the reason
+const SUPPORT = "sdk/test-support/circle.js";
+const umbrella = inUmbrella(SUPPORT);
+const { sandboxAvailable } = umbrella ? await import("../../../sdk/test-support/sandbox.js") : { sandboxAvailable: false };
+const { deployCircle, SHORT_PARAMS } = umbrella ? await import("../../../sdk/test-support/circle.js") : ({} as typeof import("../../../sdk/test-support/circle.js"));
+if (!umbrella) it.skip(`BE-055 ${umbrellaSkipReason(SUPPORT)}`, () => {});
 
 describe.skipIf(!sandboxAvailable)("BE-055 on-chain proofs on near-sandbox", () => {
   let fx: CircleFixture | undefined;

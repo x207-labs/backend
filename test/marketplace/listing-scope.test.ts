@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { buildAssetTemplate, type AssetInput } from "@x207/core";
-import { CATALOG } from "../helpers/asset-catalog.js";
+import { CATALOG, CATALOG_MISSING } from "../helpers/asset-catalog.js";
 import { ESCROW_ASSET_TYPES } from "../../src/marketplace/listing-scope.js";
 import { CIRCLE, NOW_S, signedListing, startMarket, type Market } from "./helpers.js";
 
@@ -8,7 +8,9 @@ const C = (n: number): string => (BigInt(n) * 1_000_000n).toString();
 let nonce = 0;
 const PRICE = C(100);
 
-describe("BE-049 validation of a listing per kind of asset (catalogue #1 to #10)", () => {
+if (CATALOG_MISSING) it.skip(`BE-049 listing validation ${CATALOG_MISSING}`, () => {});
+
+describe.skipIf(CATALOG_MISSING)("BE-049 validation of a listing per kind of asset (catalogue #1 to #10)", () => {
   let market: Market | undefined;
   afterEach(async () => {
     await market?.srv.close();

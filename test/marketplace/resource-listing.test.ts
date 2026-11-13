@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { CATALOG } from "../helpers/asset-catalog.js";
+import { CATALOG, CATALOG_MISSING } from "../helpers/asset-catalog.js";
 import { endpointProblem, RESOURCE_ASSET_TYPES, RESOURCE_UNITS } from "../../src/marketplace/resource-listing.js";
 import { NOW_S, signedListing, startMarket, type Market } from "./helpers.js";
 
@@ -21,7 +21,7 @@ describe("BE-050 listing of a metered resource (class D): unit, price per unit, 
     }));
   const message = (r: { status: number; json: any }) => [r.status, r.json.error?.code, r.json.error?.message as string];
 
-  it("TC-BE-050-00 the table of the twelve kinds is the catalogue: same names, same numbers, class D", () => {
+  it.skipIf(CATALOG_MISSING)(`TC-BE-050-00 the table of the twelve kinds is the catalogue: same names, same numbers, class D${CATALOG_MISSING ? ` (${CATALOG_MISSING})` : ""}`, () => {
     const byNumber = Object.fromEntries((CATALOG as Array<{ no: number | string; assetType: string; cls: string }>).map((c) => [String(c.no), c]));
     for (const [assetType, no] of Object.entries(RESOURCE_ASSET_TYPES)) {
       expect(byNumber[String(no)]?.assetType, `row ${no}`).toBe(assetType);

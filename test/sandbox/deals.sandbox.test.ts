@@ -6,8 +6,8 @@
 // Runs only on request: `X207_SANDBOX=1 npx vitest run test/sandbox`, with the binary of near-sandbox and the wasm of the contracts (0.0.12) built (see docs/sandbox-e2e.md). ONE near-sandbox at a time.
 import { afterAll, describe, expect, it } from "vitest";
 import { bundleInput, generateVoucherKeypair, signBundle, type BundleTerms } from "@x207/core";
-import { sandboxAvailable } from "../../../sdk/test-support/sandbox.js";
-import { deployCircle, SHORT_PARAMS, TERMS_HASH, type CircleFixture } from "../../../sdk/test-support/circle.js";
+import type { CircleFixture } from "../../../sdk/test-support/circle.js";
+import { inUmbrella, umbrellaSkipReason } from "../helpers/umbrella.js";
 import { FailoverRpcClient, Indexer, RpcBlockSource, openDatabase, rpcChainReader } from "../../src/index.js";
 
 const CREDIT = 1_000_000n;
@@ -16,6 +16,13 @@ const VALUE = 120n * CREDIT;
 const BOND = 24n * CREDIT; // 20% of the value 120, above the threshold of 100
 const AGREEMENT = "cd".repeat(32);
 const EVIDENCE = "ef".repeat(32);
+
+// the near-sandbox fixtures are those of the SDK in the umbrella; a backend cloned on its own skips this file with the reason
+const SUPPORT = "sdk/test-support/circle.js";
+const umbrella = inUmbrella(SUPPORT);
+const { sandboxAvailable } = umbrella ? await import("../../../sdk/test-support/sandbox.js") : { sandboxAvailable: false };
+const { deployCircle, SHORT_PARAMS, TERMS_HASH } = umbrella ? await import("../../../sdk/test-support/circle.js") : ({} as typeof import("../../../sdk/test-support/circle.js"));
+if (!umbrella) it.skip(`BE-065 ${umbrellaSkipReason(SUPPORT)}`, () => {});
 
 describe.skipIf(!sandboxAvailable)("BE-065 bonds and rulings on near-sandbox", () => {
   let fx: CircleFixture | undefined;

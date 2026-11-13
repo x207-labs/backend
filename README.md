@@ -45,10 +45,12 @@ CORS is open for `https://x207.vercel.app` only. It runs on the boxd machine `x2
 Node ≥ 22.22.2.
 
 ```bash
-npm install
+npm ci
 npm run build
 npm test
 ```
+
+Cloned on its own, the backend installs `@x207/core` from npm. A few tests use files of the umbrella repository: the asset catalogue (`scripts/lib/asset-catalog.mjs`) and the near-sandbox fixtures of the SDK (`sdk/test-support/`). Without the umbrella, those tests are skipped and the report names the missing file. Inside the umbrella they run.
 
 To run it: fill in `.env` (names in `.env.example`: `NEAR_RPC_PRIMARY_URL`, `X207_CONTRACT_ID`, `X207_START_BLOCK`, `X207_SETTLEMENT_MODE`, default `dry`), then `npm run build && npm start`. `src/main.ts` runs the indexer, the read API, the settlement endpoints and the job monitor in one process. `.env` is never committed.
 
@@ -76,10 +78,11 @@ Barter assets (API quota, compute, licences, data) have no market price. `POST /
 
 ```bash
 curl -s -X POST localhost:8080/x207/appraise -H 'content-type: application/json' -d '{"asset_type":"api_quota","asset_class":"B","quantity":100000,"scope":"100000 geocoding calls, read-only","provider":"Mapbox","duration_days":30,"market_price_credits":"75"}'
+npm ci   # once, in this folder: the verifier imports @noble/curves and @noble/hashes
 node scripts/verify-appraisal.ts http://localhost:8080/x207/appraisals/apr_... --quote-check
 ```
 
-`scripts/verify-appraisal.ts` needs no x207 code and no key. It recomputes every hash and the signer, re-checks the stored attestation evidence (`GET /x207/appraisals/{appraisal}/attestation`: the raw Intel TDX quote and NVIDIA GPU evidence of appraisal time, byte-exact, about 110 KB), fetches a fresh attestation with its own nonce, and prints PASS, FAIL or SKIP per check. A recorded run (2026-11-12, `Qwen/Qwen3.6-35B-A3B-FP8`, 496 prompt and 133 completion tokens, about USD 0.00023, 4.6 s, with `--quote-check`): 21 PASS, one SKIP (signature refetch without a key), no FAIL. Changing one byte of the stored answer makes the response-hash check FAIL.
+`scripts/verify-appraisal.ts` needs no other x207 code and no key; it needs only the two `@noble` packages, which `npm ci` installs. It recomputes every hash and the signer, re-checks the stored attestation evidence (`GET /x207/appraisals/{appraisal}/attestation`: the raw Intel TDX quote and NVIDIA GPU evidence of appraisal time, byte-exact, about 110 KB), fetches a fresh attestation with its own nonce, and prints PASS, FAIL or SKIP per check. A recorded run (2026-11-12, `Qwen/Qwen3.6-35B-A3B-FP8`, 496 prompt and 133 completion tokens, about USD 0.00023, 4.6 s, with `--quote-check`): 21 PASS, one SKIP (signature refetch without a key), no FAIL. Changing one byte of the stored answer makes the response-hash check FAIL.
 
 In short: signature checked locally; quote checked via third-party verifiers (Phala, NVIDIA NRAS).
 

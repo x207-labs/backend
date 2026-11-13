@@ -7,8 +7,8 @@
 // ONE near-sandbox at a time on the machine (`pgrep -fl near-sandbox`).
 import { afterAll, describe, expect, it } from "vitest";
 import { edgesHash, generateVoucherKeypair, signVoucher } from "@x207/core";
-import { sandboxAvailable } from "../../../sdk/test-support/sandbox.js";
-import { deployCircle, SHORT_PARAMS, TERMS_HASH, type CircleFixture } from "../../../sdk/test-support/circle.js";
+import type { CircleFixture } from "../../../sdk/test-support/circle.js";
+import { inUmbrella, umbrellaSkipReason } from "../helpers/umbrella.js";
 import { FailoverRpcClient, Indexer, RpcBlockSource, openDatabase, rpcChainReader, viewClearedEdges } from "../../src/index.js";
 import { rebuildReadModel } from "../../src/indexer/rebuild.js";
 
@@ -18,6 +18,13 @@ const MEMBERS = 60;
 const OFFSETS = 5; // 60 x 5 = 300 edges
 const LOG_BUDGET = (16 * 1024) / 10 * 9;
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+// the near-sandbox fixtures are those of the SDK in the umbrella; a backend cloned on its own skips this file with the reason
+const SUPPORT = "sdk/test-support/circle.js";
+const umbrella = inUmbrella(SUPPORT);
+const { sandboxAvailable } = umbrella ? await import("../../../sdk/test-support/sandbox.js") : { sandboxAvailable: false };
+const { deployCircle, SHORT_PARAMS, TERMS_HASH } = umbrella ? await import("../../../sdk/test-support/circle.js") : ({} as typeof import("../../../sdk/test-support/circle.js"));
+if (!umbrella) it.skip(`BE-077 ${umbrellaSkipReason(SUPPORT)}`, () => {});
 
 describe.skipIf(!sandboxAvailable)("BE-077 an epoch of 300 edges on near-sandbox", () => {
   let fx: CircleFixture | undefined;
