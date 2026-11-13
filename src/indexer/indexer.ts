@@ -122,7 +122,7 @@ export class Indexer {
         ).run(this.#contractId, this.#contractId, this.#startBlock, this.#startBlock - 1, this.#startBlock - 1, this.#source.endpoint, this.#now());
       }
       if (params) {
-        // the view of an older contract lacks the newer fields, and an older `@x207/core` (the one on npm) does not type them: read it field by field
+        // the view of an older contract lacks the newer fields: read it field by field
         const view: Partial<Record<(typeof PARAM_FIELDS)[number], unknown>> = params;
         const insert = db.prepare(
           `INSERT OR IGNORE INTO params (circle_id, field, old_value, new_value, effective_epoch, block_height, receipt_id, log_index)

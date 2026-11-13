@@ -3,10 +3,6 @@ import type Database from "better-sqlite3";
 import { openDatabase } from "../../src/db/index.js";
 import { Indexer } from "../../src/indexer/indexer.js";
 import { ArrayBlockSource, CONTRACT, DEFAULT_PARAMS, acct, block, eventLog } from "../helpers/fx-log42.js";
-import { coreTooOld } from "../helpers/installed-core.js";
-
-// the events `relayer_fee_*` of 0.0.17 are known only to a core of that interface or later
-const OLD_CORE = coreTooOld("0.0.17");
 
 // BE-103: contracts 0.0.16 and 0.0.17 add the DAO parameter `relayer_fee` and the events `relayer_fee_paid` / `relayer_fee_failed`.
 const V16 = { ...DEFAULT_PARAMS, max_search_share_bps: 500, bond_threshold: "100000000", bond_bps: 2000, prune_delay_epochs: 2, relayer_fee: "250000" };
@@ -47,7 +43,7 @@ describe("BE-103 relayer_fee of interface 0.0.16 and 0.0.17 in the read model", 
     expect(db.prepare("SELECT handled FROM events_raw WHERE event = 'params_updated'").all()).toEqual([{ handled: 1 }]);
   });
 
-  it.skipIf(OLD_CORE)(`TC-BE-103-03 relayer_fee_paid and relayer_fee_failed (claim_evm, withdraw_stake_evm; request_exit_evm, set_auto_settle_evm from 0.0.17) are stored in events_raw, handled${OLD_CORE ? ` (${OLD_CORE})` : ""}`, async () => {
+  it("TC-BE-103-03 relayer_fee_paid and relayer_fee_failed (claim_evm, withdraw_stake_evm; request_exit_evm, set_auto_settle_evm from 0.0.17) are stored in events_raw, handled", async () => {
     const fee = (event: string, action: string, amount: string) => eventLog(event, { account_id: acct("translator"), relayer: acct("scraper"), action, epoch: 7, amount }, "0.0.17");
     const logs = [
       fee("relayer_fee_paid", "claim", "250000"),

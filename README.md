@@ -50,7 +50,7 @@ npm run build
 npm test
 ```
 
-Cloned on its own, the backend installs `@x207/core` from npm. A few tests use files of the umbrella repository: the asset catalogue (`scripts/lib/asset-catalog.mjs`) and the near-sandbox fixtures of the SDK (`sdk/test-support/`). Without the umbrella, those tests are skipped and the report names the missing file. The `@x207/core` on npm (0.0.2) carries contract interface 0.0.15, so the one test that needs the `relayer_fee_*` events of 0.0.17 is skipped too, with that reason. Inside the umbrella, where the workspace core is linked, they all run.
+Cloned on its own, the backend installs `@x207/core` from npm. A few tests use files of the umbrella repository: the asset catalogue (`scripts/lib/asset-catalog.mjs`) and the near-sandbox fixtures of the SDK (`sdk/test-support/`). Without the umbrella, those tests are skipped and the report names the missing file. The `@x207/core` on npm (0.0.3) carries contract interface 0.0.18, the one in use. Inside the umbrella, where the workspace core is linked, they all run.
 
 To run it: fill in `.env` (names in `.env.example`: `NEAR_RPC_PRIMARY_URL`, `X207_CONTRACT_ID`, `X207_START_BLOCK`, `X207_SETTLEMENT_MODE`, default `dry`), then `npm run build && npm start`. `src/main.ts` runs the indexer, the read API, the settlement endpoints and the job monitor in one process. `.env` is never committed.
 

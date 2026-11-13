@@ -15,8 +15,8 @@
     "node": ">=22.22.2"
   },
   "dependencies": {
-    "@x207/core": "0.0.2",
-    "@x207/scheme": "0.0.2",
+    "@x207/core": "0.0.3",
+    "@x207/scheme": "0.0.3",
     "better-sqlite3": "13.0.3",
     "near-api-js": "7.4.0"
   },
